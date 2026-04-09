@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand_blue">#1551AD</color>
+    <color name="brand_blue_deep">#08142F</color>
+    <color name="brand_gold">#F4BE2E</color>
+    <color name="screen_background">#08142F</color>
+    <color name="status_bar">#08142F</color>
+    <color name="navigation_bar">#08142F</color>
+</resources>

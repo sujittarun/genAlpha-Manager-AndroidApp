@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/gen_alpha_cricket_ball" />
+    <item>
+        <inset
+            android:drawable="@drawable/ic_launcher_bitmap"
+            android:insetBottom="22dp"
+            android:insetLeft="30dp"
+            android:insetRight="30dp"
+            android:insetTop="16dp" />
+    </item>
+</layer-list>
