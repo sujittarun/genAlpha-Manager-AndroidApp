@@ -11,8 +11,8 @@ android {
     applicationId = "com.genalpha.cricketacademy"
     minSdk = 24
     targetSdk = 35
-    versionCode = 35
-    versionName = "1.0.35"
+    versionCode = 41
+    versionName = "1.0.41"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

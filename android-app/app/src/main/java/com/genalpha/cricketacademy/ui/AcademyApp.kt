@@ -46,6 +46,7 @@ import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Person
@@ -393,7 +394,6 @@ private fun themedBadgeTone(
 fun AcademyApp(viewModel: AcademyViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val filteredKids = remember(uiState.kids, uiState.selectedSlotFilter, uiState.searchQuery) { viewModel.filteredKids() }
     val stats = remember(uiState.kids) { viewModel.stats() }
@@ -407,13 +407,15 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     var showLoginSheet by rememberSaveable { mutableStateOf(false) }
     var showAdmissionSheet by rememberSaveable { mutableStateOf(false) }
     var showScanSourceSheet by rememberSaveable { mutableStateOf(false) }
-    var admissionPrefill by remember { mutableStateOf<AdmissionDraft?>(null) }
+    var attachedAdmissionDocumentLabel by rememberSaveable { mutableStateOf<String?>(null) }
     var isScanLoading by rememberSaveable { mutableStateOf(false) }
     var editingStudent by remember { mutableStateOf<Student?>(null) }
     var showEditorSheet by rememberSaveable { mutableStateOf(false) }
     var selectedStudent by remember { mutableStateOf<Student?>(null) }
     var showDetailSheet by rememberSaveable { mutableStateOf(false) }
     var showAttendanceHistory by rememberSaveable { mutableStateOf(false) }
+    var attendanceHistoryCache by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
+    var attendanceHistoryLoadingId by rememberSaveable { mutableStateOf<String?>(null) }
     var playerSearchQuery by rememberSaveable { mutableStateOf("") }
     var playerSlotFilter by rememberSaveable { mutableStateOf("") }
     val imagePickerLauncher = rememberLauncherForActivityResult(
@@ -422,15 +424,10 @@ fun AcademyApp(viewModel: AcademyViewModel) {
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             isScanLoading = true
-            runCatching { extractAdmissionDraftFromImage(context, uri) }
-                .onSuccess { parsed ->
-                    admissionPrefill = parsed
-                    showAdmissionSheet = true
-                    snackbarHostState.showSnackbar("Scan complete. Review the prefilled form before submitting.")
-                }
-                .onFailure { error ->
-                    snackbarHostState.showSnackbar(error.message ?: "Unable to scan the document.")
-                }
+            attachedAdmissionDocumentLabel =
+                uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { null }
+                    ?: "Imported document attached"
+            showAdmissionSheet = true
             isScanLoading = false
         }
     }
@@ -440,15 +437,8 @@ fun AcademyApp(viewModel: AcademyViewModel) {
         if (bitmap == null) return@rememberLauncherForActivityResult
         scope.launch {
             isScanLoading = true
-            runCatching { extractAdmissionDraftFromBitmap(bitmap) }
-                .onSuccess { parsed ->
-                    admissionPrefill = parsed
-                    showAdmissionSheet = true
-                    snackbarHostState.showSnackbar("Scan complete. Review the prefilled form before submitting.")
-                }
-                .onFailure { error ->
-                    snackbarHostState.showSnackbar(error.message ?: "Unable to scan the document.")
-                }
+            attachedAdmissionDocumentLabel = "Camera scan attached"
+            showAdmissionSheet = true
             isScanLoading = false
         }
     }
@@ -479,6 +469,18 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     LaunchedEffect(selectedView) {
         if (selectedView == AppView.Player) {
             viewModel.loadTodayAttendance()
+        }
+    }
+
+    LaunchedEffect(showDetailSheet, selectedStudent?.id) {
+        val studentId = selectedStudent?.id
+        if (showDetailSheet && studentId != null && studentId !in attendanceHistoryCache && attendanceHistoryLoadingId != studentId) {
+            attendanceHistoryLoadingId = studentId
+            runCatching { viewModel.attendanceHistory(studentId) }
+                .onSuccess { history ->
+                    attendanceHistoryCache = attendanceHistoryCache + (studentId to history)
+                }
+            attendanceHistoryLoadingId = null
         }
     }
 
@@ -642,7 +644,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                             AdmissionActionsSection(
                                 isScanLoading = isScanLoading,
                                 onOpen = {
-                                    admissionPrefill = null
+                                    attachedAdmissionDocumentLabel = null
                                     showAdmissionSheet = true
                                 },
                                 onScan = { showScanSourceSheet = true },
@@ -650,7 +652,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         }
                         item {
                             EmptyPanel(
-                                message = "Use a fresh form or scan any document or form copy. The app will read the text, match likely admission fields, and let you review everything before submitting."
+                                message = "Open a fresh form for manual entry, or attach a scan/photo so parents can keep the document alongside the form while entering details."
                             )
                         }
                     } else {
@@ -767,17 +769,17 @@ fun AcademyApp(viewModel: AcademyViewModel) {
 
                 if (showAdmissionSheet) {
                     AdmissionFormSheet(
-                        initialDraft = admissionPrefill,
+                        attachedDocumentLabel = attachedAdmissionDocumentLabel,
                         onLoadRegNo = { viewModel.peekNextAdmissionRegNo() },
                         onDismiss = {
                             showAdmissionSheet = false
-                            admissionPrefill = null
+                            attachedAdmissionDocumentLabel = null
                         },
                         onSubmit = { draft ->
                             viewModel.submitAdmission(draft).also { result ->
                                 if (result.success) {
                                     showAdmissionSheet = false
-                                    admissionPrefill = null
+                                    attachedAdmissionDocumentLabel = null
                                 }
                                 scope.launch {
                                     snackbarHostState.showSnackbar(result.message)
@@ -864,8 +866,13 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                 if (showAttendanceHistory && selectedStudent != null) {
                     AttendanceHistoryDialog(
                         studentName = selectedStudent!!.name,
+                        initialDates = attendanceHistoryCache[selectedStudent!!.id],
                         onDismiss = { showAttendanceHistory = false },
-                        onLoadAttendanceHistory = { viewModel.attendanceHistory(selectedStudent!!.id) },
+                        onLoadAttendanceHistory = {
+                            val loaded = viewModel.attendanceHistory(selectedStudent!!.id)
+                            attendanceHistoryCache = attendanceHistoryCache + (selectedStudent!!.id to loaded)
+                            loaded
+                        },
                     )
                 }
             }
@@ -1205,7 +1212,7 @@ private fun ScanSourceSheet(
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                "You can scan with the camera or import an image from photos. The app will read the text and match the likely admission fields.",
+                "You can scan with the camera or import an image from photos. The document will stay attached to the admission form for reference while parents fill the details manually.",
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
@@ -2212,88 +2219,125 @@ private fun DataTileContent(
 @Composable
 private fun AttendanceHistoryDialog(
     studentName: String,
+    initialDates: List<String>?,
     onDismiss: () -> Unit,
     onLoadAttendanceHistory: suspend () -> List<String>,
 ) {
-    var dates by remember { mutableStateOf<List<String>?>(null) }
+    var dates by remember(initialDates) { mutableStateOf(initialDates) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
-        runCatching { onLoadAttendanceHistory() }
-            .onSuccess {
-                dates = it
-                errorMessage = null
-            }
-            .onFailure { error ->
-                dates = emptyList()
-                errorMessage = error.message ?: "Unable to load attendance history."
-            }
+    LaunchedEffect(initialDates) {
+        if (dates == null) {
+            runCatching { onLoadAttendanceHistory() }
+                .onSuccess {
+                    dates = it
+                    errorMessage = null
+                }
+                .onFailure { error ->
+                    dates = emptyList()
+                    errorMessage = error.message ?: "Unable to load attendance history."
+                }
+        }
     }
 
-    FormDialog(onDismiss = onDismiss) {
-        Column(
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.28f))
+                .padding(horizontal = 20.dp, vertical = 40.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 760.dp),
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 8.dp,
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Attendance", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrandBlue)
-                    Text(
-                        text = studentName,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                IconButton(onClick = onDismiss, modifier = Modifier.size(34.dp)) {
-                    Icon(Icons.Outlined.Close, contentDescription = "Close")
-                }
-            }
-
-            when {
-                dates == null -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 18.dp, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                        Text("Loading attendance days", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
-                    }
-                }
-                errorMessage != null -> {
-                    Text(errorMessage.orEmpty(), color = BrandRed, fontSize = 13.sp)
-                }
-                else -> {
-                    val attendanceDates = dates.orEmpty()
-                    val months = remember(attendanceDates) { buildAttendanceMonths(attendanceDates) }
-                    val presentSet = remember(attendanceDates) { attendanceDates.toSet() }
-                    Text(
-                        text = if (attendanceDates.isEmpty()) {
-                            "No attendance marked yet."
-                        } else {
-                            "${attendanceDates.size} training day${if (attendanceDates.size == 1) "" else "s"} marked"
-                        },
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-                        fontSize = 12.sp,
-                    )
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        months.forEach { month ->
-                            AttendanceMonthCard(
-                                month = month,
-                                attendanceDates = presentSet,
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Attendance", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrandBlue)
+                            Text(
+                                text = studentName,
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
+                        }
+                        IconButton(onClick = onDismiss, modifier = Modifier.size(34.dp)) {
+                            Icon(Icons.Outlined.Close, contentDescription = "Close")
+                        }
+                    }
+
+                    when {
+                        dates == null -> {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                Text("Loading attendance days", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
+                            }
+                        }
+                        errorMessage != null -> {
+                            Text(errorMessage.orEmpty(), color = BrandRed, fontSize = 13.sp)
+                        }
+                        else -> {
+                            val attendanceDates = dates.orEmpty()
+                            val months = remember(attendanceDates) { buildAttendanceMonths(attendanceDates) }
+                            val presentSet = remember(attendanceDates) { attendanceDates.toSet() }
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = MaterialTheme.colorScheme.background.copy(alpha = 0.84f),
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    Text(
+                                        text = if (attendanceDates.isEmpty()) {
+                                            "No attendance marked yet."
+                                        } else {
+                                            "${attendanceDates.size} training day${if (attendanceDates.size == 1) "" else "s"} marked"
+                                        },
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                                        fontSize = 12.sp,
+                                    )
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    ) {
+                                        months.forEach { month ->
+                                            AttendanceMonthCard(
+                                                month = month,
+                                                attendanceDates = presentSet,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -2307,7 +2351,6 @@ private data class CalendarMonth(
     val month: Int,
 )
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AttendanceMonthCard(
     month: CalendarMonth,
@@ -2316,56 +2359,90 @@ private fun AttendanceMonthCard(
     val dayLabels = listOf("S", "M", "T", "W", "T", "F", "S")
     val daysInMonth = remember(month) { monthDays(month.year, month.month) }
     val firstOffset = remember(month) { monthFirstDayOffset(month.year, month.month) }
+    val totalCells = remember(daysInMonth, firstOffset) {
+        val raw = firstOffset + daysInMonth
+        if (raw % 7 == 0) raw else raw + (7 - (raw % 7))
+    }
 
     Surface(
-        modifier = Modifier.widthIn(min = 148.dp),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.background.copy(alpha = 0.82f),
+        modifier = Modifier.widthIn(min = 176.dp, max = 176.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
-                text = monthLabel(month.year, month.month),
-                color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = monthLabel(month.year, month.month),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = monthAttendanceCount(month, attendanceDates),
+                    color = BrandBlue,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
                 dayLabels.forEach { label ->
                     Text(
+                        modifier = Modifier.weight(1f),
                         text = label,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
-                        fontSize = 9.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     )
                 }
             }
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                maxItemsInEachRow = 7,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                repeat(firstOffset) {
-                    Spacer(modifier = Modifier.size(16.dp))
-                }
-                for (day in 1..daysInMonth) {
-                    val isoDate = String.format(Locale.US, "%04d-%02d-%02d", month.year, month.month + 1, day)
-                    val attended = attendanceDates.contains(isoDate)
-                    Surface(
-                        modifier = Modifier.size(16.dp),
-                        shape = CircleShape,
-                        color = if (attended) BrandBlue else Color.Transparent,
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (weekStart in 0 until totalCells step 7) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = day.toString(),
-                                color = if (attended) Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-                                fontSize = 8.sp,
-                                fontWeight = if (attended) FontWeight.Bold else FontWeight.Medium,
-                            )
+                        for (column in 0 until 7) {
+                            val cellIndex = weekStart + column
+                            val dayNumber = cellIndex - firstOffset + 1
+                            val validDay = dayNumber in 1..daysInMonth
+                            val isoDate = if (validDay) {
+                                String.format(Locale.US, "%04d-%02d-%02d", month.year, month.month + 1, dayNumber)
+                            } else {
+                                ""
+                            }
+                            val attended = validDay && attendanceDates.contains(isoDate)
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(22.dp),
+                                shape = RoundedCornerShape(7.dp),
+                                color = when {
+                                    attended -> BrandBlue.copy(alpha = 0.14f)
+                                    validDay -> MaterialTheme.colorScheme.background.copy(alpha = 0.8f)
+                                    else -> Color.Transparent
+                                },
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = if (validDay) dayNumber.toString() else "",
+                                        color = when {
+                                            attended -> BrandBlue
+                                            validDay -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                            else -> Color.Transparent
+                                        },
+                                        fontSize = 10.sp,
+                                        fontWeight = if (attended) FontWeight.Bold else FontWeight.Medium,
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -2414,6 +2491,12 @@ private fun monthLabel(year: Int, month: Int): String {
         set(Calendar.DAY_OF_MONTH, 1)
     }
     return java.text.SimpleDateFormat("MMM yyyy", Locale.US).format(calendar.time)
+}
+
+private fun monthAttendanceCount(month: CalendarMonth, attendanceDates: Set<String>): String {
+    val prefix = String.format(Locale.US, "%04d-%02d-", month.year, month.month + 1)
+    val count = attendanceDates.count { it.startsWith(prefix) }
+    return if (count == 0) "No sessions" else "$count present"
 }
 
 private data class RosterSection(
@@ -2895,34 +2978,31 @@ private fun PlayerEditorSheet(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AdmissionFormSheet(
-    initialDraft: AdmissionDraft?,
+    attachedDocumentLabel: String?,
     onLoadRegNo: suspend () -> Long,
     onDismiss: () -> Unit,
     onSubmit: suspend (AdmissionDraft) -> OperationResult,
 ) {
-    val initialDobParts = remember(initialDraft?.dateOfBirth) {
-        splitAdmissionDob(initialDraft?.dateOfBirth.orEmpty())
-    }
-    var applicantName by rememberSaveable(initialDraft) { mutableStateOf(initialDraft?.applicantName.orEmpty()) }
-    var nationality by rememberSaveable(initialDraft) { mutableStateOf(initialDraft?.nationality ?: "Indian") }
-    var birthDay by rememberSaveable(initialDraft) { mutableStateOf(initialDobParts.first) }
-    var birthMonth by rememberSaveable(initialDraft) { mutableStateOf(initialDobParts.second) }
-    var birthYear by rememberSaveable(initialDraft) { mutableStateOf(initialDobParts.third) }
-    var gender by rememberSaveable(initialDraft) { mutableStateOf(initialDraft?.gender.orEmpty()) }
-    var fatherGuardianName by rememberSaveable(initialDraft) { mutableStateOf(initialDraft?.fatherGuardianName.orEmpty()) }
-    var emergencyContactNo by rememberSaveable(initialDraft) { mutableStateOf(initialDraft?.emergencyContactNo.orEmpty()) }
-    var parentContactNo by rememberSaveable(initialDraft) { mutableStateOf(initialDraft?.parentContactNo.orEmpty()) }
-    var city by rememberSaveable(initialDraft) { mutableStateOf(initialDraft?.city.orEmpty()) }
-    var address by rememberSaveable(initialDraft) { mutableStateOf(initialDraft?.address.orEmpty()) }
-    var schoolCollege by rememberSaveable(initialDraft) { mutableStateOf(initialDraft?.schoolCollege.orEmpty()) }
-    var parentAadhaarNo by rememberSaveable(initialDraft) { mutableStateOf(initialDraft?.parentAadhaarNo.orEmpty()) }
-    var timeSlot by rememberSaveable(initialDraft) { mutableStateOf(initialDraft?.timeSlot.orEmpty()) }
-    var joinDate by rememberSaveable(initialDraft) { mutableStateOf(initialDraft?.joinDate ?: todayIsoDate()) }
-    var feesPaid by rememberSaveable(initialDraft) { mutableStateOf(initialDraft?.feesPaid ?: false) }
-    var amountPaid by rememberSaveable(initialDraft) { mutableStateOf(initialDraft?.amountPaid ?: "0") }
-    var batsmanStyle by rememberSaveable(initialDraft) { mutableStateOf(initialDraft?.batsmanStyle.orEmpty()) }
-    var bowlingStyles by rememberSaveable(initialDraft) { mutableStateOf(initialDraft?.bowlingStyles?.toSet() ?: emptySet()) }
-    var readyToStartNow by rememberSaveable(initialDraft) { mutableStateOf(initialDraft?.readyToStartNow ?: false) }
+    var applicantName by rememberSaveable { mutableStateOf("") }
+    var nationality by rememberSaveable { mutableStateOf("Indian") }
+    var birthDay by rememberSaveable { mutableStateOf("") }
+    var birthMonth by rememberSaveable { mutableStateOf("") }
+    var birthYear by rememberSaveable { mutableStateOf("") }
+    var gender by rememberSaveable { mutableStateOf("") }
+    var fatherGuardianName by rememberSaveable { mutableStateOf("") }
+    var emergencyContactNo by rememberSaveable { mutableStateOf("") }
+    var parentContactNo by rememberSaveable { mutableStateOf("") }
+    var city by rememberSaveable { mutableStateOf("") }
+    var address by rememberSaveable { mutableStateOf("") }
+    var schoolCollege by rememberSaveable { mutableStateOf("") }
+    var parentAadhaarNo by rememberSaveable { mutableStateOf("") }
+    var timeSlot by rememberSaveable { mutableStateOf("") }
+    var joinDate by rememberSaveable { mutableStateOf(todayIsoDate()) }
+    var feesPaid by rememberSaveable { mutableStateOf(false) }
+    var amountPaid by rememberSaveable { mutableStateOf("0") }
+    var batsmanStyle by rememberSaveable { mutableStateOf("") }
+    var bowlingStyles by rememberSaveable { mutableStateOf(emptySet<String>()) }
+    var readyToStartNow by rememberSaveable { mutableStateOf(false) }
     var consentAccepted by rememberSaveable { mutableStateOf(false) }
     var termsAccepted by rememberSaveable { mutableStateOf(false) }
     var inlineMessage by rememberSaveable { mutableStateOf("") }
@@ -2997,11 +3077,7 @@ private fun AdmissionFormSheet(
             }
 
             Text(
-                if (initialDraft == null) {
-                    "Fill this once for a first-time admission. A unique registration number will be generated automatically and the player card will appear on the dashboard."
-                } else {
-                    "The scanned document has been read and the likely fields are filled in below. Please review every value before submitting."
-                },
+                "Fill this once for a first-time admission. A unique registration number will be generated automatically and the player card will appear on the dashboard.",
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
@@ -3011,6 +3087,44 @@ private fun AdmissionFormSheet(
                 value = previewRegNo?.toString() ?: "Loading...",
                 accent = BrandBlue,
             )
+            if (!attachedDocumentLabel.isNullOrBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = BrandBlue.copy(alpha = 0.08f),
+                    border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.12f)),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Outlined.Description,
+                            contentDescription = null,
+                            tint = BrandBlue,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Text(
+                                "Attached document",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = BrandBlue,
+                            )
+                            Text(
+                                attachedDocumentLabel,
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                }
+            }
 
             AdmissionSectionCard(title = "Player details") {
                 AdmissionTextField(
