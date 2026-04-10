@@ -1,10 +1,5 @@
 const SUPABASE_CONFIG = window.GEN_ALPHA_SUPABASE_CONFIG ?? {};
 
-const dashboardView = document.getElementById("dashboardView");
-const admissionView = document.getElementById("admissionView");
-const dashboardViewButton = document.getElementById("dashboardViewButton");
-const admissionViewButton = document.getElementById("admissionViewButton");
-
 const kidForm = document.getElementById("kidForm");
 const kidsList = document.getElementById("kidsList");
 const emptyState = document.getElementById("emptyState");
@@ -16,7 +11,6 @@ const joinDateInput = document.getElementById("joinDate");
 const formMessage = document.getElementById("formMessage");
 const saveButton = document.getElementById("saveButton");
 const cancelEditButton = document.getElementById("cancelEditButton");
-
 const loginForm = document.getElementById("loginForm");
 const loginMessage = document.getElementById("loginMessage");
 const managerTools = document.getElementById("managerTools");
@@ -33,7 +27,6 @@ const managerIdentity = document.getElementById("managerIdentity");
 const lastLoginHint = document.getElementById("lastLoginHint");
 const formPanel = document.getElementById("formPanel");
 const recordsHelper = document.getElementById("recordsHelper");
-
 const joinedCount = document.getElementById("joinedCount");
 const activeCount = document.getElementById("activeCount");
 const paidCount = document.getElementById("paidCount");
@@ -41,35 +34,7 @@ const returningCount = document.getElementById("returningCount");
 const slotFilters = document.getElementById("slotFilters");
 const globalToast = document.getElementById("globalToast");
 
-const admissionForm = document.getElementById("admissionForm");
-const admissionRegNo = document.getElementById("admissionRegNo");
-const admissionMessage = document.getElementById("admissionMessage");
-const admissionBirthDay = document.getElementById("admissionBirthDay");
-const admissionBirthMonth = document.getElementById("admissionBirthMonth");
-const admissionBirthYear = document.getElementById("admissionBirthYear");
-const admissionAge = document.getElementById("admissionAge");
-const admissionJoinDate = document.getElementById("admissionJoinDate");
-const admissionFeesPaid = document.getElementById("admissionFeesPaid");
-const admissionAmountPaid = document.getElementById("admissionAmountPaid");
-const resetAdmissionButton = document.getElementById("resetAdmissionButton");
-const submitAdmissionButton = document.getElementById("submitAdmissionButton");
-
 const TIME_SLOTS = ["6AM", "7:30AM", "4PM", "5:30PM", "7PM"];
-const ADMISSION_MONTHS = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
-const ADMISSION_YEARS = Array.from({ length: 16 }, (_, index) => String(2010 + index));
 
 const hasSupabaseConfig = Boolean(SUPABASE_CONFIG.url && SUPABASE_CONFIG.anonKey);
 const supabaseClient =
@@ -77,7 +42,6 @@ const supabaseClient =
     ? window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey)
     : null;
 const isBackendReady = Boolean(supabaseClient);
-
 const LAST_EMAIL_STORAGE_KEY = "gen-alpha-last-manager-email";
 const LAST_PASSWORD_STORAGE_KEY = "gen-alpha-last-manager-password";
 
@@ -88,44 +52,54 @@ let isAuthPanelOpen = false;
 let lastManagerEmail = localStorage.getItem(LAST_EMAIL_STORAGE_KEY) ?? "";
 let lastManagerPassword = localStorage.getItem(LAST_PASSWORD_STORAGE_KEY) ?? "";
 let activeSlotFilter = "";
-let activeView = "dashboard";
 let toastTimeoutId = null;
 
 const getActiveManagerEmail = () => lastManagerEmail || "manager";
 
-const normalizeKid = (kid) => ({
-  id: kid.id,
-  name: kid.name || "",
-  age: Number(kid.age) || 0,
-  regNo: kid.reg_no || null,
-  timeSlot: kid.time_slot || "",
-  joinDate: kid.join_date || "",
-  feesPaid: kid.fees_paid ? "yes" : "no",
-  amountPaid: Number(kid.amount_paid) || 0,
-  renewals: Array.isArray(kid.renewals) ? kid.renewals.filter(Boolean) : [],
-  addedBy: kid.added_by || "Unknown",
-  updatedBy: kid.updated_by || kid.added_by || "Unknown",
-  discontinued: Boolean(kid.discontinued),
+const normalizeKid = (kid) => {
+  const renewals = Array.isArray(kid.renewals) ? kid.renewals.filter(Boolean) : [];
+
+  return {
+    id: kid.id,
+    name: kid.name || "",
+    age: Number(kid.age) || 0,
+    timeSlot: kid.time_slot || "",
+    joinDate: kid.join_date || "",
+    feesPaid: kid.fees_paid ? "yes" : "no",
+    amountPaid: Number(kid.amount_paid) || 0,
+    renewals,
+    addedBy: kid.added_by || "Unknown",
+    updatedBy: kid.updated_by || kid.added_by || "Unknown",
+    discontinued: Boolean(kid.discontinued),
+  };
+};
+
+const toDatabasePayload = ({
+  name,
+  age,
+  timeSlot,
+  joinDate,
+  feesPaid,
+  amountPaid,
+  renewals,
+  addedBy,
+  updatedBy,
+  discontinued,
+}) => ({
+  name,
+  age,
+  time_slot: timeSlot,
+  join_date: joinDate,
+  fees_paid: feesPaid === "yes",
+  amount_paid: Number(amountPaid),
+  renewals,
+  added_by: addedBy,
+  updated_by: updatedBy,
+  discontinued: Boolean(discontinued),
 });
 
-const toDatabasePayload = (payload) => ({
-  name: payload.name,
-  age: payload.age,
-  time_slot: payload.timeSlot,
-  join_date: payload.joinDate,
-  fees_paid: payload.feesPaid === "yes",
-  amount_paid: Number(payload.amountPaid),
-  renewals: payload.renewals,
-  added_by: payload.addedBy,
-  updated_by: payload.updatedBy,
-  discontinued: Boolean(payload.discontinued),
-});
-
-const todayIso = () => new Date().toISOString().split("T")[0];
-
-const setDateLimits = () => {
-  joinDateInput.max = todayIso();
-  admissionJoinDate.max = todayIso();
+const setJoinDateLimit = () => {
+  joinDateInput.max = new Date().toISOString().split("T")[0];
 };
 
 const formatDate = (value) =>
@@ -135,103 +109,28 @@ const formatDate = (value) =>
         month: "short",
         year: "numeric",
       })
-    : "Not available";
-
-const calculateAge = (dateValue) => {
-  if (!dateValue) {
-    return null;
-  }
-
-  const today = new Date();
-  const birthDate = new Date(`${dateValue}T00:00:00`);
-
-  if (Number.isNaN(birthDate.getTime())) {
-    return null;
-  }
-
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const monthDifference = today.getMonth() - birthDate.getMonth();
-
-  if (monthDifference < 0 || (monthDifference === 0 && today.getDate() < birthDate.getDate())) {
-    age -= 1;
-  }
-
-  return age >= 0 ? age : null;
-};
-
-const buildDobIso = () => {
-  if (!admissionBirthDay.value || !admissionBirthMonth.value || !admissionBirthYear.value) {
-    return "";
-  }
-
-  const monthIndex = ADMISSION_MONTHS.indexOf(admissionBirthMonth.value) + 1;
-  if (monthIndex <= 0) {
-    return "";
-  }
-
-  return `${admissionBirthYear.value}-${String(monthIndex).padStart(2, "0")}-${String(
-    admissionBirthDay.value
-  ).padStart(2, "0")}`;
-};
-
-const updateAdmissionAge = () => {
-  const age = calculateAge(buildDobIso());
-  admissionAge.textContent = age === null ? "Auto" : String(age);
-};
-
-const populateAdmissionSelectors = () => {
-  admissionBirthDay.innerHTML += Array.from({ length: 31 }, (_, index) => {
-    const day = String(index + 1);
-    return `<option value="${day}">${day}</option>`;
-  }).join("");
-
-  admissionBirthMonth.innerHTML += ADMISSION_MONTHS.map(
-    (month) => `<option value="${month}">${month}</option>`
-  ).join("");
-
-  admissionBirthYear.innerHTML += ADMISSION_YEARS.map(
-    (year) => `<option value="${year}">${year}</option>`
-  ).join("");
-};
+    : "Not renewed";
 
 const getReferenceDate = (kid) =>
   kid.renewals.length > 0 ? kid.renewals[kid.renewals.length - 1] : kid.joinDate;
 
 const getDaysSinceDate = (dateValue) => {
   const targetDate = new Date(`${dateValue}T00:00:00`);
-  return Math.floor((new Date() - targetDate) / (1000 * 60 * 60 * 24));
+  const msPerDay = 1000 * 60 * 60 * 24;
+  return Math.floor((new Date() - targetDate) / msPerDay);
 };
 
 const getStudentType = (kid) => (kid.renewals.length > 0 ? "Returning" : "New");
 const isActiveKid = (kid) => !kid.discontinued;
 const isFeesPending = (kid) => isActiveKid(kid) && kid.feesPaid !== "yes";
-const isRenewalPending = (kid) => isActiveKid(kid) && getDaysSinceDate(getReferenceDate(kid)) >= 30;
-
+const isRenewalPending = (kid) =>
+  isActiveKid(kid) && getDaysSinceDate(getReferenceDate(kid)) >= 30;
 const getFilteredKids = () =>
   !activeSlotFilter
     ? kids
     : activeSlotFilter === "not-set"
       ? kids.filter((kid) => isActiveKid(kid) && !kid.timeSlot)
       : kids.filter((kid) => isActiveKid(kid) && kid.timeSlot === activeSlotFilter);
-
-const showToast = (message) => {
-  if (toastTimeoutId) {
-    window.clearTimeout(toastTimeoutId);
-  }
-  globalToast.textContent = message;
-  globalToast.hidden = false;
-  toastTimeoutId = window.setTimeout(() => {
-    globalToast.hidden = true;
-  }, 2800);
-};
-
-const setActiveView = (view) => {
-  activeView = view;
-  dashboardView.hidden = view !== "dashboard";
-  admissionView.hidden = view !== "admission";
-  dashboardViewButton.classList.toggle("active", view === "dashboard");
-  admissionViewButton.classList.toggle("active", view === "admission");
-};
 
 const updateStats = () => {
   const activeKids = kids.filter(isActiveKid);
@@ -254,7 +153,11 @@ const renderSlotFilters = () => {
   ];
 
   if (notSetCount > 0) {
-    filters.push({ value: "not-set", label: "Not set", count: notSetCount });
+    filters.push({
+      value: "not-set",
+      label: "Not set",
+      count: notSetCount,
+    });
   } else if (activeSlotFilter === "not-set") {
     activeSlotFilter = "";
   }
@@ -279,38 +182,38 @@ const renderSlotFilters = () => {
     .join("");
 };
 
+const showToast = (message) => {
+  if (!globalToast) {
+    return;
+  }
+
+  if (toastTimeoutId) {
+    window.clearTimeout(toastTimeoutId);
+  }
+
+  globalToast.textContent = message;
+  globalToast.hidden = false;
+
+  toastTimeoutId = window.setTimeout(() => {
+    globalToast.hidden = true;
+  }, 2800);
+};
+
 const syncAmountState = () => {
   const isPaid = feesPaidSelect.value === "yes" && isManagerLoggedIn && isBackendReady;
   amountPaidInput.disabled = !isPaid;
+
   if (!isPaid) {
     amountPaidInput.value = "0";
-  }
-};
-
-const syncAdmissionAmountState = () => {
-  const isPaid = admissionFeesPaid.value === "yes";
-  admissionAmountPaid.disabled = !isPaid;
-  if (!isPaid) {
-    admissionAmountPaid.value = "0";
   }
 };
 
 const resetFormState = () => {
   editingKidId = null;
   kidForm.reset();
-  joinDateInput.value = todayIso();
   saveButton.textContent = "Save kid details";
   cancelEditButton.hidden = true;
   syncAmountState();
-};
-
-const resetAdmissionForm = async () => {
-  admissionForm.reset();
-  admissionJoinDate.value = todayIso();
-  admissionMessage.textContent = "";
-  admissionAge.textContent = "Auto";
-  syncAdmissionAmountState();
-  await loadAdmissionRegNo();
 };
 
 const updateAuthPanel = () => {
@@ -321,11 +224,14 @@ const updateAuthPanel = () => {
   managerIdentity.hidden = !isManagerLoggedIn || !lastManagerEmail;
   managerIdentity.textContent = isManagerLoggedIn ? `Logged in: ${lastManagerEmail}` : "";
   lastLoginHint.hidden = !isManagerLoggedIn || !lastManagerEmail;
-  lastLoginHint.textContent = isManagerLoggedIn ? `Last used manager email: ${lastManagerEmail}` : "";
+  lastLoginHint.textContent = isManagerLoggedIn
+    ? `Last used manager email: ${lastManagerEmail}`
+    : "";
 };
 
 const renderSummary = (alertKids) => {
   const totalAlerts = alertKids.length;
+
   alertCount.textContent =
     totalAlerts === 1 ? "1 kid needs attention" : `${totalAlerts} kids need attention`;
 
@@ -334,10 +240,14 @@ const renderSummary = (alertKids) => {
     return;
   }
 
-  alertSummary.textContent =
-    totalAlerts === 0
-      ? "All current join fees and renewals are up to date."
-      : `Need fees or renewal action for: ${alertKids.map((kid) => kid.name).join(", ")}`;
+  if (totalAlerts === 0) {
+    alertSummary.textContent = "All current join fees and renewals are up to date.";
+    return;
+  }
+
+  alertSummary.textContent = `Need fees or renewal action for: ${alertKids
+    .map((kid) => kid.name)
+    .join(", ")}`;
 };
 
 const updateAccessUI = () => {
@@ -352,7 +262,6 @@ const updateAccessUI = () => {
       "Add your Supabase URL and anon key in supabase-config.js, then create a manager user in Supabase Auth.";
     editorLock.hidden = false;
     editorLock.textContent = "Complete Supabase setup before editing academy records.";
-    admissionMessage.textContent = "Supabase setup is required before admission forms can be submitted.";
   } else if (!isBackendReady) {
     loginForm.hidden = true;
     managerTools.hidden = true;
@@ -376,8 +285,13 @@ const updateAccessUI = () => {
     control.disabled = !canEdit;
   });
 
-  document.getElementById("email").value = lastManagerEmail;
-  document.getElementById("password").value = lastManagerPassword;
+  if (lastManagerEmail) {
+    document.getElementById("email").value = lastManagerEmail;
+  }
+
+  if (lastManagerPassword) {
+    document.getElementById("password").value = lastManagerPassword;
+  }
 
   formPanel.hidden = !canEdit;
   recordsHelper.textContent = canEdit
@@ -389,8 +303,8 @@ const updateAccessUI = () => {
     : !isBackendReady
       ? "Supabase client failed to load."
       : canEdit
-        ? "Manager access enabled. You can add and update records."
-        : "Login is required before any edits can be made.";
+      ? "Manager access enabled. You can add and update records."
+      : "Login is required before any edits can be made.";
 
   if (!canEdit) {
     resetFormState();
@@ -406,7 +320,6 @@ const renderKids = () => {
   renderSlotFilters();
 
   const visibleKids = getFilteredKids();
-  const alertKids = kids.filter((kid) => isFeesPending(kid) || isRenewalPending(kid));
 
   if (kids.length === 0) {
     emptyState.hidden = false;
@@ -416,7 +329,7 @@ const renderKids = () => {
         ? "No Gen Alpha players added yet. Use the form above to create the first record."
         : "No Gen Alpha players added yet. Login as manager to create the first record."
       : "No data source is connected yet. Finish the Supabase setup to start storing academy records.";
-    renderSummary(alertKids);
+    renderSummary([]);
     return;
   }
 
@@ -429,12 +342,20 @@ const renderKids = () => {
         : activeSlotFilter === "not-set"
           ? "No active kids are currently missing a time slot."
           : `No active kids are currently assigned to the ${activeSlotFilter} slot.`;
-    renderSummary(alertKids);
+    renderSummary(kids.filter((kid) => isFeesPending(kid) || isRenewalPending(kid)));
     return;
   }
 
   emptyState.hidden = true;
   kidsList.hidden = false;
+
+  const alertKids = [];
+
+  kids.forEach((kid) => {
+    if (isFeesPending(kid) || isRenewalPending(kid)) {
+      alertKids.push(kid);
+    }
+  });
 
   visibleKids.forEach((kid) => {
     const referenceDate = getReferenceDate(kid);
@@ -448,13 +369,14 @@ const renderKids = () => {
     const renewalStatus = kid.discontinued
       ? "Tracking paused"
       : renewalPending
-        ? `${daysSinceCycle} days passed`
+        ? `${daysSinceCycle} days passed, renewal pending`
         : kid.renewals.length > 0
-          ? `${30 - daysSinceCycle} days left`
-          : `${30 - daysSinceCycle} days left`;
+          ? `Renewed, next due in ${30 - daysSinceCycle} days`
+          : `Not due yet, ${30 - daysSinceCycle} days left`;
 
     const card = document.createElement("article");
     card.className = `kid-card${needsAttention ? " alert" : ""}`;
+
     card.innerHTML = `
       <div class="kid-card-top">
         <div class="kid-card-title">
@@ -483,8 +405,8 @@ const renderKids = () => {
           <span class="data-value">${formatDate(kid.joinDate)}</span>
         </div>
         <div class="data-tile">
-          <span class="data-label">${kid.discontinued ? "Status Date" : "Latest Renewal"}</span>
-          <span class="data-value">${formatDate(latestRenewal || kid.joinDate)}</span>
+          <span class="data-label">Latest Renewal</span>
+          <span class="data-value">${formatDate(latestRenewal)}</span>
         </div>
         <div class="data-tile">
           <span class="data-label">Fees</span>
@@ -518,25 +440,38 @@ const renderKids = () => {
         ${
           isManagerLoggedIn
             ? `
-              <div class="kid-card-actions">
-                <button class="secondary-btn" data-action="edit" data-id="${kid.id}" type="button">Edit</button>
-                <button class="secondary-btn" data-action="toggle-status" data-id="${kid.id}" type="button">
-                  ${kid.discontinued ? "Mark active" : "Discontinue"}
-                </button>
-                ${
-                  canRenew
-                    ? `<button class="renew-btn" data-action="renew" data-id="${kid.id}" type="button">Mark renewal paid</button>`
-                    : `<span class="action-note">${
-                        kid.discontinued ? "Renewal tracking paused" : `Renew in ${30 - daysSinceCycle} days`
-                      }</span>`
-                }
-                <button class="danger-btn" data-action="delete" data-id="${kid.id}" type="button">Delete</button>
-              </div>
+          <div class="kid-card-actions">
+            <button class="secondary-btn" data-action="edit" data-id="${kid.id}" type="button">
+              Edit
+            </button>
+            <button class="secondary-btn" data-action="toggle-status" data-id="${kid.id}" type="button">
+              ${kid.discontinued ? "Mark active" : "Discontinue"}
+            </button>
+            ${
+              canRenew
+                ? `
+              <button class="renew-btn" data-action="renew" data-id="${kid.id}" type="button">
+                Mark renewal paid
+              </button>
             `
+                : `
+              <span class="action-note">${
+                kid.discontinued
+                  ? "Renewal tracking paused"
+                  : `Renew in ${30 - daysSinceCycle} day${30 - daysSinceCycle === 1 ? "" : "s"}`
+              }</span>
+            `
+            }
+            <button class="danger-btn" data-action="delete" data-id="${kid.id}" type="button">
+              Delete
+            </button>
+          </div>
+        `
             : ""
         }
       </div>
     `;
+
     kidsList.appendChild(card);
   });
 
@@ -552,7 +487,12 @@ const refreshSession = async () => {
 
   const {
     data: { session },
+    error,
   } = await supabaseClient.auth.getSession();
+
+  if (error) {
+    loginMessage.textContent = error.message;
+  }
 
   if (session?.user?.email) {
     lastManagerEmail = session.user.email;
@@ -570,7 +510,10 @@ const loadKids = async () => {
     return;
   }
 
-  const { data, error } = await supabaseClient.from("students").select("*").order("join_date", { ascending: false });
+  const { data, error } = await supabaseClient
+    .from("students")
+    .select("*")
+    .order("join_date", { ascending: false });
 
   if (error) {
     kids = [];
@@ -584,23 +527,6 @@ const loadKids = async () => {
 
   kids = data.map(normalizeKid);
   renderKids();
-};
-
-const loadAdmissionRegNo = async () => {
-  if (!isBackendReady) {
-    admissionRegNo.textContent = "Setup required";
-    return;
-  }
-
-  const { data, error } = await supabaseClient.rpc("peek_next_admission_reg_no");
-  if (error) {
-    admissionRegNo.textContent = "Unavailable";
-    admissionMessage.textContent = error.message;
-    return;
-  }
-
-  const value = Array.isArray(data) ? data[0]?.next_reg_no : data?.next_reg_no;
-  admissionRegNo.textContent = value ? String(value) : "Unavailable";
 };
 
 const initializeAuthListener = () => {
@@ -622,9 +548,6 @@ const initializeAuthListener = () => {
   });
 };
 
-dashboardViewButton.addEventListener("click", () => setActiveView("dashboard"));
-admissionViewButton.addEventListener("click", () => setActiveView("admission"));
-
 loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
@@ -634,10 +557,13 @@ loginForm.addEventListener("submit", async (event) => {
   }
 
   const formData = new FormData(loginForm);
-  const email = String(formData.get("email") || "").trim();
-  const password = String(formData.get("password") || "");
+  const email = formData.get("email").toString().trim();
+  const password = formData.get("password").toString();
 
-  const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  const { error } = await supabaseClient.auth.signInWithPassword({
+    email,
+    password,
+  });
 
   if (error) {
     loginMessage.textContent = error.message;
@@ -648,6 +574,7 @@ loginForm.addEventListener("submit", async (event) => {
   lastManagerPassword = password;
   localStorage.setItem(LAST_EMAIL_STORAGE_KEY, lastManagerEmail);
   localStorage.setItem(LAST_PASSWORD_STORAGE_KEY, lastManagerPassword);
+  loginForm.reset();
   loginMessage.textContent = "";
   isAuthPanelOpen = false;
   await refreshSession();
@@ -660,6 +587,7 @@ const handleLogout = async () => {
   }
 
   const { error } = await supabaseClient.auth.signOut();
+
   if (error) {
     loginMessage.textContent = error.message;
     return;
@@ -684,12 +612,12 @@ kidForm.addEventListener("submit", async (event) => {
 
   const formData = new FormData(kidForm);
   const payload = {
-    name: String(formData.get("name") || "").trim(),
-    age: Number(formData.get("age") || 0),
-    timeSlot: String(formData.get("timeSlot") || ""),
-    joinDate: String(formData.get("joinDate") || ""),
-    feesPaid: String(formData.get("feesPaid") || "no"),
-    amountPaid: Number(formData.get("amountPaid") || 0),
+    name: formData.get("name").toString().trim(),
+    age: Number(formData.get("age")),
+    timeSlot: formData.get("timeSlot").toString(),
+    joinDate: formData.get("joinDate").toString(),
+    feesPaid: formData.get("feesPaid").toString(),
+    amountPaid: Number(formData.get("amountPaid")),
     renewals: [],
     addedBy: getActiveManagerEmail(),
     updatedBy: getActiveManagerEmail(),
@@ -701,11 +629,17 @@ kidForm.addEventListener("submit", async (event) => {
     return;
   }
 
-  let error = null;
+  if (new Date(payload.joinDate) > new Date()) {
+    formMessage.textContent = "Join date cannot be in the future.";
+    return;
+  }
+
   const wasEditing = Boolean(editingKidId);
+  let error = null;
 
   if (wasEditing) {
     const currentKid = kids.find((kid) => kid.id === editingKidId);
+
     ({ error } = await supabaseClient
       .from("students")
       .update(
@@ -734,71 +668,9 @@ kidForm.addEventListener("submit", async (event) => {
   await loadKids();
 });
 
-admissionForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-
-  if (!isBackendReady) {
-    admissionMessage.textContent = "Supabase setup is required before admission forms can be submitted.";
-    return;
-  }
-
-  const formData = new FormData(admissionForm);
-  const dateOfBirth = buildDobIso();
-  const age = calculateAge(dateOfBirth);
-  const bowlingStyles = formData.getAll("bowlingStyles").map((value) => String(value));
-
-  if (!dateOfBirth || age === null) {
-    admissionMessage.textContent = "Please complete the date of birth properly.";
-    return;
-  }
-
-  submitAdmissionButton.disabled = true;
-  admissionMessage.textContent = "Submitting admission form...";
-
-  const { data, error } = await supabaseClient.rpc("submit_admission_form", {
-    p_applicant_name: String(formData.get("applicantName") || "").trim(),
-    p_nationality: String(formData.get("nationality") || "").trim(),
-    p_date_of_birth: dateOfBirth,
-    p_age: age,
-    p_gender: String(formData.get("gender") || "").trim(),
-    p_father_guardian_name: String(formData.get("guardianName") || "").trim(),
-    p_alternate_contact_no: String(formData.get("alternateContact") || "").trim(),
-    p_parent_contact_no: String(formData.get("parentContact") || "").trim(),
-    p_city: String(formData.get("city") || "").trim(),
-    p_address: String(formData.get("address") || "").trim(),
-    p_school_college: String(formData.get("schoolCollege") || "").trim(),
-    p_parent_aadhaar_no: String(formData.get("aadhaar") || "").trim(),
-    p_time_slot: String(formData.get("timeSlot") || "").trim(),
-    p_join_date: String(formData.get("joinDate") || "").trim(),
-    p_fees_paid: String(formData.get("feesPaid") || "no") === "yes",
-    p_amount_paid: Number(formData.get("amountPaid") || 0),
-    p_batsman_style: String(formData.get("batsmanStyle") || "").trim(),
-    p_bowling_styles: bowlingStyles,
-    p_ready_to_start: formData.get("readyToStart") === "on",
-    p_consent_accepted: formData.get("consentAccepted") === "on",
-    p_terms_accepted: formData.get("termsAccepted") === "on",
-  });
-
-  submitAdmissionButton.disabled = false;
-
-  if (error) {
-    admissionMessage.textContent = error.message;
-    return;
-  }
-
-  const row = Array.isArray(data) ? data[0] : data;
-  admissionMessage.textContent = `Admission submitted successfully. Reg No ${row?.reg_no ?? admissionRegNo.textContent}.`;
-  showToast(`Admission saved for ${String(formData.get("applicantName") || "").trim()}`);
-  await resetAdmissionForm();
-  await loadKids();
-});
-
-resetAdmissionButton.addEventListener("click", async () => {
-  await resetAdmissionForm();
-});
-
 kidsList.addEventListener("click", async (event) => {
   const target = event.target;
+
   if (!(target instanceof HTMLButtonElement) || !isBackendReady || !isManagerLoggedIn) {
     return;
   }
@@ -807,7 +679,10 @@ kidsList.addEventListener("click", async (event) => {
 
   if (action === "edit") {
     const kidToEdit = kids.find((kid) => kid.id === id);
-    if (!kidToEdit) return;
+
+    if (!kidToEdit) {
+      return;
+    }
 
     editingKidId = kidToEdit.id;
     document.getElementById("name").value = kidToEdit.name;
@@ -827,13 +702,17 @@ kidsList.addEventListener("click", async (event) => {
   if (action === "delete") {
     const kidToDelete = kids.find((kid) => kid.id === id);
     const { error } = await supabaseClient.from("students").delete().eq("id", id);
+
     if (error) {
       formMessage.textContent = error.message;
       return;
     }
+
     if (editingKidId === id) {
       resetFormState();
+      formMessage.textContent = "Editing record was deleted.";
     }
+
     await loadKids();
     if (kidToDelete) {
       showToast(`Player ${kidToDelete.name} deleted`);
@@ -843,12 +722,23 @@ kidsList.addEventListener("click", async (event) => {
 
   if (action === "renew") {
     const kidToRenew = kids.find((kid) => kid.id === id);
-    if (!kidToRenew) return;
 
-    const renewals = [...kidToRenew.renewals, todayIso()];
+    if (!kidToRenew) {
+      return;
+    }
+
+    if (getDaysSinceDate(getReferenceDate(kidToRenew)) < 30) {
+      formMessage.textContent = "This student is not due for renewal yet.";
+      return;
+    }
+
+    const renewals = [...kidToRenew.renewals, new Date().toISOString().split("T")[0]];
     const { error } = await supabaseClient
       .from("students")
-      .update({ renewals, updated_by: getActiveManagerEmail() })
+      .update({
+        renewals,
+        updated_by: getActiveManagerEmail(),
+      })
       .eq("id", id);
 
     if (error) {
@@ -863,11 +753,17 @@ kidsList.addEventListener("click", async (event) => {
 
   if (action === "toggle-status") {
     const kidToUpdate = kids.find((kid) => kid.id === id);
-    if (!kidToUpdate) return;
+
+    if (!kidToUpdate) {
+      return;
+    }
 
     const { error } = await supabaseClient
       .from("students")
-      .update({ discontinued: !kidToUpdate.discontinued, updated_by: getActiveManagerEmail() })
+      .update({
+        discontinued: !kidToUpdate.discontinued,
+        updated_by: getActiveManagerEmail(),
+      })
       .eq("id", id);
 
     if (error) {
@@ -891,39 +787,37 @@ authToggleButton.addEventListener("click", () => {
   isAuthPanelOpen = !isAuthPanelOpen;
   updateAuthPanel();
 });
+
 authCloseButton.addEventListener("click", () => {
   isAuthPanelOpen = false;
   updateAuthPanel();
 });
+
 authBackdrop.addEventListener("click", () => {
   isAuthPanelOpen = false;
   updateAuthPanel();
 });
-feesPaidSelect.addEventListener("change", syncAmountState);
-admissionFeesPaid.addEventListener("change", syncAdmissionAmountState);
-admissionBirthDay.addEventListener("change", updateAdmissionAge);
-admissionBirthMonth.addEventListener("change", updateAdmissionAge);
-admissionBirthYear.addEventListener("change", updateAdmissionAge);
 
+feesPaidSelect.addEventListener("change", syncAmountState);
 slotFilters.addEventListener("click", (event) => {
+  if (!(event.target instanceof Element)) {
+    return;
+  }
+
   const target = event.target.closest("[data-slot-filter]");
+
   if (!(target instanceof HTMLButtonElement)) {
     return;
   }
 
   const nextFilter = target.dataset.slotFilter || "";
-  activeSlotFilter = nextFilter === "all" || nextFilter === activeSlotFilter ? "" : nextFilter;
+  activeSlotFilter =
+    nextFilter === "all" || nextFilter === activeSlotFilter ? "" : nextFilter;
   renderKids();
 });
 
 const initializeApp = async () => {
-  populateAdmissionSelectors();
-  setDateLimits();
-  joinDateInput.value = todayIso();
-  admissionJoinDate.value = todayIso();
-  syncAmountState();
-  syncAdmissionAmountState();
-  setActiveView("dashboard");
+  setJoinDateLimit();
   updateAccessUI();
   renderKids();
 
@@ -934,12 +828,12 @@ const initializeApp = async () => {
   }
 
   if (!isBackendReady) {
-    await loadAdmissionRegNo();
     return;
   }
 
   initializeAuthListener();
-  await Promise.all([refreshSession(), loadKids(), loadAdmissionRegNo()]);
+  await refreshSession();
+  await loadKids();
 };
 
 initializeApp();
