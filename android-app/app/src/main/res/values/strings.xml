@@ -2,6 +2,7 @@
 <resources>
     <string name="app_name">Gen Alpha Academy</string>
     <!-- Set these before sharing the admission app with parents -->
-    <string name="academy_upi_id"></string>
+    <string name="academy_upi_id">9059962498@ybl</string>
     <string name="academy_upi_name">Gen Alpha Cricket Academy</string>
+    <string name="academy_upi_mobile">9059962499</string>
 </resources>

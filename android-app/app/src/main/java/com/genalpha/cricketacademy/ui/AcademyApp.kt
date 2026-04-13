@@ -3111,7 +3111,6 @@ private fun AdmissionFormSheet(
     var amountPaid by rememberSaveable { mutableStateOf("0") }
     var jerseySize by rememberSaveable { mutableStateOf("") }
     var jerseyPairs by rememberSaveable { mutableStateOf("0") }
-    var paymentReference by rememberSaveable { mutableStateOf("") }
     var comments by rememberSaveable { mutableStateOf("") }
     var batsmanStyle by rememberSaveable { mutableStateOf("") }
     var bowlingStyles by rememberSaveable { mutableStateOf(emptySet<String>()) }
@@ -3125,14 +3124,13 @@ private fun AdmissionFormSheet(
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val upiId = remember { context.getString(R.string.academy_upi_id) }
+    val upiMobile = remember { context.getString(R.string.academy_upi_mobile) }
     val upiName = remember { context.getString(R.string.academy_upi_name) }
-    // Let parents generate a payment link/QR before toggling "Fees paid".
-    // We only enable UPI actions when a positive amount is entered.
     val upiAmount = remember(amountPaid) {
         amountPaid.toDoubleOrNull()?.takeIf { it > 0.0 }
     }
     val upiUri = remember(upiId, upiName, upiAmount, applicantName) {
-        if (upiId.isBlank() || upiAmount == null) "" else buildUpiPayUri(
+        if (upiId.isBlank()) "" else buildUpiPayUri(
             upiId = upiId,
             payeeName = upiName,
             amount = upiAmount,
@@ -3474,20 +3472,42 @@ private fun AdmissionFormSheet(
                                 fontSize = 13.sp,
                                 lineHeight = 18.sp,
                             )
-                        } else if (upiAmount == null) {
-                            Text(
-                                text = "Enter the amount above to enable the UPI QR and Pay button.",
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-                                fontSize = 13.sp,
-                                lineHeight = 18.sp,
-                            )
                         } else {
+                            val gpayPackage = "com.google.android.apps.nbu.paisa.user"
+                            val phonePePackage = "com.phonepe.app"
+
+                            val launchUpiApp: (String?) -> Unit = { packageName ->
+                                runCatching {
+                                    val uri = upiUri.ifBlank { throw IllegalStateException("UPI is not configured") }
+                                    val pm = context.packageManager
+                                    val targetIntent = Intent(Intent.ACTION_VIEW, Uri.parse(uri)).apply {
+                                        if (!packageName.isNullOrBlank()) {
+                                            setPackage(packageName)
+                                        }
+                                    }
+                                    val resolved = targetIntent.resolveActivity(pm)
+                                    if (resolved != null) {
+                                        context.startActivity(targetIntent)
+                                        return@runCatching
+                                    }
+
+                                    val fallbackIntent = Intent(Intent.ACTION_VIEW, Uri.parse(uri))
+                                    if (fallbackIntent.resolveActivity(pm) != null) {
+                                        context.startActivity(fallbackIntent)
+                                    } else {
+                                        throw IllegalStateException("No UPI app available")
+                                    }
+                                }.onFailure {
+                                    inlineMessage = "Unable to open a UPI app on this device."
+                                }
+                            }
+
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
+                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                     Text(
                                         text = "UPI ID",
                                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
@@ -3502,32 +3522,76 @@ private fun AdmissionFormSheet(
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
+                                    Text(
+                                        text = "Mobile number",
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                    Text(
+                                        text = upiMobile,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
                                 }
-                                TextButton(
-                                    onClick = { clipboardManager.setText(AnnotatedString(upiId)) },
-                                ) {
-                                    Text("Copy")
+                                Column(horizontalAlignment = Alignment.End) {
+                                    TextButton(
+                                        onClick = { clipboardManager.setText(AnnotatedString(upiId)) },
+                                    ) {
+                                        Text("Copy UPI")
+                                    }
+                                    TextButton(
+                                        onClick = { clipboardManager.setText(AnnotatedString(upiMobile)) },
+                                    ) {
+                                        Text("Copy mobile")
+                                    }
                                 }
                             }
 
+                            Text(
+                                text = if (upiAmount == null) {
+                                    "Amount is optional. Parents can enter it inside their UPI app."
+                                } else {
+                                    "Amount will be pre-filled in the UPI app."
+                                },
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                                fontSize = 12.sp,
+                                lineHeight = 18.sp,
+                            )
+
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 OutlinedButton(
-                                    onClick = { showUpiQr = !showUpiQr },
+                                    enabled = upiUri.isNotBlank(),
+                                    onClick = { launchUpiApp(gpayPackage) },
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(16.dp),
                                 ) {
-                                    Text(if (showUpiQr) "Hide QR" else "Show QR")
+                                    Text("Google Pay")
+                                }
+                                OutlinedButton(
+                                    enabled = upiUri.isNotBlank(),
+                                    onClick = { launchUpiApp(phonePePackage) },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(16.dp),
+                                ) {
+                                    Text("PhonePe")
+                                }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                OutlinedButton(
+                                    enabled = upiUri.isNotBlank(),
+                                    onClick = { launchUpiApp(null) },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(16.dp),
+                                ) {
+                                    Text("Any UPI app")
                                 }
                                 Button(
                                     enabled = upiUri.isNotBlank(),
-                                    onClick = {
-                                        runCatching {
-                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(upiUri))
-                                            context.startActivity(intent)
-                                        }.onFailure {
-                                            inlineMessage = "Unable to open a UPI app on this device."
-                                        }
-                                    },
+                                    onClick = { showUpiQr = !showUpiQr },
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(16.dp),
                                     colors = androidx.compose.material3.ButtonDefaults.buttonColors(
@@ -3535,7 +3599,7 @@ private fun AdmissionFormSheet(
                                         contentColor = Color.White,
                                     ),
                                 ) {
-                                    Text("Pay in UPI app")
+                                    Text(if (showUpiQr) "Hide QR" else "Show QR")
                                 }
                             }
                             if (showUpiQr && upiUri.isNotBlank()) {
@@ -3568,16 +3632,6 @@ private fun AdmissionFormSheet(
                                 }
                             }
                         }
-
-                        AdmissionTextField(
-                            value = paymentReference,
-                            onValueChange = { paymentReference = it },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .then(rememberBringIntoViewOnFocusModifier()),
-                            label = "UPI reference / UTR (optional)",
-                            singleLine = true,
-                        )
                     }
                 }
             }
@@ -3714,7 +3768,7 @@ private fun AdmissionFormSheet(
                                     jerseyPairs = jerseyPairs.ifBlank { "0" },
                                     paymentMethod = "UPI",
                                     paymentUpiId = upiId,
-                                    paymentReference = paymentReference,
+                                    paymentReference = "",
                                     comments = comments,
                                     batsmanStyle = batsmanStyle,
                                     bowlingStyles = bowlingStyles.toList(),
