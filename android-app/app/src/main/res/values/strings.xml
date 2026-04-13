@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Gen Alpha Academy</string>
+    <!-- Set these before sharing the admission app with parents -->
+    <string name="academy_upi_id"></string>
+    <string name="academy_upi_name">Gen Alpha Cricket Academy</string>
 </resources>

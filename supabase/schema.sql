@@ -10,6 +10,12 @@ create table if not exists public.students (
   join_date date not null,
   fees_paid boolean not null default false,
   amount_paid numeric(10, 2) not null default 0,
+  jersey_size text not null default '',
+  jersey_pairs integer not null default 0,
+  payment_method text not null default 'UPI',
+  payment_upi_id text not null default '',
+  payment_reference text not null default '',
+  comments text not null default '',
   renewals date[] not null default '{}',
   discontinued boolean not null default false,
   discontinued_at date,
@@ -38,6 +44,12 @@ create table if not exists public.admissions (
   join_date date not null default current_date,
   fees_paid boolean not null default false,
   amount_paid numeric(10, 2) not null default 0,
+  jersey_size text not null default '',
+  jersey_pairs integer not null default 0,
+  payment_method text not null default 'UPI',
+  payment_upi_id text not null default '',
+  payment_reference text not null default '',
+  comments text not null default '',
   batsman_style text not null default '',
   bowling_styles text[] not null default '{}',
   ready_to_start boolean not null default false,
@@ -91,6 +103,12 @@ add column if not exists reg_no bigint;
 alter table public.students
 add column if not exists admission_id uuid;
 
+alter table public.students
+add column if not exists jersey_size text not null default '';
+
+alter table public.students
+add column if not exists jersey_pairs integer not null default 0;
+
 create unique index if not exists students_reg_no_unique
 on public.students (reg_no)
 where reg_no is not null;
@@ -132,6 +150,12 @@ begin
     join_date,
     fees_paid,
     amount_paid,
+    jersey_size,
+    jersey_pairs,
+    payment_method,
+    payment_upi_id,
+    payment_reference,
+    comments,
     renewals,
     discontinued,
     discontinued_at,
@@ -147,6 +171,12 @@ begin
     new.join_date,
     new.fees_paid,
     new.amount_paid,
+    new.jersey_size,
+    new.jersey_pairs,
+    new.payment_method,
+    new.payment_upi_id,
+    new.payment_reference,
+    new.comments,
     '{}',
     false,
     null,
@@ -172,7 +202,7 @@ create or replace function public.submit_admission_form(
   p_age integer,
   p_gender text,
   p_father_guardian_name text,
-  p_emergency_contact_no text,
+  p_alternate_contact_no text,
   p_parent_contact_no text,
   p_city text,
   p_address text,
@@ -182,11 +212,17 @@ create or replace function public.submit_admission_form(
   p_join_date date,
   p_fees_paid boolean,
   p_amount_paid numeric,
+  p_jersey_size text,
+  p_jersey_pairs integer,
   p_batsman_style text,
   p_bowling_styles text[],
   p_ready_to_start boolean,
   p_consent_accepted boolean,
-  p_terms_accepted boolean
+  p_terms_accepted boolean,
+  p_payment_method text default 'UPI',
+  p_payment_upi_id text default '',
+  p_payment_reference text default '',
+  p_comments text default ''
 )
 returns table(id uuid, reg_no bigint)
 language plpgsql
@@ -228,6 +264,12 @@ begin
     join_date,
     fees_paid,
     amount_paid,
+    jersey_size,
+    jersey_pairs,
+    payment_method,
+    payment_upi_id,
+    payment_reference,
+    comments,
     batsman_style,
     bowling_styles,
     ready_to_start,
@@ -242,7 +284,7 @@ begin
     p_age,
     p_gender,
     p_father_guardian_name,
-    p_emergency_contact_no,
+    p_alternate_contact_no,
     p_parent_contact_no,
     p_city,
     p_address,
@@ -252,6 +294,12 @@ begin
     p_join_date,
     p_fees_paid,
     p_amount_paid,
+    coalesce(p_jersey_size, ''),
+    greatest(coalesce(p_jersey_pairs, 0), 0),
+    coalesce(p_payment_method, 'UPI'),
+    coalesce(p_payment_upi_id, ''),
+    coalesce(p_payment_reference, ''),
+    coalesce(p_comments, ''),
     p_batsman_style,
     coalesce(p_bowling_styles, '{}'),
     p_ready_to_start,
@@ -363,7 +411,8 @@ using (true);
 
 grant execute on function public.submit_admission_form(
   text, text, date, integer, text, text, text, text, text, text, text, text,
-  text, date, boolean, numeric, text, text[], boolean, boolean, boolean
+  text, date, boolean, numeric, text, integer, text, text[], boolean, boolean, boolean,
+  text, text, text, text
 ) to anon, authenticated;
 
 grant execute on function public.peek_next_admission_reg_no() to anon, authenticated;

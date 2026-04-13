@@ -31,6 +31,8 @@ create table if not exists public.admissions (
   join_date date not null default current_date,
   fees_paid boolean not null default false,
   amount_paid numeric(10, 2) not null default 0,
+  jersey_size text not null default '',
+  jersey_pairs integer not null default 0,
   batsman_style text not null default '',
   bowling_styles text[] not null default '{}',
   ready_to_start boolean not null default false,
@@ -70,6 +72,8 @@ begin
     join_date,
     fees_paid,
     amount_paid,
+    jersey_size,
+    jersey_pairs,
     renewals,
     discontinued,
     discontinued_at,
@@ -85,6 +89,8 @@ begin
     new.join_date,
     new.fees_paid,
     new.amount_paid,
+    new.jersey_size,
+    new.jersey_pairs,
     '{}',
     false,
     null,
@@ -120,6 +126,8 @@ create or replace function public.submit_admission_form(
   p_join_date date,
   p_fees_paid boolean,
   p_amount_paid numeric,
+  p_jersey_size text,
+  p_jersey_pairs integer,
   p_batsman_style text,
   p_bowling_styles text[],
   p_ready_to_start boolean,
@@ -166,6 +174,8 @@ begin
     join_date,
     fees_paid,
     amount_paid,
+    jersey_size,
+    jersey_pairs,
     batsman_style,
     bowling_styles,
     ready_to_start,
@@ -190,6 +200,8 @@ begin
     p_join_date,
     p_fees_paid,
     p_amount_paid,
+    coalesce(p_jersey_size, ''),
+    greatest(coalesce(p_jersey_pairs, 0), 0),
     p_batsman_style,
     coalesce(p_bowling_styles, '{}'),
     p_ready_to_start,
@@ -236,7 +248,7 @@ using (true);
 
 grant execute on function public.submit_admission_form(
   text, text, date, integer, text, text, text, text, text, text, text, text,
-  text, date, boolean, numeric, text, text[], boolean, boolean, boolean
+  text, date, boolean, numeric, text, integer, text, text[], boolean, boolean, boolean
 ) to anon, authenticated;
 
 grant execute on function public.peek_next_admission_reg_no() to anon, authenticated;

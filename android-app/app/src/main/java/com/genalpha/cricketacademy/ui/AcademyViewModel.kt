@@ -571,7 +571,6 @@ class AcademyViewModel(
             draft.parentContactNo.isBlank() ||
             draft.alternateContactNo.isBlank() ||
             draft.address.isBlank() ||
-            draft.city.isBlank() ||
             draft.schoolCollege.isBlank() ||
             draft.timeSlot.isBlank() ||
             draft.joinDate.isBlank()

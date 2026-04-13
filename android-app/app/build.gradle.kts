@@ -78,6 +78,7 @@ dependencies {
   implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
   implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
   implementation("com.google.mlkit:text-recognition:16.0.0")
+  implementation("com.google.zxing:core:3.5.3")
   debugImplementation("androidx.compose.ui:ui-tooling")
   debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

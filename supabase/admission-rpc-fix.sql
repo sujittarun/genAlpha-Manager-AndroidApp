@@ -23,6 +23,47 @@ drop function if exists public.submit_admission_form(
   text, date, boolean, numeric, text, text[], boolean, boolean, boolean
 );
 
+drop function if exists public.submit_admission_form(
+  text, text, date, integer, text, text, text, text, text, text, text, text,
+  text, date, boolean, numeric, text, integer, text, text[], boolean, boolean, boolean
+);
+
+alter table public.students
+add column if not exists jersey_size text not null default '';
+
+alter table public.students
+add column if not exists jersey_pairs integer not null default 0;
+
+alter table public.students
+add column if not exists payment_method text not null default 'UPI';
+
+alter table public.students
+add column if not exists payment_upi_id text not null default '';
+
+alter table public.students
+add column if not exists payment_reference text not null default '';
+
+alter table public.students
+add column if not exists comments text not null default '';
+
+alter table public.admissions
+add column if not exists jersey_size text not null default '';
+
+alter table public.admissions
+add column if not exists jersey_pairs integer not null default 0;
+
+alter table public.admissions
+add column if not exists payment_method text not null default 'UPI';
+
+alter table public.admissions
+add column if not exists payment_upi_id text not null default '';
+
+alter table public.admissions
+add column if not exists payment_reference text not null default '';
+
+alter table public.admissions
+add column if not exists comments text not null default '';
+
 drop function if exists public.peek_next_admission_reg_no();
 
 create or replace function public.submit_admission_form(
@@ -42,11 +83,17 @@ create or replace function public.submit_admission_form(
   p_join_date date,
   p_fees_paid boolean,
   p_amount_paid numeric,
+  p_jersey_size text,
+  p_jersey_pairs integer,
   p_batsman_style text,
   p_bowling_styles text[],
   p_ready_to_start boolean,
   p_consent_accepted boolean,
-  p_terms_accepted boolean
+  p_terms_accepted boolean,
+  p_payment_method text default 'UPI',
+  p_payment_upi_id text default '',
+  p_payment_reference text default '',
+  p_comments text default ''
 )
 returns table(id uuid, reg_no bigint)
 language plpgsql
@@ -91,6 +138,12 @@ begin
     join_date,
     fees_paid,
     amount_paid,
+    jersey_size,
+    jersey_pairs,
+    payment_method,
+    payment_upi_id,
+    payment_reference,
+    comments,
     batsman_style,
     bowling_styles,
     ready_to_start,
@@ -115,6 +168,12 @@ begin
     p_join_date,
     p_fees_paid,
     p_amount_paid,
+    coalesce(p_jersey_size, ''),
+    greatest(coalesce(p_jersey_pairs, 0), 0),
+    coalesce(p_payment_method, 'UPI'),
+    coalesce(p_payment_upi_id, ''),
+    coalesce(p_payment_reference, ''),
+    coalesce(p_comments, ''),
     p_batsman_style,
     coalesce(p_bowling_styles, '{}'),
     p_ready_to_start,
@@ -156,7 +215,8 @@ $$;
 
 grant execute on function public.submit_admission_form(
   text, text, date, integer, text, text, text, text, text, text, text, text,
-  text, date, boolean, numeric, text, text[], boolean, boolean, boolean
+  text, date, boolean, numeric, text, integer, text, text[], boolean, boolean, boolean,
+  text, text, text, text
 ) to anon, authenticated;
 
 grant execute on function public.peek_next_admission_reg_no() to anon, authenticated;

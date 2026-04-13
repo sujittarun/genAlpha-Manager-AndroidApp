@@ -1,6 +1,7 @@
 package com.genalpha.cricketacademy.ui
 
 import android.app.DatePickerDialog
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -106,12 +107,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -266,24 +270,34 @@ private fun PublicViewHeader(
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = title,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 28.sp,
-                lineHeight = 30.sp,
-                fontWeight = FontWeight.ExtraBold,
-            )
-            Text(
-                text = subtitle,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = title,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 28.sp,
+                    lineHeight = 30.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                )
+                Text(
+                    text = subtitle,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                )
+            }
+            BrandPosterCard(
+                modifier = Modifier.widthIn(min = 84.dp, max = 92.dp),
+                imageModifier = Modifier.height(116.dp),
             )
         }
     }
@@ -309,9 +323,12 @@ private fun PlayerViewHeader(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                     Text(
                         text = "Player Check-In",
                         color = BrandBlue,
@@ -326,15 +343,24 @@ private fun PlayerViewHeader(
                         fontWeight = FontWeight.ExtraBold,
                     )
                 }
-                FilledTonalIconButton(
-                    onClick = onRefresh,
-                    modifier = Modifier.size(42.dp),
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    if (isRefreshing) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(Icons.Outlined.Refresh, contentDescription = "Refresh attendance")
+                    FilledTonalIconButton(
+                        onClick = onRefresh,
+                        modifier = Modifier.size(42.dp),
+                    ) {
+                        if (isRefreshing) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Outlined.Refresh, contentDescription = "Refresh attendance")
+                        }
                     }
+                    BrandPosterCard(
+                        modifier = Modifier.widthIn(min = 78.dp, max = 86.dp),
+                        imageModifier = Modifier.height(92.dp),
+                    )
                 }
             }
             Text(
@@ -358,6 +384,28 @@ private fun PlayerViewHeader(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun BrandPosterCard(
+    modifier: Modifier = Modifier,
+    imageModifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.background.copy(alpha = 0.68f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.gen_alpha_badge_transparent),
+            contentDescription = "Gen Alpha Cricket Academy logo",
+            contentScale = ContentScale.Fit,
+            modifier = imageModifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp)),
+        )
     }
 }
 
@@ -938,21 +986,10 @@ private fun HeaderSection(
                         )
                     }
 
-                    Surface(
-                        shape = RoundedCornerShape(22.dp),
-                        color = Color.White.copy(alpha = 0.12f),
-                    ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.gen_alpha_badge_transparent),
-                            contentDescription = "Gen Alpha Cricket Academy",
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier
-                                .height(118.dp)
-                                .widthIn(min = 72.dp, max = 120.dp)
-                                .wrapContentWidth()
-                                .padding(horizontal = 8.dp, vertical = 10.dp)
-                        )
-                    }
+                    BrandPosterCard(
+                        modifier = Modifier.widthIn(min = 92.dp, max = 108.dp),
+                        imageModifier = Modifier.height(124.dp),
+                    )
                 }
 
                 Row(
@@ -3074,6 +3111,8 @@ private fun AdmissionFormSheet(
     var amountPaid by rememberSaveable { mutableStateOf("0") }
     var jerseySize by rememberSaveable { mutableStateOf("") }
     var jerseyPairs by rememberSaveable { mutableStateOf("0") }
+    var paymentReference by rememberSaveable { mutableStateOf("") }
+    var comments by rememberSaveable { mutableStateOf("") }
     var batsmanStyle by rememberSaveable { mutableStateOf("") }
     var bowlingStyles by rememberSaveable { mutableStateOf(emptySet<String>()) }
     var readyToStartNow by rememberSaveable { mutableStateOf(false) }
@@ -3084,6 +3123,23 @@ private fun AdmissionFormSheet(
     var previewRegNo by rememberSaveable { mutableStateOf<Long?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val upiId = remember { context.getString(R.string.academy_upi_id) }
+    val upiName = remember { context.getString(R.string.academy_upi_name) }
+    // Let parents generate a payment link/QR before toggling "Fees paid".
+    // We only enable UPI actions when a positive amount is entered.
+    val upiAmount = remember(amountPaid) {
+        amountPaid.toDoubleOrNull()?.takeIf { it > 0.0 }
+    }
+    val upiUri = remember(upiId, upiName, upiAmount, applicantName) {
+        if (upiId.isBlank() || upiAmount == null) "" else buildUpiPayUri(
+            upiId = upiId,
+            payeeName = upiName,
+            amount = upiAmount,
+            note = "Gen Alpha admission - ${applicantName.ifBlank { "New player" }}",
+        )
+    }
+    var showUpiQr by rememberSaveable { mutableStateOf(false) }
     val dateOfBirth = remember(birthDay, birthMonth, birthYear) {
         if (birthDay.isBlank() || birthMonth.isBlank() || birthYear.isBlank()) {
             ""
@@ -3269,7 +3325,7 @@ private fun AdmissionFormSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .then(rememberBringIntoViewOnFocusModifier()),
-                    label = "School / College",
+                    label = "School",
                     singleLine = true,
                 )
             }
@@ -3308,7 +3364,7 @@ private fun AdmissionFormSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .then(rememberBringIntoViewOnFocusModifier()),
-                    label = "City",
+                    label = "Grade (optional)",
                     singleLine = true,
                 )
                 AdmissionTextField(
@@ -3317,7 +3373,7 @@ private fun AdmissionFormSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .then(rememberBringIntoViewOnFocusModifier()),
-                    label = "Address",
+                    label = "Home address (student)",
                     minLines = 3,
                 )
                 AdmissionTextField(
@@ -3394,6 +3450,136 @@ private fun AdmissionFormSheet(
                         singleLine = true,
                     )
                 }
+
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.background.copy(alpha = 0.84f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text(
+                            text = "UPI payment",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.ExtraBold,
+                        )
+                        if (upiId.isBlank()) {
+                            Text(
+                                text = "UPI payment is not configured yet. Please ask academy staff for payment details.",
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp,
+                            )
+                        } else if (upiAmount == null) {
+                            Text(
+                                text = "Enter the amount above to enable the UPI QR and Pay button.",
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp,
+                            )
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "UPI ID",
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                    Text(
+                                        text = upiId,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                TextButton(
+                                    onClick = { clipboardManager.setText(AnnotatedString(upiId)) },
+                                ) {
+                                    Text("Copy")
+                                }
+                            }
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                OutlinedButton(
+                                    onClick = { showUpiQr = !showUpiQr },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(16.dp),
+                                ) {
+                                    Text(if (showUpiQr) "Hide QR" else "Show QR")
+                                }
+                                Button(
+                                    enabled = upiUri.isNotBlank(),
+                                    onClick = {
+                                        runCatching {
+                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(upiUri))
+                                            context.startActivity(intent)
+                                        }.onFailure {
+                                            inlineMessage = "Unable to open a UPI app on this device."
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                        containerColor = BrandBlue,
+                                        contentColor = Color.White,
+                                    ),
+                                ) {
+                                    Text("Pay in UPI app")
+                                }
+                            }
+                            if (showUpiQr && upiUri.isNotBlank()) {
+                                val qrBitmap = remember(upiUri) { generateQrBitmap(upiUri, 720) }
+                                Surface(
+                                    shape = RoundedCornerShape(18.dp),
+                                    color = Color.White,
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Image(
+                                            bitmap = qrBitmap.asImageBitmap(),
+                                            contentDescription = "UPI QR",
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .heightIn(max = 320.dp),
+                                            contentScale = ContentScale.Fit,
+                                        )
+                                        Text(
+                                            text = "Scan this QR in any UPI app",
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                            fontSize = 12.sp,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        AdmissionTextField(
+                            value = paymentReference,
+                            onValueChange = { paymentReference = it },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .then(rememberBringIntoViewOnFocusModifier()),
+                            label = "UPI reference / UTR (optional)",
+                            singleLine = true,
+                        )
+                    }
+                }
             }
 
             AdmissionSectionCard(title = "Skills and playing style") {
@@ -3444,6 +3630,18 @@ private fun AdmissionFormSheet(
                         )
                     }
                 }
+            }
+
+            AdmissionSectionCard(title = "Any comments or special requests? (Optional)") {
+                AdmissionTextField(
+                    value = comments,
+                    onValueChange = { comments = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(rememberBringIntoViewOnFocusModifier()),
+                    label = "Comments (optional)",
+                    minLines = 3,
+                )
             }
 
             AdmissionSectionCard(title = "Parent consent") {
@@ -3514,6 +3712,10 @@ private fun AdmissionFormSheet(
                                     amountPaid = amountPaid,
                                     jerseySize = jerseySize,
                                     jerseyPairs = jerseyPairs.ifBlank { "0" },
+                                    paymentMethod = "UPI",
+                                    paymentUpiId = upiId,
+                                    paymentReference = paymentReference,
+                                    comments = comments,
                                     batsmanStyle = batsmanStyle,
                                     bowlingStyles = bowlingStyles.toList(),
                                     readyToStartNow = readyToStartNow,
@@ -3599,7 +3801,7 @@ private fun GenderSelector(
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Gender", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Male", "Female", "Other").forEach { option ->
+            listOf("Male", "Female").forEach { option ->
                 FilterChip(
                     selected = selected == option,
                     onClick = { onSelected(option) },

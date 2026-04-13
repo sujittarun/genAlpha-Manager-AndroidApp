@@ -140,6 +140,10 @@ class SupabaseRepository(
             .put("p_amount_paid", draft.amountPaid.toDoubleOrNull() ?: 0.0)
             .put("p_jersey_size", draft.jerseySize.trim())
             .put("p_jersey_pairs", draft.jerseyPairs.toIntOrNull() ?: 0)
+            .put("p_payment_method", draft.paymentMethod.trim())
+            .put("p_payment_upi_id", draft.paymentUpiId.trim())
+            .put("p_payment_reference", draft.paymentReference.trim())
+            .put("p_comments", draft.comments.trim())
             .put("p_batsman_style", draft.batsmanStyle)
             .put("p_bowling_styles", JSONArray(draft.bowlingStyles))
             .put("p_ready_to_start", draft.readyToStartNow)
@@ -641,6 +645,10 @@ class SupabaseRepository(
             updatedBy = optSafeString("updated_by").ifBlank { "Unknown" },
             jerseySize = optSafeString("jersey_size"),
             jerseyPairs = optIntValue("jersey_pairs"),
+            paymentMethod = optSafeString("payment_method"),
+            paymentUpiId = optSafeString("payment_upi_id"),
+            paymentReference = optSafeString("payment_reference"),
+            comments = optSafeString("comments"),
             discontinued = optBoolean("discontinued", false),
             discontinuedAt = if (has("discontinued_at") && !isNull("discontinued_at")) {
                 optString("discontinued_at", "").takeIf { it.isNotBlank() }
