@@ -1,6 +1,22 @@
 -- Incremental migration: admission comments + payment metadata
 -- Safe to run on an existing project (does not delete rows).
 
+do $$
+declare
+  function_signature regprocedure;
+begin
+  for function_signature in
+    select p.oid::regprocedure
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname = 'submit_admission_form'
+  loop
+    execute format('drop function if exists %s', function_signature);
+  end loop;
+end;
+$$;
+
 alter table public.admissions
 add column if not exists comments text not null default '';
 
@@ -78,18 +94,6 @@ begin
   return new;
 end;
 $$;
-
--- Replace the RPC with backwards-compatible defaults for new params.
-drop function if exists public.submit_admission_form(
-  text, text, date, integer, text, text, text, text, text, text, text, text,
-  text, date, boolean, numeric, text, integer, text, text[], boolean, boolean, boolean
-);
-
-drop function if exists public.submit_admission_form(
-  text, text, date, integer, text, text, text, text, text, text, text, text,
-  text, date, boolean, numeric, text, integer, text, text[], boolean, boolean, boolean,
-  text, text, text, text
-);
 
 create or replace function public.submit_admission_form(
   p_applicant_name text,
@@ -214,4 +218,3 @@ grant execute on function public.submit_admission_form(
   text, date, boolean, numeric, text, integer, text, text[], boolean, boolean, boolean,
   text, text, text, text
 ) to anon, authenticated;
-

@@ -1,3 +1,19 @@
+do $$
+declare
+  function_signature regprocedure;
+begin
+  for function_signature in
+    select p.oid::regprocedure
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname = 'submit_admission_form'
+  loop
+    execute format('drop function if exists %s', function_signature);
+  end loop;
+end;
+$$;
+
 create table if not exists public.registration_counters (
   counter_name text primary key,
   next_reg_no bigint not null
@@ -16,16 +32,6 @@ set next_reg_no = greatest(
   public.registration_counters.next_reg_no,
   excluded.next_reg_no,
   coalesce((select max(reg_no) + 1 from public.admissions), 1001)
-);
-
-drop function if exists public.submit_admission_form(
-  text, text, date, integer, text, text, text, text, text, text, text, text,
-  text, date, boolean, numeric, text, text[], boolean, boolean, boolean
-);
-
-drop function if exists public.submit_admission_form(
-  text, text, date, integer, text, text, text, text, text, text, text, text,
-  text, date, boolean, numeric, text, integer, text, text[], boolean, boolean, boolean
 );
 
 alter table public.students
