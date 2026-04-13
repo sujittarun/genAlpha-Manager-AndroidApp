@@ -38,6 +38,10 @@ data class StudentDraft(
     val amountPaid: String = "0",
     val jerseySize: String = "",
     val jerseyPairs: String = "0",
+    val paymentMethod: String = "",
+    val paymentUpiId: String = "",
+    val paymentReference: String = "",
+    val comments: String = "",
 )
 
 data class AdmissionDraft(
@@ -185,6 +189,10 @@ fun Student.toDraft(): StudentDraft = StudentDraft(
     amountPaid = if (amountPaid % 1.0 == 0.0) amountPaid.toInt().toString() else amountPaid.toString(),
     jerseySize = jerseySize,
     jerseyPairs = jerseyPairs.toString(),
+    paymentMethod = paymentMethod,
+    paymentUpiId = paymentUpiId,
+    paymentReference = paymentReference,
+    comments = comments,
 )
 
 fun Student.referenceDate(): String = renewals.lastOrNull() ?: joinDate
