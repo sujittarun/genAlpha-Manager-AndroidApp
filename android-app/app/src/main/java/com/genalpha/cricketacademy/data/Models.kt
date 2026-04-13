@@ -16,6 +16,8 @@ data class Student(
     val joinDate: String,
     val feesPaid: Boolean,
     val amountPaid: Double,
+    val jerseySize: String,
+    val jerseyPairs: Int,
     val renewals: List<String>,
     val addedBy: String,
     val updatedBy: String,
@@ -30,6 +32,8 @@ data class StudentDraft(
     val joinDate: String = "",
     val feesPaid: Boolean = true,
     val amountPaid: String = "0",
+    val jerseySize: String = "",
+    val jerseyPairs: String = "0",
 )
 
 data class AdmissionDraft(
@@ -38,7 +42,7 @@ data class AdmissionDraft(
     val dateOfBirth: String = "",
     val gender: String = "",
     val fatherGuardianName: String = "",
-    val emergencyContactNo: String = "",
+    val alternateContactNo: String = "",
     val parentContactNo: String = "",
     val city: String = "",
     val address: String = "",
@@ -48,6 +52,8 @@ data class AdmissionDraft(
     val joinDate: String = todayIsoDate(),
     val feesPaid: Boolean = false,
     val amountPaid: String = "0",
+    val jerseySize: String = "",
+    val jerseyPairs: String = "0",
     val batsmanStyle: String = "",
     val bowlingStyles: List<String> = emptyList(),
     val readyToStartNow: Boolean = false,
@@ -127,6 +133,8 @@ data class StudentDto(
     @Json(name = "join_date") val joinDate: String,
     @Json(name = "fees_paid") val feesPaid: Boolean,
     @Json(name = "amount_paid") val amountPaid: Double,
+    @Json(name = "jersey_size") val jerseySize: String? = "",
+    @Json(name = "jersey_pairs") val jerseyPairs: Int? = 0,
     val renewals: List<String>? = emptyList(),
     @Json(name = "added_by") val addedBy: String? = "Unknown",
     @Json(name = "updated_by") val updatedBy: String? = "Unknown",
@@ -143,6 +151,8 @@ fun StudentDto.toDomain(): Student = Student(
     joinDate = joinDate,
     feesPaid = feesPaid,
     amountPaid = amountPaid,
+    jerseySize = jerseySize.orEmpty(),
+    jerseyPairs = jerseyPairs ?: 0,
     renewals = renewals.orEmpty().filter { it.isNotBlank() },
     addedBy = addedBy ?: "Unknown",
     updatedBy = updatedBy ?: addedBy ?: "Unknown",
@@ -157,6 +167,8 @@ fun Student.toDraft(): StudentDraft = StudentDraft(
     joinDate = joinDate,
     feesPaid = feesPaid,
     amountPaid = if (amountPaid % 1.0 == 0.0) amountPaid.toInt().toString() else amountPaid.toString(),
+    jerseySize = jerseySize,
+    jerseyPairs = jerseyPairs.toString(),
 )
 
 fun Student.referenceDate(): String = renewals.lastOrNull() ?: joinDate

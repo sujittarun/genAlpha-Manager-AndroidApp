@@ -161,7 +161,7 @@ fun parseAdmissionText(rawText: String): AdmissionDraft {
         dateOfBirth = dob?.iso.orEmpty(),
         gender = gender,
         fatherGuardianName = fatherGuardianName,
-        emergencyContactNo = alternateContact,
+        alternateContactNo = alternateContact,
         parentContactNo = parentContact,
         city = city,
         address = address,

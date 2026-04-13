@@ -128,7 +128,7 @@ class SupabaseRepository(
             .put("p_age", age)
             .put("p_gender", draft.gender)
             .put("p_father_guardian_name", draft.fatherGuardianName.trim())
-            .put("p_alternate_contact_no", draft.emergencyContactNo.trim())
+            .put("p_alternate_contact_no", draft.alternateContactNo.trim())
             .put("p_parent_contact_no", draft.parentContactNo.trim())
             .put("p_city", draft.city.trim())
             .put("p_address", draft.address.trim())
@@ -138,6 +138,8 @@ class SupabaseRepository(
             .put("p_join_date", draft.joinDate)
             .put("p_fees_paid", draft.feesPaid)
             .put("p_amount_paid", draft.amountPaid.toDoubleOrNull() ?: 0.0)
+            .put("p_jersey_size", draft.jerseySize.trim())
+            .put("p_jersey_pairs", draft.jerseyPairs.toIntOrNull() ?: 0)
             .put("p_batsman_style", draft.batsmanStyle)
             .put("p_bowling_styles", JSONArray(draft.bowlingStyles))
             .put("p_ready_to_start", draft.readyToStartNow)
@@ -426,6 +428,8 @@ class SupabaseRepository(
             .put("join_date", draft.joinDate)
             .put("fees_paid", draft.feesPaid)
             .put("amount_paid", draft.amountPaid.toDoubleOrNull() ?: 0.0)
+            .put("jersey_size", if (draft.jerseySize.isBlank()) JSONObject.NULL else draft.jerseySize)
+            .put("jersey_pairs", draft.jerseyPairs.toIntOrNull() ?: 0)
             .put("renewals", JSONArray(renewals))
             .put("added_by", addedBy)
             .put("updated_by", updatedBy)
@@ -635,6 +639,8 @@ class SupabaseRepository(
             renewals = optStringList("renewals"),
             addedBy = optSafeString("added_by").ifBlank { "Unknown" },
             updatedBy = optSafeString("updated_by").ifBlank { "Unknown" },
+            jerseySize = optSafeString("jersey_size"),
+            jerseyPairs = optIntValue("jersey_pairs"),
             discontinued = optBoolean("discontinued", false),
             discontinuedAt = if (has("discontinued_at") && !isNull("discontinued_at")) {
                 optString("discontinued_at", "").takeIf { it.isNotBlank() }

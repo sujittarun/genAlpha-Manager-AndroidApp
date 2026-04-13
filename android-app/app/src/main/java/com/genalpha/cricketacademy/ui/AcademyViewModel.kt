@@ -285,6 +285,8 @@ class AcademyViewModel(
                         joinDate = draft.joinDate,
                         feesPaid = draft.feesPaid,
                         amountPaid = draft.amountPaid.toDoubleOrNull() ?: 0.0,
+                        jerseySize = draft.jerseySize,
+                        jerseyPairs = draft.jerseyPairs.toIntOrNull() ?: 0,
                         updatedBy = session.email,
                         discontinuedAt = editingStudent.discontinuedAt,
                     )
@@ -544,11 +546,18 @@ class AcademyViewModel(
             return "Join date cannot be in the future."
         }
         if (!draft.feesPaid) {
+            if (draft.jerseyPairs.toIntOrNull()?.let { it < 0 } == true) {
+                return "Jersey pairs cannot be negative."
+            }
             return null
         }
         val amount = draft.amountPaid.toDoubleOrNull()
         if (amount == null || amount < 0) {
             return "Enter a valid amount paid."
+        }
+        val jerseyPairs = draft.jerseyPairs.toIntOrNull()
+        if (jerseyPairs == null || jerseyPairs < 0) {
+            return "Enter a valid jersey pair count."
         }
         return null
     }
@@ -560,7 +569,7 @@ class AcademyViewModel(
             draft.gender.isBlank() ||
             draft.fatherGuardianName.isBlank() ||
             draft.parentContactNo.isBlank() ||
-            draft.emergencyContactNo.isBlank() ||
+            draft.alternateContactNo.isBlank() ||
             draft.address.isBlank() ||
             draft.city.isBlank() ||
             draft.schoolCollege.isBlank() ||
@@ -588,6 +597,11 @@ class AcademyViewModel(
             if (amount == null || amount <= 0) {
                 return "Enter a valid fee amount if fees are marked as paid."
             }
+        }
+
+        val jerseyPairs = draft.jerseyPairs.toIntOrNull()
+        if (jerseyPairs == null || jerseyPairs < 0) {
+            return "Enter a valid jersey pair count."
         }
 
         if (!draft.consentAccepted || !draft.termsAccepted) {

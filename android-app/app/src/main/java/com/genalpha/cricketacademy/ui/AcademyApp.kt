@@ -73,6 +73,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
@@ -190,6 +192,7 @@ private val AdmissionMonths = listOf(
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 )
 private val UiTimeSlots = listOf("6AM", "7:30AM", "4PM", "5:30PM", "7PM")
+private val JerseySizeOptions = listOf("22", "24", "26", "28", "30", "32", "34", "36", "38", "40", "42")
 
 private val AcademyLightScheme = lightColorScheme(
     primary = BrandBlue,
@@ -217,9 +220,9 @@ private data class BadgeTone(
 )
 
 private enum class AppView(val label: String) {
-    Player("Player"),
     Admission("Admission"),
-    Manager("Manager"),
+    Player("Attendance"),
+    Manager("Staff"),
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -310,13 +313,13 @@ private fun PlayerViewHeader(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        text = "Player View",
+                        text = "Player Check-In",
                         color = BrandBlue,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "Today's Attendance",
+                        text = "Today's attendance",
                         color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 28.sp,
                         lineHeight = 30.sp,
@@ -402,7 +405,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     val rosterSections = remember(filteredKids) { buildRosterSections(filteredKids) }
     val activePlayers = remember(uiState.kids) { uiState.kids.filter { it.isActive() } }
 
-    var selectedView by rememberSaveable { mutableStateOf(AppView.Player) }
+    var selectedView by rememberSaveable { mutableStateOf(AppView.Admission) }
     var showManagerPinSheet by rememberSaveable { mutableStateOf(false) }
     var showLoginSheet by rememberSaveable { mutableStateOf(false) }
     var showAdmissionSheet by rememberSaveable { mutableStateOf(false) }
@@ -492,6 +495,18 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background),
             snackbarHost = { SnackbarHost(snackbarHostState) },
+            bottomBar = {
+                AppBottomBar(
+                    selectedView = selectedView,
+                    onSelected = { view ->
+                        if (view == AppView.Manager && selectedView != AppView.Manager) {
+                            showManagerPinSheet = true
+                        } else {
+                            selectedView = view
+                        }
+                    },
+                )
+            },
             floatingActionButton = {
                 if (selectedView == AppView.Manager && viewModel.canEdit()) {
                     FloatingActionButton(
@@ -524,19 +539,6 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                     ),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    item {
-                        ViewSwitcherSection(
-                            selectedView = selectedView,
-                            onSelected = { view ->
-                                if (view == AppView.Manager && selectedView != AppView.Manager) {
-                                    showManagerPinSheet = true
-                                } else {
-                                    selectedView = view
-                                }
-                            },
-                        )
-                    }
-
                     if (selectedView == AppView.Manager) {
                     item {
                         HeaderSection(
@@ -546,9 +548,9 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                             onLogin = { showLoginSheet = true },
                             onLogout = {
                                 viewModel.logout()
-                                selectedView = AppView.Player
+                                selectedView = AppView.Admission
                                 scope.launch {
-                                    snackbarHostState.showSnackbar("Manager logged out.")
+                                    snackbarHostState.showSnackbar("Staff logged out.")
                                 }
                             },
                         )
@@ -636,8 +638,8 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                     } else if (selectedView == AppView.Admission) {
                         item {
                             PublicViewHeader(
-                                title = "Admission View",
-                                subtitle = "Parents can fill a fresh form or scan a completed admission copy without seeing manager dashboard data.",
+                                title = "Parent Admission",
+                                subtitle = "Share this view with parents for first-time admission. Staff-only roster data stays hidden until a manager opens the staff dashboard.",
                             )
                         }
                         item {
@@ -742,9 +744,9 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                 selectedView = AppView.Manager
                                 showManagerPinSheet = false
                                 scope.launch {
-                                    snackbarHostState.showSnackbar("Manager view unlocked.")
+                                    snackbarHostState.showSnackbar("Staff dashboard unlocked.")
                                 }
-                                OperationResult(true, "Manager view unlocked.")
+                                OperationResult(true, "Staff dashboard unlocked.")
                             } else {
                                 OperationResult(false, "Incorrect manager PIN.")
                             }
@@ -922,14 +924,14 @@ private fun HeaderSection(
                             letterSpacing = 1.1.sp,
                         )
                         Text(
-                            text = "Academy Manager",
+                            text = "Staff Dashboard",
                             color = Color.White,
                             fontSize = 30.sp,
                             fontWeight = FontWeight.ExtraBold,
                             lineHeight = 31.sp,
                         )
                         Text(
-                            text = "Fast roster tracking for fees, renewals, active players, and daily coaching slots.",
+                            text = "Track admissions, fees, renewals, jersey orders, and coaching batches in one place.",
                             color = Color.White.copy(alpha = 0.86f),
                             fontSize = 14.sp,
                             lineHeight = 20.sp,
@@ -984,11 +986,11 @@ private fun HeaderSection(
                         ) {
                             Icon(Icons.Outlined.Person, contentDescription = null)
                             Spacer(modifier = Modifier.size(8.dp))
-                            Text("Manager Login")
+                            Text("Staff Login")
                         }
                         AssistChip(
                             onClick = {},
-                            label = { Text("View-only mode") },
+                            label = { Text("Read only") },
                             colors = AssistChipDefaults.assistChipColors(
                                 containerColor = Color.White.copy(alpha = 0.14f),
                                 labelColor = Color.White,
@@ -1007,7 +1009,7 @@ private fun HeaderSection(
                             ) {
                                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(
-                                        text = "Manager signed in",
+                                        text = "Staff signed in",
                                         color = Color.White.copy(alpha = 0.72f),
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
@@ -1176,6 +1178,30 @@ private fun AdmissionActionsSection(
                 Spacer(modifier = Modifier.size(8.dp))
                 Text("Scan / Import Document", fontWeight = FontWeight.Bold)
             }
+        }
+    }
+}
+
+@Composable
+private fun AppBottomBar(
+    selectedView: AppView,
+    onSelected: (AppView) -> Unit,
+) {
+    NavigationBar(
+        containerColor = MaterialTheme.colorScheme.surface,
+    ) {
+        AppView.entries.forEach { view ->
+            val icon = when (view) {
+                AppView.Admission -> Icons.Outlined.Description
+                AppView.Player -> Icons.Outlined.Person
+                AppView.Manager -> Icons.Outlined.Lock
+            }
+            NavigationBarItem(
+                selected = selectedView == view,
+                onClick = { onSelected(view) },
+                icon = { Icon(icon, contentDescription = view.label) },
+                label = { Text(view.label) },
+            )
         }
     }
 }
@@ -1841,6 +1867,17 @@ private fun RosterRow(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
                     fontSize = 13.sp,
                 )
+                Text(
+                    text = if (student.jerseySize.isBlank() && student.jerseyPairs <= 0) {
+                        "Jersey not set"
+                    } else {
+                        "Jersey ${student.jerseySize.ifBlank { "TBD" }}  •  ${student.jerseyPairs} pair${if (student.jerseyPairs == 1) "" else "s"}"
+                    },
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 student.cardTimelineLabel()?.let { timeline ->
                     Text(
                         text = timeline,
@@ -2010,15 +2047,25 @@ private fun PlayerDetailSheet(
                 )
                 DataTileContent(
                     modifier = Modifier.weight(1f),
-                    label = if (student.discontinued) "Discontinued" else "Latest Renewal",
-                    value = if (student.discontinued) {
-                        displayDate(student.discontinuedAt)
+                    label = "Jersey",
+                    value = if (student.jerseySize.isBlank() && student.jerseyPairs <= 0) {
+                        "Not set"
                     } else {
-                        displayDate(student.latestRenewal())
+                        "${student.jerseySize.ifBlank { "TBD" }} • ${student.jerseyPairs} pair${if (student.jerseyPairs == 1) "" else "s"}"
                     },
                     accent = MaterialTheme.colorScheme.onSurface,
                 )
             }
+
+            DataTile(
+                label = if (student.discontinued) "Discontinued" else "Latest Renewal",
+                value = if (student.discontinued) {
+                    displayDate(student.discontinuedAt)
+                } else {
+                    displayDate(student.latestRenewal())
+                },
+                accent = MaterialTheme.colorScheme.onSurface,
+            )
 
             DataTile(
                 label = "Fees",
@@ -2807,6 +2854,8 @@ private fun PlayerEditorSheet(
     var joinDate by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.joinDate.orEmpty()) }
     var feesPaid by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.feesPaid ?: true) }
     var amountPaid by rememberSaveable(editingStudent?.id) { mutableStateOf(if (editingStudent == null) "0" else editingStudent.toDraft().amountPaid) }
+    var jerseySize by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.jerseySize.orEmpty()) }
+    var jerseyPairs by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.jerseyPairs?.toString() ?: "0") }
     var inlineMessage by rememberSaveable { mutableStateOf("") }
     var isSaving by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -2921,6 +2970,27 @@ private fun PlayerEditorSheet(
                 singleLine = true,
             )
 
+            AdmissionSectionCard(title = "Jersey details") {
+                AdmissionDropdownField(
+                    label = "Jersey size",
+                    value = jerseySize,
+                    options = JerseySizeOptions,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(rememberBringIntoViewOnFocusModifier()),
+                    onSelect = { jerseySize = it },
+                )
+                OutlinedTextField(
+                    value = jerseyPairs,
+                    onValueChange = { jerseyPairs = it.filter(Char::isDigit) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(rememberBringIntoViewOnFocusModifier()),
+                    label = { Text("Jersey pairs") },
+                    singleLine = true,
+                )
+            }
+
             if (inlineMessage.isNotBlank()) {
                 Text(inlineMessage, color = BrandRed, fontSize = 13.sp, lineHeight = 18.sp)
             }
@@ -2939,6 +3009,8 @@ private fun PlayerEditorSheet(
                                     joinDate = joinDate,
                                     feesPaid = feesPaid,
                                     amountPaid = amountPaid,
+                                    jerseySize = jerseySize,
+                                    jerseyPairs = jerseyPairs.ifBlank { "0" },
                                 )
                             )
                             if (!result.success) {
@@ -2990,7 +3062,7 @@ private fun AdmissionFormSheet(
     var birthYear by rememberSaveable { mutableStateOf("") }
     var gender by rememberSaveable { mutableStateOf("") }
     var fatherGuardianName by rememberSaveable { mutableStateOf("") }
-    var emergencyContactNo by rememberSaveable { mutableStateOf("") }
+    var alternateContactNo by rememberSaveable { mutableStateOf("") }
     var parentContactNo by rememberSaveable { mutableStateOf("") }
     var city by rememberSaveable { mutableStateOf("") }
     var address by rememberSaveable { mutableStateOf("") }
@@ -3000,6 +3072,8 @@ private fun AdmissionFormSheet(
     var joinDate by rememberSaveable { mutableStateOf(todayIsoDate()) }
     var feesPaid by rememberSaveable { mutableStateOf(false) }
     var amountPaid by rememberSaveable { mutableStateOf("0") }
+    var jerseySize by rememberSaveable { mutableStateOf("") }
+    var jerseyPairs by rememberSaveable { mutableStateOf("0") }
     var batsmanStyle by rememberSaveable { mutableStateOf("") }
     var bowlingStyles by rememberSaveable { mutableStateOf(emptySet<String>()) }
     var readyToStartNow by rememberSaveable { mutableStateOf(false) }
@@ -3133,12 +3207,12 @@ private fun AdmissionFormSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .then(rememberBringIntoViewOnFocusModifier()),
-                    label = "Applicant full name",
+                    label = "Applicant name and initial",
                     singleLine = true,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     AdmissionDropdownField(
-                        label = "Day",
+                        label = "DD",
                         value = birthDay,
                         options = (1..31).map { it.toString() },
                         modifier = Modifier
@@ -3147,7 +3221,7 @@ private fun AdmissionFormSheet(
                         onSelect = { birthDay = it },
                     )
                     AdmissionDropdownField(
-                        label = "Month",
+                        label = "MON",
                         value = birthMonth,
                         options = AdmissionMonths,
                         modifier = Modifier
@@ -3156,7 +3230,7 @@ private fun AdmissionFormSheet(
                         onSelect = { birthMonth = it },
                     )
                     AdmissionDropdownField(
-                        label = "Year",
+                        label = "YYYY",
                         value = birthYear,
                         options = AdmissionYears.map { year -> year.toString() },
                         modifier = Modifier
@@ -3220,8 +3294,8 @@ private fun AdmissionFormSheet(
                     singleLine = true,
                 )
                 AdmissionTextField(
-                    value = emergencyContactNo,
-                    onValueChange = { emergencyContactNo = it.filter(Char::isDigit) },
+                    value = alternateContactNo,
+                    onValueChange = { alternateContactNo = it.filter(Char::isDigit) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .then(rememberBringIntoViewOnFocusModifier()),
@@ -3252,7 +3326,7 @@ private fun AdmissionFormSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .then(rememberBringIntoViewOnFocusModifier()),
-                    label = "Parent Aadhaar number (optional)",
+                    label = "Parent Aadhaar (optional)",
                     singleLine = true,
                 )
             }
@@ -3300,6 +3374,26 @@ private fun AdmissionFormSheet(
                     enabled = feesPaid,
                     singleLine = true,
                 )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    AdmissionDropdownField(
+                        label = "Jersey size",
+                        value = jerseySize,
+                        options = JerseySizeOptions,
+                        modifier = Modifier
+                            .weight(1f)
+                            .then(rememberBringIntoViewOnFocusModifier()),
+                        onSelect = { jerseySize = it },
+                    )
+                    AdmissionTextField(
+                        value = jerseyPairs,
+                        onValueChange = { jerseyPairs = it.filter(Char::isDigit) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .then(rememberBringIntoViewOnFocusModifier()),
+                        label = "Jersey pairs",
+                        singleLine = true,
+                    )
+                }
             }
 
             AdmissionSectionCard(title = "Skills and playing style") {
@@ -3408,7 +3502,7 @@ private fun AdmissionFormSheet(
                                     dateOfBirth = dateOfBirth,
                                     gender = gender,
                                     fatherGuardianName = fatherGuardianName,
-                                    emergencyContactNo = emergencyContactNo,
+                                    alternateContactNo = alternateContactNo,
                                     parentContactNo = parentContactNo,
                                     city = city,
                                     address = address,
@@ -3418,6 +3512,8 @@ private fun AdmissionFormSheet(
                                     joinDate = joinDate,
                                     feesPaid = feesPaid,
                                     amountPaid = amountPaid,
+                                    jerseySize = jerseySize,
+                                    jerseyPairs = jerseyPairs.ifBlank { "0" },
                                     batsmanStyle = batsmanStyle,
                                     bowlingStyles = bowlingStyles.toList(),
                                     readyToStartNow = readyToStartNow,
