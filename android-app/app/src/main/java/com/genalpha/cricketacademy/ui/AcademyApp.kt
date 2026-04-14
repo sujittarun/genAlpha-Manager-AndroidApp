@@ -3048,6 +3048,10 @@ private fun PlayerEditorSheet(
                                     amountPaid = amountPaid,
                                     jerseySize = jerseySize,
                                     jerseyPairs = jerseyPairs.ifBlank { "0" },
+                                    paymentMethod = editingStudent?.paymentMethod.orEmpty(),
+                                    paymentUpiId = editingStudent?.paymentUpiId.orEmpty(),
+                                    paymentReference = editingStudent?.paymentReference.orEmpty(),
+                                    comments = editingStudent?.comments.orEmpty(),
                                 )
                             )
                             if (!result.success) {

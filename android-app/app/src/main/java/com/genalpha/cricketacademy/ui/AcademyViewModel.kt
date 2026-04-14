@@ -506,6 +506,9 @@ class AcademyViewModel(
             if (session != null) {
                 expireSession()
             }
+        } finally {
+            // Keep realtime active for public/player flows too, even without manager auth.
+            repository.startStudentRealtime(realtimeListener, _uiState.value.session)
         }
     }
 
