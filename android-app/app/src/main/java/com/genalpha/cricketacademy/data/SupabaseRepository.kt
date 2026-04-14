@@ -179,7 +179,62 @@ class SupabaseRepository(
             body.remove("p_payment_method")
             body.remove("p_payment_upi_id")
             body.remove("p_payment_reference")
-            executeSubmission(body)
+            try {
+                executeSubmission(body)
+            } catch (legacyError: SupabaseException) {
+                val legacyMismatch = legacyError.message.contains(
+                    "Could not find the function public.submit_admission_form",
+                    ignoreCase = true
+                )
+                if (!legacyMismatch) throw legacyError
+
+                // Final fallback: direct insert into admissions table when RPC signatures are out of sync.
+                val insertBody = JSONObject()
+                    .put("applicant_name", draft.applicantName.trim())
+                    .put("nationality", draft.nationality.trim())
+                    .put("date_of_birth", draft.dateOfBirth)
+                    .put("age", age)
+                    .put("gender", draft.gender)
+                    .put("father_guardian_name", draft.fatherGuardianName.trim())
+                    .put("emergency_contact_no", draft.alternateContactNo.trim())
+                    .put("parent_contact_no", draft.parentContactNo.trim())
+                    .put("city", draft.city.trim())
+                    .put("address", draft.address.trim())
+                    .put("school_college", draft.schoolCollege.trim())
+                    .put("parent_aadhaar_no", draft.parentAadhaarNo.trim())
+                    .put("time_slot", draft.timeSlot)
+                    .put("join_date", draft.joinDate)
+                    .put("fees_paid", draft.feesPaid)
+                    .put("amount_paid", draft.amountPaid.toDoubleOrNull() ?: 0.0)
+                    .put("jersey_size", draft.jerseySize.trim())
+                    .put("jersey_pairs", draft.jerseyPairs.toIntOrNull() ?: 0)
+                    .put("payment_method", draft.paymentMethod.trim().ifBlank { "UPI" })
+                    .put("payment_upi_id", draft.paymentUpiId.trim())
+                    .put("payment_reference", draft.paymentReference.trim())
+                    .put("comments", draft.comments.trim())
+                    .put("batsman_style", draft.batsmanStyle)
+                    .put("bowling_styles", JSONArray(draft.bowlingStyles))
+                    .put("ready_to_start", draft.readyToStartNow)
+                    .put("consent_accepted", draft.consentAccepted)
+                    .put("terms_accepted", draft.termsAccepted)
+                    .toString()
+                    .toRequestBody(JSON_MEDIA_TYPE)
+
+                val insertRequest = baseRequest("$baseUrl/rest/v1/admissions?select=id,reg_no")
+                    .header("Authorization", "Bearer $anonKey")
+                    .header("Prefer", "return=representation")
+                    .post(insertBody)
+                    .build()
+
+                client.newCall(insertRequest).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        throw SupabaseException(response.code, parseError(response.body?.string()))
+                    }
+                    val rows = admissionInsertAdapter.fromJson(response.body?.string().orEmpty()).orEmpty()
+                    rows.firstOrNull()
+                        ?: throw SupabaseException(response.code, "Admission submitted, but registration number was not returned.")
+                }
+            }
         }
     }
 
