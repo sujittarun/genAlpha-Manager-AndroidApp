@@ -553,12 +553,19 @@ class SupabaseRepository(
                     )
                     .put(
                         "postgres_changes",
-                        JSONArray().put(
-                            JSONObject()
-                                .put("event", "*")
-                                .put("schema", "public")
-                                .put("table", "students")
-                        )
+                        JSONArray()
+                            .put(
+                                JSONObject()
+                                    .put("event", "*")
+                                    .put("schema", "public")
+                                    .put("table", "students")
+                            )
+                            .put(
+                                JSONObject()
+                                    .put("event", "*")
+                                    .put("schema", "public")
+                                    .put("table", "attendance")
+                            )
                     )
                     .put("private", false)
             )
@@ -600,17 +607,34 @@ class SupabaseRepository(
                 val payload = message.optJSONObject("payload") ?: return
                 val data = payload.optJSONObject("data") ?: return
                 val changeType = data.optString("type")
+                val table = data.optString("table")
                 when (changeType) {
                     "DELETE" -> {
                         val oldRecord = data.optJSONObject("old_record")
-                        val deletedId = oldRecord?.optString("id").orEmpty()
-                        if (deletedId.isNotBlank()) {
-                            realtimeListener?.onStudentDeleted(deletedId)
+                        if (table == "attendance" || oldRecord?.has("attendance_date") == true) {
+                            val studentId = oldRecord?.optString("student_id").orEmpty()
+                            val attendanceDate = oldRecord?.optString("attendance_date").orEmpty()
+                            if (studentId.isNotBlank() && attendanceDate.isNotBlank()) {
+                                realtimeListener?.onAttendanceDeleted(studentId, attendanceDate)
+                            }
+                        } else {
+                            val deletedId = oldRecord?.optString("id").orEmpty()
+                            if (deletedId.isNotBlank()) {
+                                realtimeListener?.onStudentDeleted(deletedId)
+                            }
                         }
                     }
                     "INSERT", "UPDATE" -> {
                         val record = data.optJSONObject("record") ?: return
-                        realtimeListener?.onStudentUpsert(record.toRealtimeStudent())
+                        if (table == "attendance" || record.has("attendance_date")) {
+                            val studentId = record.optString("student_id")
+                            val attendanceDate = record.optString("attendance_date")
+                            if (studentId.isNotBlank() && attendanceDate.isNotBlank()) {
+                                realtimeListener?.onAttendanceUpsert(studentId, attendanceDate)
+                            }
+                        } else {
+                            realtimeListener?.onStudentUpsert(record.toRealtimeStudent())
+                        }
                     }
                 }
             }
@@ -712,6 +736,8 @@ class SupabaseRepository(
 interface StudentRealtimeListener {
     fun onStudentUpsert(student: Student)
     fun onStudentDeleted(studentId: String)
+    fun onAttendanceUpsert(studentId: String, attendanceDate: String) {}
+    fun onAttendanceDeleted(studentId: String, attendanceDate: String) {}
     fun onStatus(message: String) {}
     fun onError(message: String) {}
 }

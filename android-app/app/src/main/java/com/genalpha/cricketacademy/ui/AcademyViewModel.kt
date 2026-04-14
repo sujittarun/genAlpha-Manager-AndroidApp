@@ -63,6 +63,30 @@ class AcademyViewModel(
                 state.copy(kids = sortStudents(state.kids.filterNot { it.id == studentId }))
             }
         }
+
+        override fun onAttendanceUpsert(studentId: String, attendanceDate: String) {
+            if (attendanceDate != todayIsoDate()) return
+            _uiState.update { state ->
+                if (state.todayAttendanceIds.contains(studentId)) return@update state
+                val currentCount = state.attendanceCounts[studentId] ?: 0
+                state.copy(
+                    todayAttendanceIds = state.todayAttendanceIds + studentId,
+                    attendanceCounts = state.attendanceCounts + (studentId to (currentCount + 1)),
+                )
+            }
+        }
+
+        override fun onAttendanceDeleted(studentId: String, attendanceDate: String) {
+            if (attendanceDate != todayIsoDate()) return
+            _uiState.update { state ->
+                if (!state.todayAttendanceIds.contains(studentId)) return@update state
+                val currentCount = state.attendanceCounts[studentId] ?: 0
+                state.copy(
+                    todayAttendanceIds = state.todayAttendanceIds - studentId,
+                    attendanceCounts = state.attendanceCounts + (studentId to (currentCount - 1).coerceAtLeast(0)),
+                )
+            }
+        }
     }
 
     private val _uiState = MutableStateFlow(
