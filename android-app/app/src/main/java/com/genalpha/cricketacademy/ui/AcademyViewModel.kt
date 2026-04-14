@@ -54,6 +54,7 @@ class AcademyViewModel(
     private val repository: SupabaseRepository,
     private val sessionPrefs: SessionPrefs,
 ) : ViewModel() {
+    private var playersLiveSyncJob: Job? = null
     private var attendanceLiveSyncJob: Job? = null
 
     private val realtimeListener = object : StudentRealtimeListener {
@@ -110,12 +111,14 @@ class AcademyViewModel(
             loadKids()
             loadTodayAttendance()
             loadAttendanceCounts()
+            startPlayersLiveSync()
             startAttendanceLiveSync()
         }
     }
 
     override fun onCleared() {
         repository.stopStudentRealtime()
+        playersLiveSyncJob?.cancel()
         attendanceLiveSyncJob?.cancel()
         super.onCleared()
     }
@@ -148,6 +151,7 @@ class AcademyViewModel(
 
     fun onAppForegrounded() {
         repository.startStudentRealtime(realtimeListener, _uiState.value.session)
+        startPlayersLiveSync()
         startAttendanceLiveSync()
         viewModelScope.launch {
             refreshSessionIfPossible()
@@ -160,6 +164,8 @@ class AcademyViewModel(
 
     fun onAppBackgrounded() {
         repository.pauseStudentRealtime()
+        playersLiveSyncJob?.cancel()
+        playersLiveSyncJob = null
         attendanceLiveSyncJob?.cancel()
         attendanceLiveSyncJob = null
     }
@@ -536,6 +542,22 @@ class AcademyViewModel(
                     .onSuccess { counts ->
                         _uiState.update { state ->
                             if (state.attendanceCounts == counts) state else state.copy(attendanceCounts = counts)
+                        }
+                    }
+                delay(1000)
+            }
+        }
+    }
+
+    private fun startPlayersLiveSync() {
+        if (playersLiveSyncJob?.isActive == true) return
+        playersLiveSyncJob = viewModelScope.launch {
+            while (isActive) {
+                runCatching { repository.fetchStudents() }
+                    .onSuccess { latestKids ->
+                        val sortedLatest = sortStudents(latestKids)
+                        _uiState.update { state ->
+                            if (state.kids == sortedLatest) state else state.copy(kids = sortedLatest)
                         }
                     }
                 delay(1000)
