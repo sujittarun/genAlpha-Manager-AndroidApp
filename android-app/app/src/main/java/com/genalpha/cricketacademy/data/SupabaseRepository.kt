@@ -149,21 +149,37 @@ class SupabaseRepository(
             .put("p_ready_to_start", draft.readyToStartNow)
             .put("p_consent_accepted", draft.consentAccepted)
             .put("p_terms_accepted", draft.termsAccepted)
-            .toString()
-            .toRequestBody(JSON_MEDIA_TYPE)
+        val executeSubmission: (JSONObject) -> AdmissionInsertResult = { payload ->
+            val request = baseRequest("$baseUrl/rest/v1/rpc/submit_admission_form")
+                .header("Authorization", "Bearer $anonKey")
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
 
-        val request = baseRequest("$baseUrl/rest/v1/rpc/submit_admission_form")
-            .header("Authorization", "Bearer $anonKey")
-            .post(body)
-            .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw SupabaseException(response.code, parseError(response.body?.string()))
+                }
 
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw SupabaseException(response.code, parseError(response.body?.string()))
+                val rows = admissionInsertAdapter.fromJson(response.body?.string().orEmpty()).orEmpty()
+                rows.firstOrNull()
+                    ?: throw SupabaseException(response.code, "Admission submitted, but registration number was not returned.")
             }
+        }
 
-            val rows = admissionInsertAdapter.fromJson(response.body?.string().orEmpty()).orEmpty()
-            rows.firstOrNull() ?: throw SupabaseException(response.code, "Admission submitted, but registration number was not returned.")
+        try {
+            executeSubmission(body)
+        } catch (error: SupabaseException) {
+            val isSignatureMismatch = error.message.contains(
+                "Could not find the function public.submit_admission_form",
+                ignoreCase = true
+            )
+            if (!isSignatureMismatch) throw error
+
+            // Backward compatibility for DBs that still have the older RPC signature.
+            body.remove("p_payment_method")
+            body.remove("p_payment_upi_id")
+            body.remove("p_payment_reference")
+            executeSubmission(body)
         }
     }
 
