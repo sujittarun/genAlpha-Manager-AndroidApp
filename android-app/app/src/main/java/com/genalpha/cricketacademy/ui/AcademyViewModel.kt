@@ -22,10 +22,13 @@ import com.genalpha.cricketacademy.data.isActive
 import com.genalpha.cricketacademy.data.isFeesPending
 import com.genalpha.cricketacademy.data.isRenewalPending
 import com.genalpha.cricketacademy.data.todayIsoDate
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 private val TIME_SLOTS = listOf("6AM", "7:30AM", "4PM", "5:30PM", "7PM")
@@ -51,6 +54,8 @@ class AcademyViewModel(
     private val repository: SupabaseRepository,
     private val sessionPrefs: SessionPrefs,
 ) : ViewModel() {
+    private var attendanceLiveSyncJob: Job? = null
+
     private val realtimeListener = object : StudentRealtimeListener {
         override fun onStudentUpsert(student: Student) {
             _uiState.update { state ->
@@ -105,11 +110,13 @@ class AcademyViewModel(
             loadKids()
             loadTodayAttendance()
             loadAttendanceCounts()
+            startAttendanceLiveSync()
         }
     }
 
     override fun onCleared() {
         repository.stopStudentRealtime()
+        attendanceLiveSyncJob?.cancel()
         super.onCleared()
     }
 
@@ -141,6 +148,7 @@ class AcademyViewModel(
 
     fun onAppForegrounded() {
         repository.startStudentRealtime(realtimeListener, _uiState.value.session)
+        startAttendanceLiveSync()
         viewModelScope.launch {
             refreshSessionIfPossible()
             repository.startStudentRealtime(realtimeListener, _uiState.value.session)
@@ -152,6 +160,8 @@ class AcademyViewModel(
 
     fun onAppBackgrounded() {
         repository.pauseStudentRealtime()
+        attendanceLiveSyncJob?.cancel()
+        attendanceLiveSyncJob = null
     }
 
     suspend fun login(email: String, password: String): OperationResult {
@@ -509,6 +519,27 @@ class AcademyViewModel(
         } finally {
             // Keep realtime active for public/player flows too, even without manager auth.
             repository.startStudentRealtime(realtimeListener, _uiState.value.session)
+        }
+    }
+
+    private fun startAttendanceLiveSync() {
+        if (attendanceLiveSyncJob?.isActive == true) return
+        attendanceLiveSyncJob = viewModelScope.launch {
+            while (isActive) {
+                runCatching { repository.fetchTodayAttendance() }
+                    .onSuccess { ids ->
+                        _uiState.update { state ->
+                            if (state.todayAttendanceIds == ids) state else state.copy(todayAttendanceIds = ids)
+                        }
+                    }
+                runCatching { repository.fetchAttendanceCounts() }
+                    .onSuccess { counts ->
+                        _uiState.update { state ->
+                            if (state.attendanceCounts == counts) state else state.copy(attendanceCounts = counts)
+                        }
+                    }
+                delay(1000)
+            }
         }
     }
 
