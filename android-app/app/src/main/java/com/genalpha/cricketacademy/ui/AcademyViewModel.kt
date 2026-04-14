@@ -671,6 +671,12 @@ class AcademyViewModel(
             return "Join date cannot be in the future."
         }
 
+        val parentDigits = draft.parentContactNo.filter(Char::isDigit)
+        val alternateDigits = draft.alternateContactNo.filter(Char::isDigit)
+        if (parentDigits.length != 10 || alternateDigits.length != 10) {
+            return "Parent and alternate contact numbers must be exactly 10 digits."
+        }
+
         if (draft.feesPaid) {
             val amount = draft.amountPaid.toDoubleOrNull()
             if (amount == null || amount <= 0) {
