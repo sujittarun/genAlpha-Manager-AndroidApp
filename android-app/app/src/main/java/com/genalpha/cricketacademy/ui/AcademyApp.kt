@@ -182,6 +182,20 @@ private val AdmissionSlotOptions = listOf(
     SlotOption("5:30PM", "5:30 - 7:00 PM"),
     SlotOption("7PM", "7:00 - 8:30 PM"),
 )
+private const val AdmissionOneTimeFee = 500.0
+private val AdmissionFeePlanOptions = listOf(
+    SlotOption("monthly", "Monthly"),
+    SlotOption("quarterly", "3 months"),
+    SlotOption("special", "Special training"),
+)
+
+private fun admissionPlanBase(plan: String): Double = when (plan) {
+    "quarterly" -> 9000.0
+    "special" -> 10000.0
+    else -> 3500.0
+}
+
+private fun admissionPlanTotal(plan: String): Double = admissionPlanBase(plan) + AdmissionOneTimeFee
 
 private val BatsmanOptions = listOf("Right-handed batsman", "Left-handed batsman")
 private val BowlingOptions = listOf(
@@ -3112,7 +3126,7 @@ private fun AdmissionFormSheet(
     var timeSlot by rememberSaveable { mutableStateOf("") }
     var joinDate by rememberSaveable { mutableStateOf(todayIsoDate()) }
     var feesPaid by rememberSaveable { mutableStateOf(false) }
-    var amountPaid by rememberSaveable { mutableStateOf("0") }
+    var feePlan by rememberSaveable { mutableStateOf("monthly") }
     var jerseySize by rememberSaveable { mutableStateOf("") }
     var jerseyPairs by rememberSaveable { mutableStateOf("0") }
     var comments by rememberSaveable { mutableStateOf("") }
@@ -3130,9 +3144,8 @@ private fun AdmissionFormSheet(
     val upiId = remember { context.getString(R.string.academy_upi_id) }
     val upiMobile = remember { context.getString(R.string.academy_upi_mobile) }
     val upiName = remember { context.getString(R.string.academy_upi_name) }
-    val upiAmount = remember(amountPaid) {
-        amountPaid.toDoubleOrNull()?.takeIf { it > 0.0 }
-    }
+    val planAmount = remember(feePlan) { admissionPlanTotal(feePlan) }
+    val upiAmount = remember(planAmount) { planAmount.takeIf { it > 0.0 } }
     val upiUri = remember(upiId, upiName, upiAmount, applicantName) {
         if (upiId.isBlank()) "" else buildUpiPayUri(
             upiId = upiId,
@@ -3416,22 +3429,33 @@ private fun AdmissionFormSheet(
                     }
                     Switch(
                         checked = feesPaid,
-                        onCheckedChange = {
-                            feesPaid = it
-                            if (!it) amountPaid = "0"
-                        }
+                        onCheckedChange = { feesPaid = it }
                     )
                 }
-                AdmissionTextField(
-                    value = amountPaid,
-                    onValueChange = { amountPaid = it },
+                AdmissionDropdownField(
+                    label = "Fee plan",
+                    value = AdmissionFeePlanOptions.firstOrNull { it.value == feePlan }?.label ?: "Monthly",
+                    options = AdmissionFeePlanOptions.map { it.label },
                     modifier = Modifier
                         .fillMaxWidth()
                         .then(rememberBringIntoViewOnFocusModifier()),
-                    label = "Amount paid",
-                    enabled = feesPaid,
-                    singleLine = true,
+                    onSelect = { selectedLabel ->
+                        feePlan = AdmissionFeePlanOptions.firstOrNull { it.label == selectedLabel }?.value ?: "monthly"
+                    },
                 )
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.background.copy(alpha = 0.8f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+                ) {
+                    Text(
+                        text = "Plan Rs ${String.format(Locale.US, "%,d", admissionPlanBase(feePlan).toInt())} + Rs ${AdmissionOneTimeFee.toInt()} admission. First payment Rs ${String.format(Locale.US, "%,d", planAmount.toInt())}",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
+                    )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     AdmissionDropdownField(
                         label = "Jersey size",
@@ -3767,7 +3791,7 @@ private fun AdmissionFormSheet(
                                     timeSlot = timeSlot,
                                     joinDate = joinDate,
                                     feesPaid = feesPaid,
-                                    amountPaid = amountPaid,
+                                    amountPaid = if (feesPaid) String.format(Locale.US, "%.2f", planAmount) else "0",
                                     jerseySize = jerseySize,
                                     jerseyPairs = jerseyPairs.ifBlank { "0" },
                                     paymentMethod = "UPI",
