@@ -9,6 +9,15 @@ import android.provider.MediaStore
 import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.clickable
@@ -116,6 +125,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.focus.onFocusEvent
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -774,7 +784,12 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                             )
                         }
                         item {
-                            FinancePanel(uiState = uiState)
+                            FinancePanel(
+                                uiState = uiState,
+                                onRefresh = {
+                                    viewModel.loadFinance()
+                                },
+                            )
                         }
                     } else if (selectedView == AppView.Admission) {
                         item {
@@ -1336,7 +1351,7 @@ private fun AppBottomBar(
     NavigationBar(
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
-        AppView.entries.filter { view -> view != AppView.Finance || showFinance }.forEach { view ->
+        AppView.entries.filter { view -> view != AppView.Finance }.forEach { view ->
             val icon = when (view) {
                 AppView.Admission -> Icons.Outlined.Description
                 AppView.Player -> Icons.Outlined.Person
@@ -1350,14 +1365,43 @@ private fun AppBottomBar(
                 label = { Text(view.label) },
             )
         }
+        AnimatedVisibility(
+            visible = showFinance,
+            enter = slideInHorizontally(
+                animationSpec = tween(durationMillis = 360),
+                initialOffsetX = { fullWidth -> fullWidth },
+            ) + expandHorizontally(
+                animationSpec = tween(durationMillis = 360),
+                expandFrom = Alignment.End,
+            ) + fadeIn(animationSpec = tween(durationMillis = 220)),
+            exit = slideOutHorizontally(
+                animationSpec = tween(durationMillis = 260),
+                targetOffsetX = { fullWidth -> fullWidth },
+            ) + shrinkHorizontally(
+                animationSpec = tween(durationMillis = 260),
+                shrinkTowards = Alignment.End,
+            ) + fadeOut(animationSpec = tween(durationMillis = 180)),
+        ) {
+            NavigationBarItem(
+                selected = selectedView == AppView.Finance,
+                onClick = { onSelected(AppView.Finance) },
+                icon = { Icon(Icons.Outlined.Add, contentDescription = AppView.Finance.label) },
+                label = { Text(AppView.Finance.label) },
+            )
+        }
     }
 }
 
 @Composable
-private fun FinancePanel(uiState: AcademyUiState) {
+private fun FinancePanel(
+    uiState: AcademyUiState,
+    onRefresh: suspend () -> Unit,
+) {
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var sortKey by rememberSaveable { mutableStateOf("date") }
     var sortAscending by rememberSaveable { mutableStateOf(false) }
+    var pullDistance by remember { mutableStateOf(0f) }
+    val scope = rememberCoroutineScope()
 
     val monthKey = java.time.YearMonth.now().toString() // "YYYY-MM"
     val yearKey = java.time.Year.now().toString()       // "YYYY"
@@ -1379,9 +1423,36 @@ private fun FinancePanel(uiState: AcademyUiState) {
     fun formatCurrency(value: Double): String = "Rs ${String.format(Locale.US, "%,.0f", value)}"
 
     Column(
-        verticalArrangement = Arrangement.spacedBy(24.dp),
-        modifier = Modifier.padding(horizontal = 16.dp)
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+        modifier = Modifier
+            .padding(horizontal = 16.dp)
+            .pointerInput(uiState.isFinanceLoading) {
+                detectVerticalDragGestures(
+                    onDragEnd = {
+                        if (pullDistance > 120f && !uiState.isFinanceLoading) {
+                            scope.launch { onRefresh() }
+                        }
+                        pullDistance = 0f
+                    },
+                    onDragCancel = {
+                        pullDistance = 0f
+                    },
+                ) { change, dragAmount ->
+                    if (dragAmount > 0) {
+                        pullDistance = (pullDistance + dragAmount).coerceAtMost(180f)
+                        change.consume()
+                    }
+                }
+            }
     ) {
+        FinanceRefreshStrip(
+            isLoading = uiState.isFinanceLoading,
+            pullDistance = pullDistance,
+            onRefresh = {
+                scope.launch { onRefresh() }
+            },
+        )
+
         // Metric Tiles
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
             FinanceStatCard(title = "Month Fees", value = formatCurrency(monthFees), modifier = Modifier.weight(1f))
@@ -1506,6 +1577,62 @@ private fun FinancePanel(uiState: AcademyUiState) {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FinanceRefreshStrip(
+    isLoading: Boolean,
+    pullDistance: Float,
+    onRefresh: () -> Unit,
+) {
+    val helperText = when {
+        isLoading -> "Refreshing finance..."
+        pullDistance > 120f -> "Release to refresh"
+        pullDistance > 0f -> "Pull a little more"
+        else -> "Pull down to refresh"
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            } else {
+                Icon(
+                    Icons.Outlined.Refresh,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            Text(
+                helperText,
+                modifier = Modifier.weight(1f),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            TextButton(
+                enabled = !isLoading,
+                onClick = onRefresh,
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+            ) {
+                Text("Refresh", fontSize = 12.sp)
             }
         }
     }
@@ -2739,30 +2866,28 @@ private fun DataTileContent(
         color = MaterialTheme.colorScheme.background.copy(alpha = 0.84f),
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier
+                .heightIn(min = 82.dp)
+                .padding(horizontal = 12.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = label.uppercase(Locale.getDefault()),
+                text = if (onClick != null) "${label.uppercase(Locale.getDefault())} >" else label.uppercase(Locale.getDefault()),
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = value,
                 color = accent,
-                fontSize = 15.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
-            if (onClick != null) {
-                Text(
-                    text = "Tap to view",
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.48f),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-            }
         }
     }
 }
