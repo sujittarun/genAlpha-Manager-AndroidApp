@@ -170,6 +170,7 @@ import com.genalpha.cricketacademy.data.trainingDurationLabel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.LocalDate
 import java.util.Calendar
 import java.util.Locale
 
@@ -1099,8 +1100,13 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         student = renewalStudent!!,
                         onDismiss = { renewalStudent = null },
                         onSubmit = { plan, months, amount, comment ->
-                            val result = viewModel.recordRenewalPayment(renewalStudent!!, plan, months, amount, comment)
+                            val studentForReceipt = renewalStudent!!
+                            val result = viewModel.recordRenewalPayment(studentForReceipt, plan, months, amount, comment)
                             if (result.success) {
+                                context.openWhatsappReceipt(
+                                    phone = studentForReceipt.parentContactNo,
+                                    receiptText = buildAndroidRenewalReceipt(studentForReceipt, plan, months, amount),
+                                )
                                 renewalStudent = null
                                 showDetailSheet = false
                                 selectedStudent = null
@@ -4993,6 +4999,9 @@ private fun normalizeWhatsappPhone(phone: String): String {
 
 private fun formatRupees(value: Double): String = "Rs ${String.format(Locale.US, "%,.0f", value)}"
 
+private fun buildReceiptNo(prefix: String, regNo: String): String =
+    "$prefix-${regNo.ifBlank { "NEW" }}-${LocalDate.now().toString().replace("-", "")}"
+
 private fun buildAndroidAdmissionReceipt(draft: AdmissionDraft, resultMessage: String): String {
     val regNo = Regex("""Reg No\s+([A-Za-z0-9-]+)""")
         .find(resultMessage)
@@ -5001,16 +5010,19 @@ private fun buildAndroidAdmissionReceipt(draft: AdmissionDraft, resultMessage: S
         ?: "Saved"
     val amount = draft.amountPaid.toDoubleOrNull() ?: 0.0
     return listOf(
-        "Gen Alpha Cricket Academy - Admission Receipt",
+        "*GEN ALPHA CRICKET ACADEMY*",
+        "_Joining Fee Receipt_",
+        "",
+        "Receipt No: ${buildReceiptNo("GACA", regNo)}",
         "Reg No: $regNo",
         "Player: ${draft.applicantName}",
         "Parent/Guardian: ${draft.fatherGuardianName}",
         "Contact: ${draft.parentContactNo}",
         "Join Date: ${displayDate(draft.joinDate)}",
         "Time Slot: ${draft.timeSlot}",
-        "Fee Status: ${if (draft.feesPaid) "Paid" else "Not paid"}",
-        "Amount: ${formatRupees(amount)}",
+        "Amount Paid: ${formatRupees(amount)}",
         "Jersey: ${draft.jerseySize.ifBlank { "Not set" }}${if ((draft.jerseyPairs.toIntOrNull() ?: 0) > 0) " (${draft.jerseyPairs} pair)" else ""}",
+        "Status: PAID",
         "",
         "Thank you for choosing Gen Alpha Cricket Academy.",
     ).joinToString("\n")
@@ -5018,19 +5030,55 @@ private fun buildAndroidAdmissionReceipt(draft: AdmissionDraft, resultMessage: S
 
 private fun buildAndroidPlayerPaidReceipt(student: Student, draft: StudentDraft): String {
     val amount = draft.amountPaid.toDoubleOrNull() ?: student.amountPaid
+    val regNo = student.regNo?.toString() ?: "Saved"
     return listOf(
-        "Gen Alpha Cricket Academy - Admission Receipt",
-        "Reg No: ${student.regNo ?: "Saved"}",
+        "*GEN ALPHA CRICKET ACADEMY*",
+        "_Joining Fee Receipt_",
+        "",
+        "Receipt No: ${buildReceiptNo("GACA", regNo)}",
+        "Reg No: $regNo",
         "Player: ${draft.name.ifBlank { student.name }}",
         "Parent/Guardian: ${student.fatherGuardianName.ifBlank { "Parent" }}",
         "Contact: ${student.parentContactNo}",
         "Join Date: ${displayDate(draft.joinDate.ifBlank { student.joinDate })}",
         "Time Slot: ${draft.timeSlot.ifBlank { student.timeSlot.ifBlank { "Not set" } }}",
-        "Fee Status: Paid",
-        "Amount: ${formatRupees(amount)}",
+        "Amount Paid: ${formatRupees(amount)}",
         "Jersey: ${draft.jerseySize.ifBlank { student.jerseySize.ifBlank { "Not set" } }}${if ((draft.jerseyPairs.toIntOrNull() ?: student.jerseyPairs) > 0) " (${draft.jerseyPairs.ifBlank { student.jerseyPairs.toString() }} pair)" else ""}",
+        "Status: PAID",
         "",
         "Thank you for choosing Gen Alpha Cricket Academy.",
+    ).joinToString("\n")
+}
+
+private fun renewalPlanLabel(plan: String): String = when (plan) {
+    "three_months" -> "3 Months"
+    "six_months" -> "6 Months"
+    "special" -> "Special Training"
+    "custom" -> "Custom Renewal"
+    else -> "Monthly"
+}
+
+private fun buildAndroidRenewalReceipt(
+    student: Student,
+    plan: String,
+    months: Int,
+    amount: Double,
+): String {
+    val regNo = student.regNo?.toString() ?: "Saved"
+    return listOf(
+        "*GEN ALPHA CRICKET ACADEMY*",
+        "_Renewal Fee Receipt_",
+        "",
+        "Receipt No: ${buildReceiptNo("GACA-REN", regNo)}",
+        "Reg No: $regNo",
+        "Player: ${student.name}",
+        "Plan: ${renewalPlanLabel(plan)}",
+        "Covered: $months month${if (months == 1) "" else "s"}",
+        "Paid On: ${displayDate(LocalDate.now().toString())}",
+        "Amount Paid: ${formatRupees(amount)}",
+        "Status: PAID",
+        "",
+        "Thank you for continuing with Gen Alpha Cricket Academy.",
     ).joinToString("\n")
 }
 
