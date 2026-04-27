@@ -135,6 +135,7 @@ import com.genalpha.cricketacademy.data.ManagerSession
 import com.genalpha.cricketacademy.data.OperationResult
 import com.genalpha.cricketacademy.data.Student
 import com.genalpha.cricketacademy.data.StudentDraft
+import com.genalpha.cricketacademy.data.StudentTimelineItem
 import com.genalpha.cricketacademy.data.calculateAgeFromDate
 import com.genalpha.cricketacademy.data.cardTimelineLabel
 import com.genalpha.cricketacademy.data.currentDatePickerValues
@@ -143,11 +144,13 @@ import com.genalpha.cricketacademy.data.isActive
 import com.genalpha.cricketacademy.data.isFeesPending
 import com.genalpha.cricketacademy.data.isRenewalPending
 import com.genalpha.cricketacademy.data.latestRenewal
+import com.genalpha.cricketacademy.data.nextRenewalCycleDate
 import com.genalpha.cricketacademy.data.renewalStatus
 import com.genalpha.cricketacademy.data.studentType
 import com.genalpha.cricketacademy.data.todayIsoDate
 import com.genalpha.cricketacademy.data.toDraft
 import com.genalpha.cricketacademy.data.trackingCaption
+import com.genalpha.cricketacademy.data.trainingDurationLabel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -191,12 +194,16 @@ private const val AdmissionOneTimeFee = 500.0
 private val AdmissionFeePlanOptions = listOf(
     SlotOption("monthly", "Monthly"),
     SlotOption("quarterly", "3 months"),
+    SlotOption("halfyearly", "6 months"),
     SlotOption("special", "Special training"),
+    SlotOption("custom", "Custom amount"),
 )
 
 private fun admissionPlanBase(plan: String): Double = when (plan) {
     "quarterly" -> 9000.0
+    "halfyearly" -> 20000.0
     "special" -> 10000.0
+    "custom" -> 0.0
     else -> 3500.0
 }
 
@@ -488,7 +495,9 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     var showDetailSheet by rememberSaveable { mutableStateOf(false) }
     var showAttendanceHistory by rememberSaveable { mutableStateOf(false) }
     var attendanceHistoryCache by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
+    var timelineCache by remember { mutableStateOf<Map<String, List<StudentTimelineItem>>>(emptyMap()) }
     var attendanceHistoryLoadingId by rememberSaveable { mutableStateOf<String?>(null) }
+    var timelineLoadingId by rememberSaveable { mutableStateOf<String?>(null) }
     var playerSearchQuery by rememberSaveable { mutableStateOf("") }
     var playerSlotFilter by rememberSaveable { mutableStateOf("") }
     val imagePickerLauncher = rememberLauncherForActivityResult(
@@ -588,6 +597,14 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                     attendanceHistoryCache = attendanceHistoryCache + (studentId to history)
                 }
             attendanceHistoryLoadingId = null
+        }
+        if (showDetailSheet && studentId != null && studentId !in timelineCache && timelineLoadingId != studentId) {
+            timelineLoadingId = studentId
+            runCatching { viewModel.studentTimeline(studentId) }
+                .onSuccess { timeline ->
+                    timelineCache = timelineCache + (studentId to timeline)
+                }
+            timelineLoadingId = null
         }
     }
 
@@ -924,6 +941,8 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                     PlayerDetailSheet(
                         student = selectedStudent!!,
                         attendanceCount = uiState.attendanceCounts[selectedStudent!!.id] ?: 0,
+                        timeline = timelineCache[selectedStudent!!.id].orEmpty(),
+                        isTimelineLoading = timelineLoadingId == selectedStudent!!.id,
                         isManager = viewModel.canEdit(),
                         onDismiss = {
                             showDetailSheet = false
@@ -2046,6 +2065,8 @@ private fun RosterRow(
 private fun PlayerDetailSheet(
     student: Student,
     attendanceCount: Int,
+    timeline: List<StudentTimelineItem>,
+    isTimelineLoading: Boolean,
     isManager: Boolean,
     onDismiss: () -> Unit,
     onShowAttendanceHistory: () -> Unit,
@@ -2056,6 +2077,7 @@ private fun PlayerDetailSheet(
 ) {
     var actionInProgress by rememberSaveable(student.id) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val slotTone = themedBadgeTone(Color(0xFFEAF2FF), BrandBlueDeep, DarkInfoContainer, DarkInfoText)
     val newTone = themedBadgeTone(Color(0xFFEAF2FF), BrandBlueDeep, DarkInfoContainer, DarkInfoText)
     val returningTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
@@ -2134,6 +2156,21 @@ private fun PlayerDetailSheet(
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 DataTileContent(
                     modifier = Modifier.weight(1f),
+                    label = "Training",
+                    value = student.trainingDurationLabel(),
+                    accent = MaterialTheme.colorScheme.onSurface,
+                )
+                DataTileContent(
+                    modifier = Modifier.weight(1f),
+                    label = "Next Fee Due",
+                    value = if (student.discontinued) "Paused" else displayDate(student.nextRenewalCycleDate()),
+                    accent = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DataTileContent(
+                    modifier = Modifier.weight(1f),
                     label = "Amount",
                     value = "Rs ${String.format(Locale.US, "%.2f", student.amountPaid)}",
                     accent = MaterialTheme.colorScheme.onSurface,
@@ -2177,6 +2214,31 @@ private fun PlayerDetailSheet(
                     modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    Text("Parent details", fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
+                    Text(
+                        student.fatherGuardianName.ifBlank { "Parent name not saved" },
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    if (student.parentContactNo.isNotBlank()) {
+                        Button(
+                            onClick = {
+                                context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${student.parentContactNo}")))
+                            },
+                            shape = RoundedCornerShape(16.dp),
+                        ) {
+                            Text("Call ${student.parentContactNo}")
+                        }
+                    } else {
+                        Text("Parent contact not saved", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f))
+                    }
+                }
+            }
+
+            Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.background.copy(alpha = 0.84f)) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     Badge(
                         label = student.renewalStatus(),
                         container = when {
@@ -2204,6 +2266,37 @@ private fun PlayerDetailSheet(
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                 fontSize = 12.sp,
             )
+
+            Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.background.copy(alpha = 0.84f)) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text("Timeline", fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
+                    when {
+                        isTimelineLoading -> Text("Loading timeline...", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f))
+                        timeline.isEmpty() -> Text(
+                            "No timeline records yet. Run the player profile timeline SQL migration to start capturing changes.",
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp,
+                        )
+                        else -> timeline.take(8).forEach { item ->
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(item.title, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                                Text(
+                                    "${displayDate(item.eventDate)} • ${item.changedBy.orEmpty().ifBlank { "System" }}",
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+                                    fontSize = 12.sp,
+                                )
+                                if (!item.details.isNullOrBlank()) {
+                                    Text(item.details, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f), fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             if (isManager) {
                 FlowRow(
@@ -3177,6 +3270,7 @@ private fun AdmissionFormSheet(
     var joinDate by rememberSaveable { mutableStateOf(todayIsoDate()) }
     var feesPaid by rememberSaveable { mutableStateOf(false) }
     var feePlan by rememberSaveable { mutableStateOf("monthly") }
+    var customAmount by rememberSaveable { mutableStateOf("") }
     var jerseySize by rememberSaveable { mutableStateOf("") }
     var jerseyPairs by rememberSaveable { mutableStateOf("0") }
     var comments by rememberSaveable { mutableStateOf(initialDraft?.comments.orEmpty()) }
@@ -3194,7 +3288,9 @@ private fun AdmissionFormSheet(
     val upiId = remember { context.getString(R.string.academy_upi_id) }
     val upiMobile = remember { context.getString(R.string.academy_upi_mobile) }
     val upiName = remember { context.getString(R.string.academy_upi_name) }
-    val planAmount = remember(feePlan) { admissionPlanTotal(feePlan) }
+    val planAmount = remember(feePlan, customAmount) {
+        if (feePlan == "custom") customAmount.toDoubleOrNull() ?: 0.0 else admissionPlanTotal(feePlan)
+    }
     val upiAmount = remember(planAmount) { planAmount.takeIf { it > 0.0 } }
     val upiUri = remember(upiId, upiName, upiAmount, applicantName) {
         if (upiId.isBlank()) "" else buildUpiPayUri(
@@ -3499,11 +3595,26 @@ private fun AdmissionFormSheet(
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
                 ) {
                     Text(
-                        text = "Plan Rs ${String.format(Locale.US, "%,d", admissionPlanBase(feePlan).toInt())} + Rs ${AdmissionOneTimeFee.toInt()} admission. First payment Rs ${String.format(Locale.US, "%,d", planAmount.toInt())}",
+                        text = if (feePlan == "custom") {
+                            "Custom amount Rs ${String.format(Locale.US, "%,d", planAmount.toInt())}"
+                        } else {
+                            "Plan Rs ${String.format(Locale.US, "%,d", admissionPlanBase(feePlan).toInt())} + Rs ${AdmissionOneTimeFee.toInt()} admission. First payment Rs ${String.format(Locale.US, "%,d", planAmount.toInt())}"
+                        },
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
                         fontSize = 12.sp,
                         lineHeight = 17.sp,
+                    )
+                }
+                if (feePlan == "custom") {
+                    AdmissionTextField(
+                        value = customAmount,
+                        onValueChange = { customAmount = it.filter { char -> char.isDigit() || char == '.' } },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(rememberBringIntoViewOnFocusModifier()),
+                        label = "Custom amount",
+                        singleLine = true,
                     )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

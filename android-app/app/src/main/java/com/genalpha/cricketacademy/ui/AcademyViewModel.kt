@@ -12,6 +12,7 @@ import com.genalpha.cricketacademy.data.SlotSummary
 import com.genalpha.cricketacademy.data.Student
 import com.genalpha.cricketacademy.data.StudentDraft
 import com.genalpha.cricketacademy.data.StudentRealtimeListener
+import com.genalpha.cricketacademy.data.StudentTimelineItem
 import com.genalpha.cricketacademy.data.SupabaseException
 import com.genalpha.cricketacademy.data.SupabaseRepository
 import com.genalpha.cricketacademy.data.buildSlotSummary
@@ -22,6 +23,7 @@ import com.genalpha.cricketacademy.data.isActive
 import com.genalpha.cricketacademy.data.isFeesPending
 import com.genalpha.cricketacademy.data.isRenewalPending
 import com.genalpha.cricketacademy.data.todayIsoDate
+import com.genalpha.cricketacademy.data.nextRenewalCycleDate
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -262,6 +264,10 @@ class AcademyViewModel(
         return repository.fetchAttendanceDates(studentId)
     }
 
+    suspend fun studentTimeline(studentId: String): List<StudentTimelineItem> {
+        return repository.fetchStudentTimeline(studentId)
+    }
+
     suspend fun markAttendance(student: Student): OperationResult {
         if (!student.isActive()) {
             return OperationResult(false, "Only active players can mark attendance.")
@@ -387,7 +393,7 @@ class AcademyViewModel(
             }
             upsertLocalStudent(
                 student.copy(
-                    renewals = student.renewals + todayIsoDate(),
+                    renewals = student.renewals + student.nextRenewalCycleDate(),
                     updatedBy = session.email,
                 )
             )

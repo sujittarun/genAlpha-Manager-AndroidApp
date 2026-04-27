@@ -22,6 +22,9 @@ data class Student(
     val paymentUpiId: String,
     val paymentReference: String,
     val comments: String,
+    val fatherGuardianName: String,
+    val parentContactNo: String,
+    val alternateContactNo: String,
     val renewals: List<String>,
     val addedBy: String,
     val updatedBy: String,
@@ -101,6 +104,17 @@ data class AttendanceDateRecord(
     @Json(name = "attendance_date") val attendanceDate: String,
 )
 
+data class StudentTimelineItem(
+    val id: String,
+    @Json(name = "student_id") val studentId: String,
+    @Json(name = "event_type") val eventType: String,
+    @Json(name = "event_date") val eventDate: String,
+    val title: String,
+    val details: String? = "",
+    @Json(name = "changed_by") val changedBy: String? = "System",
+    @Json(name = "created_at") val createdAt: String? = "",
+)
+
 data class DashboardStats(
     val joinedCount: Int,
     val activeCount: Int,
@@ -151,6 +165,9 @@ data class StudentDto(
     @Json(name = "payment_upi_id") val paymentUpiId: String? = "",
     @Json(name = "payment_reference") val paymentReference: String? = "",
     val comments: String? = "",
+    @Json(name = "father_guardian_name") val fatherGuardianName: String? = "",
+    @Json(name = "parent_contact_no") val parentContactNo: String? = "",
+    @Json(name = "alternate_contact_no") val alternateContactNo: String? = "",
     val renewals: List<String>? = emptyList(),
     @Json(name = "added_by") val addedBy: String? = "Unknown",
     @Json(name = "updated_by") val updatedBy: String? = "Unknown",
@@ -173,6 +190,9 @@ fun StudentDto.toDomain(): Student = Student(
     paymentUpiId = paymentUpiId.orEmpty(),
     paymentReference = paymentReference.orEmpty(),
     comments = comments.orEmpty(),
+    fatherGuardianName = fatherGuardianName.orEmpty(),
+    parentContactNo = parentContactNo.orEmpty(),
+    alternateContactNo = alternateContactNo.orEmpty(),
     renewals = renewals.orEmpty().filter { it.isNotBlank() },
     addedBy = addedBy ?: "Unknown",
     updatedBy = updatedBy ?: addedBy ?: "Unknown",
@@ -198,6 +218,25 @@ fun Student.toDraft(): StudentDraft = StudentDraft(
 fun Student.referenceDate(): String = renewals.lastOrNull() ?: joinDate
 
 fun Student.daysSinceReference(): Int = daysSince(referenceDate())
+
+fun Student.nextRenewalCycleDate(): String {
+    var cycleDate = referenceDate()
+    while (daysSince(cycleDate) >= 30) {
+        cycleDate = addDays(cycleDate, 30)
+    }
+    return cycleDate
+}
+
+fun Student.trainingDurationLabel(): String {
+    val days = daysSince(joinDate).coerceAtLeast(0)
+    val months = days / 30
+    val remainingDays = days % 30
+    return if (months <= 0) {
+        "$days day${if (days == 1) "" else "s"}"
+    } else {
+        "$months month${if (months == 1) "" else "s"}, $remainingDays day${if (remainingDays == 1) "" else "s"}"
+    }
+}
 
 fun Student.studentType(): String = if (renewals.isNotEmpty()) "Returning" else "New"
 
@@ -339,6 +378,17 @@ private fun Student.remainingRenewalLabel(): String {
         0 -> "Due today"
         1 -> "1 day left"
         else -> "$daysLeft days left"
+    }
+}
+
+private fun addDays(value: String, days: Int): String {
+    return try {
+        val parsed = ISO_DATE_FORMAT.parse(value) ?: return value
+        val calendar = Calendar.getInstance().apply { time = parsed }
+        calendar.add(Calendar.DAY_OF_MONTH, days)
+        ISO_DATE_FORMAT.format(calendar.time)
+    } catch (_: Exception) {
+        value
     }
 }
 

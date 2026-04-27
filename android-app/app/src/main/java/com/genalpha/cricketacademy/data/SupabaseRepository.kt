@@ -39,6 +39,9 @@ class SupabaseRepository(
     private val attendanceDateAdapter = moshi.adapter<List<AttendanceDateRecord>>(
         Types.newParameterizedType(List::class.java, AttendanceDateRecord::class.java)
     )
+    private val timelineAdapter = moshi.adapter<List<StudentTimelineItem>>(
+        Types.newParameterizedType(List::class.java, StudentTimelineItem::class.java)
+    )
     private val admissionInsertAdapter = moshi.adapter<List<AdmissionInsertResult>>(
         Types.newParameterizedType(List::class.java, AdmissionInsertResult::class.java)
     )
@@ -356,6 +359,21 @@ class SupabaseRepository(
         }
     }
 
+    suspend fun fetchStudentTimeline(studentId: String): List<StudentTimelineItem> = withContext(Dispatchers.IO) {
+        val request = baseRequest("$baseUrl/rest/v1/student_timeline?select=*&student_id=eq.$studentId&order=created_at.desc&limit=30")
+            .header("Authorization", "Bearer $anonKey")
+            .get()
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw SupabaseException(response.code, parseError(response.body?.string()))
+            }
+
+            timelineAdapter.fromJson(response.body?.string().orEmpty()).orEmpty()
+        }
+    }
+
     suspend fun markTodayAttendance(studentId: String, date: String = todayIsoDate()) {
         withContext(Dispatchers.IO) {
             val body = JSONObject()
@@ -436,7 +454,7 @@ class SupabaseRepository(
 
     suspend fun renewStudent(student: Student, managerEmail: String, session: ManagerSession) {
         withContext(Dispatchers.IO) {
-            val renewals = JSONArray(student.renewals + todayIsoDate())
+            val renewals = JSONArray(student.renewals + student.nextRenewalCycleDate())
             val body = JSONObject()
                 .put("renewals", renewals)
                 .put("updated_by", managerEmail)
@@ -792,6 +810,9 @@ class SupabaseRepository(
             paymentUpiId = optSafeString("payment_upi_id"),
             paymentReference = optSafeString("payment_reference"),
             comments = optSafeString("comments"),
+            fatherGuardianName = optSafeString("father_guardian_name"),
+            parentContactNo = optSafeString("parent_contact_no"),
+            alternateContactNo = optSafeString("alternate_contact_no"),
             discontinued = optBoolean("discontinued", false),
             discontinuedAt = if (has("discontinued_at") && !isNull("discontinued_at")) {
                 optString("discontinued_at", "").takeIf { it.isNotBlank() }
