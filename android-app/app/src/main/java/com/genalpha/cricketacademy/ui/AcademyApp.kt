@@ -4,6 +4,11 @@ import android.app.DatePickerDialog
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.Typeface
+import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import android.provider.MediaStore
 import android.util.Base64
@@ -142,6 +147,7 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.genalpha.cricketacademy.R
 import com.genalpha.cricketacademy.data.AdmissionDraft
@@ -170,6 +176,8 @@ import com.genalpha.cricketacademy.data.trainingDurationLabel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
 import java.time.LocalDate
 import java.util.Calendar
 import java.util.Locale
@@ -993,10 +1001,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                     admissionInitialDraft = null
                                 }
                                 if (result.success && draft.feesPaid) {
-                                    context.openWhatsappReceipt(
-                                        phone = draft.parentContactNo,
-                                        receiptText = buildAndroidAdmissionReceipt(draft, result.message),
-                                    )
+                                    context.shareReceiptPdf(buildAndroidAdmissionReceipt(draft, result.message))
                                 }
                                 scope.launch {
                                     snackbarHostState.showSnackbar(result.message)
@@ -1021,10 +1026,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                     selectedStudent = null
                                 }
                                 if (result.success && wasUnpaid && paidNow && studentForReceipt != null) {
-                                    context.openWhatsappReceipt(
-                                        phone = studentForReceipt.parentContactNo,
-                                        receiptText = buildAndroidPlayerPaidReceipt(studentForReceipt, draft),
-                                    )
+                                    context.shareReceiptPdf(buildAndroidPlayerPaidReceipt(studentForReceipt, draft))
                                 }
                                 scope.launch {
                                     snackbarHostState.showSnackbar(result.message)
@@ -1103,10 +1105,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                             val studentForReceipt = renewalStudent!!
                             val result = viewModel.recordRenewalPayment(studentForReceipt, plan, months, amount, comment)
                             if (result.success) {
-                                context.openWhatsappReceipt(
-                                    phone = studentForReceipt.parentContactNo,
-                                    receiptText = buildAndroidRenewalReceipt(studentForReceipt, plan, months, amount),
-                                )
+                                context.shareReceiptPdf(buildAndroidRenewalReceipt(studentForReceipt, plan, months, amount))
                                 renewalStudent = null
                                 showDetailSheet = false
                                 selectedStudent = null
@@ -4978,14 +4977,61 @@ private fun Context.sharePlainText(title: String, text: String) {
     startActivity(Intent.createChooser(sendIntent, title))
 }
 
-private fun Context.openWhatsappReceipt(phone: String, receiptText: String) {
-    val normalizedPhone = normalizeWhatsappPhone(phone)
-    if (normalizedPhone.isBlank()) {
-        sharePlainText("Share admission receipt", receiptText)
+private data class ReceiptPdfRow(
+    val label: String,
+    val value: String,
+)
+
+private data class ReceiptPdfData(
+    val receiptType: String,
+    val receiptNo: String,
+    val regNo: String,
+    val playerName: String,
+    val amountText: String,
+    val parentContact: String,
+    val status: String = "PAID",
+    val rows: List<ReceiptPdfRow>,
+    val footer: String,
+)
+
+private fun ReceiptPdfData.toShareText(): String = buildString {
+    appendLine("*GEN ALPHA CRICKET ACADEMY*")
+    appendLine("_${receiptType}_")
+    appendLine()
+    appendLine("Receipt No: $receiptNo")
+    appendLine("Reg No: $regNo")
+    appendLine("Player: $playerName")
+    appendLine("Amount Paid: $amountText")
+    rows.take(8).forEach { row ->
+        if (row.value.isNotBlank()) appendLine("${row.label}: ${row.value}")
+    }
+    appendLine("Status: $status")
+    appendLine()
+    appendLine(footer)
+}
+
+private fun Context.shareReceiptPdf(receipt: ReceiptPdfData) {
+    val pdfUri = createReceiptPdf(receipt)
+    if (pdfUri == null) {
+        sharePlainText("Share receipt", receipt.toShareText())
         return
     }
-    val uri = Uri.parse("https://wa.me/$normalizedPhone?text=${Uri.encode(receiptText)}")
-    startActivity(Intent(Intent.ACTION_VIEW, uri))
+
+    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "application/pdf"
+        putExtra(Intent.EXTRA_STREAM, pdfUri)
+        putExtra(Intent.EXTRA_SUBJECT, "${receipt.receiptType} - ${receipt.playerName}")
+        putExtra(Intent.EXTRA_TEXT, receipt.toShareText())
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+
+    val whatsappIntent = Intent(sendIntent).setPackage("com.whatsapp")
+    val businessIntent = Intent(sendIntent).setPackage("com.whatsapp.w4b")
+    when {
+        whatsappIntent.resolveActivity(packageManager) != null -> startActivity(whatsappIntent)
+        businessIntent.resolveActivity(packageManager) != null -> startActivity(businessIntent)
+        else -> startActivity(Intent.createChooser(sendIntent, "Share receipt PDF"))
+    }
 }
 
 private fun normalizeWhatsappPhone(phone: String): String {
@@ -5002,52 +5048,63 @@ private fun formatRupees(value: Double): String = "Rs ${String.format(Locale.US,
 private fun buildReceiptNo(prefix: String, regNo: String): String =
     "$prefix-${regNo.ifBlank { "NEW" }}-${LocalDate.now().toString().replace("-", "")}"
 
-private fun buildAndroidAdmissionReceipt(draft: AdmissionDraft, resultMessage: String): String {
+private fun buildAndroidAdmissionReceipt(draft: AdmissionDraft, resultMessage: String): ReceiptPdfData {
     val regNo = Regex("""Reg No\s+([A-Za-z0-9-]+)""")
         .find(resultMessage)
         ?.groupValues
         ?.getOrNull(1)
         ?: "Saved"
     val amount = draft.amountPaid.toDoubleOrNull() ?: 0.0
-    return listOf(
-        "*GEN ALPHA CRICKET ACADEMY*",
-        "_Joining Fee Receipt_",
-        "",
-        "Receipt No: ${buildReceiptNo("GACA", regNo)}",
-        "Reg No: $regNo",
-        "Player: ${draft.applicantName}",
-        "Parent/Guardian: ${draft.fatherGuardianName}",
-        "Contact: ${draft.parentContactNo}",
-        "Join Date: ${displayDate(draft.joinDate)}",
-        "Time Slot: ${draft.timeSlot}",
-        "Amount Paid: ${formatRupees(amount)}",
-        "Jersey: ${draft.jerseySize.ifBlank { "Not set" }}${if ((draft.jerseyPairs.toIntOrNull() ?: 0) > 0) " (${draft.jerseyPairs} pair)" else ""}",
-        "Status: PAID",
-        "",
-        "Thank you for choosing Gen Alpha Cricket Academy.",
-    ).joinToString("\n")
+    val jersey = "${draft.jerseySize.ifBlank { "Not set" }}${
+        if ((draft.jerseyPairs.toIntOrNull() ?: 0) > 0) {
+            " (${draft.jerseyPairs} pair${if (draft.jerseyPairs == "1") "" else "s"})"
+        } else {
+            ""
+        }
+    }"
+    return ReceiptPdfData(
+        receiptType = "Joining Fee Receipt",
+        receiptNo = buildReceiptNo("GACA", regNo),
+        regNo = regNo,
+        playerName = draft.applicantName,
+        amountText = formatRupees(amount),
+        parentContact = draft.parentContactNo,
+        rows = listOf(
+            ReceiptPdfRow("Parent / Guardian", draft.fatherGuardianName),
+            ReceiptPdfRow("Contact", draft.parentContactNo),
+            ReceiptPdfRow("Join Date", displayDate(draft.joinDate)),
+            ReceiptPdfRow("Time Slot", draft.timeSlot.ifBlank { "Not set" }),
+            ReceiptPdfRow("Jersey", jersey),
+            ReceiptPdfRow("Paid On", displayDate(LocalDate.now().toString())),
+        ),
+        footer = "Thank you for choosing Gen Alpha Cricket Academy.",
+    )
 }
 
-private fun buildAndroidPlayerPaidReceipt(student: Student, draft: StudentDraft): String {
+private fun buildAndroidPlayerPaidReceipt(student: Student, draft: StudentDraft): ReceiptPdfData {
     val amount = draft.amountPaid.toDoubleOrNull() ?: student.amountPaid
     val regNo = student.regNo?.toString() ?: "Saved"
-    return listOf(
-        "*GEN ALPHA CRICKET ACADEMY*",
-        "_Joining Fee Receipt_",
-        "",
-        "Receipt No: ${buildReceiptNo("GACA", regNo)}",
-        "Reg No: $regNo",
-        "Player: ${draft.name.ifBlank { student.name }}",
-        "Parent/Guardian: ${student.fatherGuardianName.ifBlank { "Parent" }}",
-        "Contact: ${student.parentContactNo}",
-        "Join Date: ${displayDate(draft.joinDate.ifBlank { student.joinDate })}",
-        "Time Slot: ${draft.timeSlot.ifBlank { student.timeSlot.ifBlank { "Not set" } }}",
-        "Amount Paid: ${formatRupees(amount)}",
-        "Jersey: ${draft.jerseySize.ifBlank { student.jerseySize.ifBlank { "Not set" } }}${if ((draft.jerseyPairs.toIntOrNull() ?: student.jerseyPairs) > 0) " (${draft.jerseyPairs.ifBlank { student.jerseyPairs.toString() }} pair)" else ""}",
-        "Status: PAID",
-        "",
-        "Thank you for choosing Gen Alpha Cricket Academy.",
-    ).joinToString("\n")
+    val jerseyPairs = draft.jerseyPairs.toIntOrNull() ?: student.jerseyPairs
+    val jersey = "${draft.jerseySize.ifBlank { student.jerseySize.ifBlank { "Not set" } }}${
+        if (jerseyPairs > 0) " ($jerseyPairs pair${if (jerseyPairs == 1) "" else "s"})" else ""
+    }"
+    return ReceiptPdfData(
+        receiptType = "Joining Fee Receipt",
+        receiptNo = buildReceiptNo("GACA", regNo),
+        regNo = regNo,
+        playerName = draft.name.ifBlank { student.name },
+        amountText = formatRupees(amount),
+        parentContact = student.parentContactNo,
+        rows = listOf(
+            ReceiptPdfRow("Parent / Guardian", student.fatherGuardianName.ifBlank { "Parent" }),
+            ReceiptPdfRow("Contact", student.parentContactNo),
+            ReceiptPdfRow("Join Date", displayDate(draft.joinDate.ifBlank { student.joinDate })),
+            ReceiptPdfRow("Time Slot", draft.timeSlot.ifBlank { student.timeSlot.ifBlank { "Not set" } }),
+            ReceiptPdfRow("Jersey", jersey),
+            ReceiptPdfRow("Paid On", displayDate(LocalDate.now().toString())),
+        ),
+        footer = "Thank you for choosing Gen Alpha Cricket Academy.",
+    )
 }
 
 private fun renewalPlanLabel(plan: String): String = when (plan) {
@@ -5063,23 +5120,208 @@ private fun buildAndroidRenewalReceipt(
     plan: String,
     months: Int,
     amount: Double,
-): String {
+): ReceiptPdfData {
     val regNo = student.regNo?.toString() ?: "Saved"
-    return listOf(
-        "*GEN ALPHA CRICKET ACADEMY*",
-        "_Renewal Fee Receipt_",
-        "",
-        "Receipt No: ${buildReceiptNo("GACA-REN", regNo)}",
-        "Reg No: $regNo",
-        "Player: ${student.name}",
-        "Plan: ${renewalPlanLabel(plan)}",
-        "Covered: $months month${if (months == 1) "" else "s"}",
-        "Paid On: ${displayDate(LocalDate.now().toString())}",
-        "Amount Paid: ${formatRupees(amount)}",
-        "Status: PAID",
-        "",
-        "Thank you for continuing with Gen Alpha Cricket Academy.",
-    ).joinToString("\n")
+    return ReceiptPdfData(
+        receiptType = "Renewal Fee Receipt",
+        receiptNo = buildReceiptNo("GACA-REN", regNo),
+        regNo = regNo,
+        playerName = student.name,
+        amountText = formatRupees(amount),
+        parentContact = student.parentContactNo,
+        rows = listOf(
+            ReceiptPdfRow("Plan", renewalPlanLabel(plan)),
+            ReceiptPdfRow("Covered", "$months month${if (months == 1) "" else "s"}"),
+            ReceiptPdfRow("Paid On", displayDate(LocalDate.now().toString())),
+            ReceiptPdfRow("Time Slot", student.timeSlot.ifBlank { "Not set" }),
+        ),
+        footer = "Thank you for continuing with Gen Alpha Cricket Academy.",
+    )
+}
+
+private fun Context.createReceiptPdf(receipt: ReceiptPdfData): Uri? {
+    val document = PdfDocument()
+    return try {
+        val pageWidth = 595
+        val pageHeight = 842
+        val page = document.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create())
+        val canvas = page.canvas
+        val navy = 0xFF0D2D66.toInt()
+        val blue = 0xFF1F5FBF.toInt()
+        val gold = 0xFFFFC72E.toInt()
+        val ink = 0xFF10264F.toInt()
+        val muted = 0xFF66748C.toInt()
+        val paleBlue = 0xFFF3F8FF.toInt()
+        val success = 0xFF178553.toInt()
+
+        val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+        val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 1.5f
+            color = 0xFFD9E3F2.toInt()
+        }
+        val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = ink
+            textSize = 23f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = muted
+            textSize = 9.5f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val valuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = ink
+            textSize = 13.5f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val smallPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = muted
+            textSize = 10.5f
+        }
+
+        canvas.drawColor(0xFFEEF4FB.toInt())
+        fillPaint.color = 0xFFFFFFFF.toInt()
+        canvas.drawRoundRect(RectF(28f, 28f, 567f, 814f), 26f, 26f, fillPaint)
+        canvas.drawRoundRect(RectF(28f, 28f, 567f, 814f), 26f, 26f, strokePaint)
+        fillPaint.color = navy
+        canvas.drawRect(28f, 28f, 208f, 37f, fillPaint)
+        fillPaint.color = blue
+        canvas.drawRect(208f, 28f, 388f, 37f, fillPaint)
+        fillPaint.color = gold
+        canvas.drawRect(388f, 28f, 567f, 37f, fillPaint)
+
+        BitmapFactory.decodeResource(resources, R.drawable.gen_alpha_badge_transparent)?.let { logo ->
+            canvas.drawBitmap(logo, null, RectF(48f, 56f, 118f, 126f), null)
+        }
+        labelPaint.color = blue
+        canvas.drawText("GEN ALPHA CRICKET ACADEMY", 132f, 76f, labelPaint)
+        canvas.drawText(receipt.receiptType, 132f, 104f, titlePaint)
+        smallPaint.color = muted
+        canvas.drawText("Official academy receipt", 132f, 122f, smallPaint)
+
+        val stampPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = success
+            textSize = 16f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            style = Paint.Style.STROKE
+            strokeWidth = 2f
+        }
+        canvas.drawRoundRect(RectF(462f, 62f, 532f, 98f), 18f, 18f, stampPaint)
+        stampPaint.style = Paint.Style.FILL
+        canvas.drawText(receipt.status, 476f, 86f, stampPaint)
+
+        fillPaint.color = paleBlue
+        canvas.drawRoundRect(RectF(48f, 158f, 355f, 230f), 18f, 18f, fillPaint)
+        canvas.drawRoundRect(RectF(368f, 158f, 547f, 230f), 18f, 18f, fillPaint)
+        labelPaint.color = muted
+        canvas.drawText("RECEIPT NO", 68f, 184f, labelPaint)
+        valuePaint.color = navy
+        drawSingleLine(canvas, receipt.receiptNo, 68f, 207f, valuePaint, 260f)
+        canvas.drawText("AMOUNT PAID", 388f, 184f, labelPaint)
+        drawSingleLine(canvas, receipt.amountText, 388f, 207f, valuePaint, 130f)
+
+        val rows = listOf(
+            ReceiptPdfRow("Player", receipt.playerName),
+            ReceiptPdfRow("Reg No", receipt.regNo),
+        ) + receipt.rows
+        var y = 258f
+        rows.chunked(2).forEach { pair ->
+            var x = 48f
+            pair.forEach { row ->
+                drawReceiptCell(canvas, row, x, y, 240f, labelPaint, valuePaint, fillPaint, strokePaint)
+                x += 258f
+            }
+            y += 76f
+        }
+
+        fillPaint.color = 0xFFF9FBFF.toInt()
+        canvas.drawRoundRect(RectF(48f, 710f, 547f, 770f), 18f, 18f, fillPaint)
+        smallPaint.color = muted
+        drawWrappedText(canvas, "Fees once paid are recorded against the player profile. Please keep this confirmation for academy reference.", 68f, 735f, smallPaint, 360f, 14f, 3)
+        valuePaint.color = navy
+        canvas.drawText("Thank you", 458f, 746f, valuePaint)
+
+        document.finishPage(page)
+        val safeReceiptNo = receipt.receiptNo.replace(Regex("""[^A-Za-z0-9_-]"""), "-")
+        val receiptDir = File(cacheDir, "receipts").apply { mkdirs() }
+        val file = File(receiptDir, "$safeReceiptNo.pdf")
+        FileOutputStream(file).use { document.writeTo(it) }
+        FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+    } catch (_: Exception) {
+        null
+    } finally {
+        document.close()
+    }
+}
+
+private fun drawReceiptCell(
+    canvas: android.graphics.Canvas,
+    row: ReceiptPdfRow,
+    x: Float,
+    y: Float,
+    width: Float,
+    labelPaint: Paint,
+    valuePaint: Paint,
+    fillPaint: Paint,
+    strokePaint: Paint,
+) {
+    fillPaint.color = 0xFFFFFFFF.toInt()
+    canvas.drawRoundRect(RectF(x, y, x + width, y + 58f), 14f, 14f, fillPaint)
+    canvas.drawRoundRect(RectF(x, y, x + width, y + 58f), 14f, 14f, strokePaint)
+    canvas.drawText(row.label.uppercase(Locale.getDefault()), x + 14f, y + 21f, labelPaint)
+    drawWrappedText(canvas, row.value.ifBlank { "-" }, x + 14f, y + 42f, valuePaint, width - 28f, 15f, 2)
+}
+
+private fun drawSingleLine(
+    canvas: android.graphics.Canvas,
+    text: String,
+    x: Float,
+    y: Float,
+    paint: Paint,
+    maxWidth: Float,
+) {
+    val ellipsis = "..."
+    var output = text
+    while (paint.measureText(output) > maxWidth && output.length > ellipsis.length + 1) {
+        output = output.dropLast(1)
+    }
+    if (output != text) output = output.dropLast(ellipsis.length).trimEnd() + ellipsis
+    canvas.drawText(output, x, y, paint)
+}
+
+private fun drawWrappedText(
+    canvas: android.graphics.Canvas,
+    text: String,
+    x: Float,
+    y: Float,
+    paint: Paint,
+    maxWidth: Float,
+    lineHeight: Float,
+    maxLines: Int,
+): Float {
+    val words = text.split(Regex("""\s+""")).filter { it.isNotBlank() }
+    var line = ""
+    var currentY = y
+    var lineCount = 0
+    words.forEach { word ->
+        val candidate = if (line.isBlank()) word else "$line $word"
+        if (paint.measureText(candidate) <= maxWidth) {
+            line = candidate
+        } else {
+            if (line.isNotBlank() && lineCount < maxLines) {
+                canvas.drawText(line, x, currentY, paint)
+                currentY += lineHeight
+                lineCount += 1
+            }
+            line = word
+        }
+    }
+    if (line.isNotBlank() && lineCount < maxLines) {
+        canvas.drawText(line, x, currentY, paint)
+        currentY += lineHeight
+    }
+    return currentY
 }
 
 private fun buildAndroidMonthlyFinanceBackup(
