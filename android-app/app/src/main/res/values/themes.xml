@@ -6,10 +6,10 @@
         <item name="android:statusBarColor">@color/status_bar</item>
         <item name="android:navigationBarColor">@color/navigation_bar</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
-        <item name="android:windowSplashScreenBackground">@color/status_bar</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_legacy</item>
-        <item name="android:windowSplashScreenIconBackgroundColor">@color/status_bar</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
+        <item name="android:windowSplashScreenBackground" tools:targetApi="s">@color/status_bar</item>
+        <item name="android:windowSplashScreenAnimatedIcon" tools:targetApi="s">@drawable/ic_launcher_legacy</item>
+        <item name="android:windowSplashScreenIconBackgroundColor" tools:targetApi="s">@color/status_bar</item>
         <item name="android:forceDarkAllowed" tools:targetApi="q">false</item>
     </style>
 </resources>

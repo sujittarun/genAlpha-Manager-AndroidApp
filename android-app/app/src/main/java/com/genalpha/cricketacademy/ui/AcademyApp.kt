@@ -99,6 +99,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -122,8 +123,10 @@ import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -621,7 +624,15 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     }
 
     val colorScheme = if (uiState.darkModeEnabled) AcademyDarkScheme else AcademyLightScheme
+    val density = LocalDensity.current
+    val safeDensity = remember(density) {
+        Density(
+            density = density.density,
+            fontScale = density.fontScale.coerceIn(0.92f, 1.14f),
+        )
+    }
 
+    CompositionLocalProvider(LocalDensity provides safeDensity) {
     MaterialTheme(colorScheme = colorScheme) {
         Scaffold(
             modifier = Modifier
@@ -1048,6 +1059,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
             }
         }
     }
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -1385,8 +1397,12 @@ private fun FinancePanel(
     var isAddingExpense by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    val monthKey = java.time.YearMonth.now().toString() // "YYYY-MM"
-    val yearKey = java.time.Year.now().toString()       // "YYYY"
+    fun calendarMonthKey(calendar: java.util.Calendar): String =
+        String.format(Locale.US, "%04d-%02d", calendar.get(java.util.Calendar.YEAR), calendar.get(java.util.Calendar.MONTH) + 1)
+
+    val nowCalendar = remember { java.util.Calendar.getInstance() }
+    val monthKey = calendarMonthKey(nowCalendar)
+    val yearKey = nowCalendar.get(java.util.Calendar.YEAR).toString()
 
     val initialFees = uiState.kids
         .filter { it.feesPaid }
@@ -1413,10 +1429,12 @@ private fun FinancePanel(
     val sixMonthActiveStudents = uiState.kids.count { it.isActive() && daysSince(it.joinDate) >= 180 }
     val churnRate = if (uiState.kids.isEmpty()) 0 else ((discontinuedStudents.toDouble() / uiState.kids.size) * 100).toInt()
     val monthBuckets = (5 downTo 0).map { offset ->
-        val month = java.time.YearMonth.now().minusMonths(offset.toLong())
-        val key = month.toString()
+        val month = (nowCalendar.clone() as java.util.Calendar).apply {
+            add(java.util.Calendar.MONTH, -offset)
+        }
+        val key = calendarMonthKey(month)
         FinanceMonthSummary(
-            label = month.month.getDisplayName(java.time.format.TextStyle.SHORT, Locale.US),
+            label = month.getDisplayName(java.util.Calendar.MONTH, java.util.Calendar.SHORT, Locale.US).orEmpty(),
             fees = sumFees(key),
             expenses = sumExpenses(key),
         )
