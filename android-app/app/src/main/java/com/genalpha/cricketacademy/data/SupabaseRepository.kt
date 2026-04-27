@@ -79,9 +79,9 @@ class SupabaseRepository(
         }
     }
 
-    suspend fun fetchExpenses(): List<AcademyExpense> = withContext(Dispatchers.IO) {
+    suspend fun fetchExpenses(accessToken: String): List<AcademyExpense> = withContext(Dispatchers.IO) {
         val request = baseRequest("$baseUrl/rest/v1/academy_expenses?select=*&order=expense_date.desc")
-            .header("Authorization", "Bearer $anonKey")
+            .header("Authorization", "Bearer $accessToken")
             .get()
             .build()
 
@@ -95,9 +95,9 @@ class SupabaseRepository(
         }
     }
 
-    suspend fun fetchPayments(): List<StudentPayment> = withContext(Dispatchers.IO) {
+    suspend fun fetchPayments(accessToken: String): List<StudentPayment> = withContext(Dispatchers.IO) {
         val request = baseRequest("$baseUrl/rest/v1/student_payments?select=*&order=paid_on.desc")
-            .header("Authorization", "Bearer $anonKey")
+            .header("Authorization", "Bearer $accessToken")
             .get()
             .build()
 

@@ -255,10 +255,22 @@ class AcademyViewModel(
     }
 
     suspend fun loadFinance() {
+        val session = _uiState.value.session
+        if (session == null) {
+            _uiState.update {
+                it.copy(
+                    expenses = emptyList(),
+                    payments = emptyList(),
+                    isFinanceLoading = false,
+                )
+            }
+            return
+        }
+
         _uiState.update { it.copy(isFinanceLoading = true) }
         try {
-            val fetchedExpenses = repository.fetchExpenses()
-            val fetchedPayments = repository.fetchPayments()
+            val fetchedExpenses = repository.fetchExpenses(session.accessToken)
+            val fetchedPayments = repository.fetchPayments(session.accessToken)
 
             _uiState.update {
                 it.copy(

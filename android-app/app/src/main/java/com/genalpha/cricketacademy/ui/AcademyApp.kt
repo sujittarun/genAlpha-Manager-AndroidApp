@@ -9,14 +9,8 @@ import android.provider.MediaStore
 import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandHorizontally
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -639,7 +633,9 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                     selectedView = selectedView,
                     showFinance = uiState.session != null,
                     onSelected = { view ->
-                        if ((view == AppView.Manager || view == AppView.Finance) && selectedView != view) {
+                        if (view == AppView.Finance && uiState.session != null) {
+                            selectedView = view
+                        } else if (view == AppView.Manager && selectedView != view) {
                             pendingProtectedView = view
                             showManagerPinSheet = true
                         } else {
@@ -1350,8 +1346,9 @@ private fun AppBottomBar(
 ) {
     NavigationBar(
         containerColor = MaterialTheme.colorScheme.surface,
+        modifier = Modifier.animateContentSize(animationSpec = tween(durationMillis = 320)),
     ) {
-        AppView.entries.filter { view -> view != AppView.Finance }.forEach { view ->
+        AppView.entries.filter { view -> view != AppView.Finance || showFinance }.forEach { view ->
             val icon = when (view) {
                 AppView.Admission -> Icons.Outlined.Description
                 AppView.Player -> Icons.Outlined.Person
@@ -1363,30 +1360,6 @@ private fun AppBottomBar(
                 onClick = { onSelected(view) },
                 icon = { Icon(icon, contentDescription = view.label) },
                 label = { Text(view.label) },
-            )
-        }
-        AnimatedVisibility(
-            visible = showFinance,
-            enter = slideInHorizontally(
-                animationSpec = tween(durationMillis = 360),
-                initialOffsetX = { fullWidth -> fullWidth },
-            ) + expandHorizontally(
-                animationSpec = tween(durationMillis = 360),
-                expandFrom = Alignment.End,
-            ) + fadeIn(animationSpec = tween(durationMillis = 220)),
-            exit = slideOutHorizontally(
-                animationSpec = tween(durationMillis = 260),
-                targetOffsetX = { fullWidth -> fullWidth },
-            ) + shrinkHorizontally(
-                animationSpec = tween(durationMillis = 260),
-                shrinkTowards = Alignment.End,
-            ) + fadeOut(animationSpec = tween(durationMillis = 180)),
-        ) {
-            NavigationBarItem(
-                selected = selectedView == AppView.Finance,
-                onClick = { onSelected(AppView.Finance) },
-                icon = { Icon(Icons.Outlined.Add, contentDescription = AppView.Finance.label) },
-                label = { Text(AppView.Finance.label) },
             )
         }
     }
