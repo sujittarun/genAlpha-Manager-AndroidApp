@@ -289,6 +289,27 @@ class AcademyViewModel(
         }
     }
 
+    suspend fun addExpense(
+        expenseType: String,
+        amountText: String,
+        paidBy: String,
+        comment: String,
+    ): OperationResult {
+        val amount = amountText.toDoubleOrNull() ?: 0.0
+        if (expenseType.isBlank()) return OperationResult(false, "Choose an expense type.")
+        if (amount <= 0.0) return OperationResult(false, "Enter a valid expense amount.")
+
+        return try {
+            withFreshSession { session ->
+                repository.addExpense(session, expenseType, amount, paidBy, comment.trim())
+            }
+            loadFinance()
+            OperationResult(true, "Expense added.")
+        } catch (error: Exception) {
+            OperationResult(false, error.message ?: "Unable to add expense.")
+        }
+    }
+
     suspend fun loadAttendanceCounts() {
         try {
             val attendanceCounts = repository.fetchAttendanceCounts()

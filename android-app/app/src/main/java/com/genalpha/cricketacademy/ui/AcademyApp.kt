@@ -11,7 +11,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.clickable
@@ -120,7 +119,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.focus.onFocusEvent
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -787,6 +785,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                 onRefresh = {
                                     viewModel.loadFinance()
                                 },
+                                onAddExpense = viewModel::addExpense,
                             )
                         }
                     } else if (selectedView == AppView.Admission) {
@@ -1367,15 +1366,23 @@ private fun AppBottomBar(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FinancePanel(
     uiState: AcademyUiState,
     onRefresh: suspend () -> Unit,
+    onAddExpense: suspend (String, String, String, String) -> OperationResult,
 ) {
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var sortKey by rememberSaveable { mutableStateOf("date") }
     var sortAscending by rememberSaveable { mutableStateOf(false) }
-    var pullDistance by remember { mutableStateOf(0f) }
+    var showExpenseForm by rememberSaveable { mutableStateOf(false) }
+    var expenseType by rememberSaveable { mutableStateOf("Coach Fees") }
+    var expenseAmount by rememberSaveable { mutableStateOf("") }
+    var expensePaidBy by rememberSaveable { mutableStateOf("Sandeep") }
+    var expenseComment by rememberSaveable { mutableStateOf("") }
+    var expenseMessage by remember { mutableStateOf<String?>(null) }
+    var isAddingExpense by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     val monthKey = java.time.YearMonth.now().toString() // "YYYY-MM"
@@ -1418,74 +1425,65 @@ private fun FinancePanel(
 
     Column(
         verticalArrangement = Arrangement.spacedBy(18.dp),
-        modifier = Modifier
-            .padding(horizontal = 16.dp)
-            .pointerInput(uiState.isFinanceLoading) {
-                detectVerticalDragGestures(
-                    onDragEnd = {
-                        if (pullDistance > 120f && !uiState.isFinanceLoading) {
-                            scope.launch { onRefresh() }
-                        }
-                        pullDistance = 0f
-                    },
-                    onDragCancel = {
-                        pullDistance = 0f
-                    },
-                ) { change, dragAmount ->
-                    if (dragAmount > 0) {
-                        pullDistance = (pullDistance + dragAmount).coerceAtMost(180f)
-                        change.consume()
-                    }
-                }
-            }
+        modifier = Modifier.padding(horizontal = 16.dp)
     ) {
         FinanceRefreshStrip(
             isLoading = uiState.isFinanceLoading,
-            pullDistance = pullDistance,
             onRefresh = {
                 scope.launch { onRefresh() }
             },
         )
 
-        // Metric Tiles
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            FinanceStatCard(title = "Month Fees", value = formatCurrency(monthFees), modifier = Modifier.weight(1f))
-            FinanceStatCard(title = "Month Expense", value = formatCurrency(monthExpenses), modifier = Modifier.weight(1f), accent = BrandRed)
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            FinanceMiniCard(
-                title = "Month Net",
-                value = formatCurrency(monthNet),
-                modifier = Modifier.weight(1.25f),
-                accent = if (monthNet >= 0) BrandGreen else BrandRed,
-            )
-            FinanceMiniCard(title = "Year Fees", value = formatCurrency(yearFees), modifier = Modifier.weight(0.75f), quiet = true)
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            FinanceMiniCard(title = "Overall Fees", value = formatCurrency(totalFees), modifier = Modifier.weight(1f), quiet = true)
-            FinanceMiniCard(title = "Expenses", value = formatCurrency(totalExpenses), modifier = Modifier.weight(1f), accent = BrandRed, quiet = true)
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            FinanceMiniCard(
-                title = "Students",
-                value = "$activeStudents active / $discontinuedStudents left",
-                modifier = Modifier.weight(1.35f),
-            )
-            FinanceMiniCard(
-                title = "Churn Rate",
-                value = "$churnRate%",
-                modifier = Modifier.weight(0.65f),
-                accent = if (churnRate > 20) BrandRed else BrandBlueDeep,
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            FinanceMiniCard(title = "1-Month Dropouts", value = oneMonthDropouts.toString(), modifier = Modifier.weight(1f), accent = BrandRed)
-            FinanceMiniCard(title = "6+ Month Active", value = sixMonthActiveStudents.toString(), modifier = Modifier.weight(1f), accent = BrandGreen)
-        }
+        FinanceOverviewCard(
+            monthFees = formatCurrency(monthFees),
+            monthExpenses = formatCurrency(monthExpenses),
+            monthNet = formatCurrency(monthNet),
+            isNetPositive = monthNet >= 0,
+        )
+        FinanceSignalStrip(
+            yearFees = formatCurrency(yearFees),
+            totalFees = formatCurrency(totalFees),
+            totalExpenses = formatCurrency(totalExpenses),
+            studentMix = "$activeStudents active / $discontinuedStudents left",
+            churnRate = "$churnRate%",
+            oneMonthDropouts = oneMonthDropouts.toString(),
+            sixMonthActive = sixMonthActiveStudents.toString(),
+        )
 
         FinanceMiniChart(
             months = monthBuckets,
             formatCurrency = { value -> formatCurrency(value) },
+        )
+
+        FinanceAddExpenseCard(
+            expanded = showExpenseForm,
+            expenseType = expenseType,
+            amount = expenseAmount,
+            paidBy = expensePaidBy,
+            comment = expenseComment,
+            isSaving = isAddingExpense,
+            message = expenseMessage,
+            onToggle = {
+                showExpenseForm = !showExpenseForm
+                expenseMessage = null
+            },
+            onTypeChange = { expenseType = it },
+            onAmountChange = { expenseAmount = it },
+            onPaidByChange = { expensePaidBy = it },
+            onCommentChange = { expenseComment = it },
+            onSubmit = {
+                scope.launch {
+                    isAddingExpense = true
+                    val result = onAddExpense(expenseType, expenseAmount, expensePaidBy, expenseComment)
+                    isAddingExpense = false
+                    expenseMessage = result.message
+                    if (result.success) {
+                        expenseAmount = ""
+                        expenseComment = ""
+                        showExpenseForm = false
+                    }
+                }
+            },
         )
 
         // Search
@@ -1511,49 +1509,22 @@ private fun FinancePanel(
             modifier = Modifier.fillMaxWidth()
         ) {
             Column {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f))
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                FlowRow(
+                    modifier = Modifier.padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    val headers = listOf(
-                        "type" to "Type",
-                        "amount" to "Amount",
-                        "date" to "Date",
-                        "paid_by" to "Paid By"
-                    )
-                    headers.forEachIndexed { index, (key, label) ->
-                        val weight = if (index == 0) 1.2f else 1f
-                        Row(
-                            modifier = Modifier
-                                .weight(weight)
-                                .clickable {
-                                    if (sortKey == key) {
-                                        sortAscending = !sortAscending
-                                    } else {
-                                        sortKey = key
-                                        sortAscending = true
-                                    }
-                                },
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = label,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            if (sortKey == key) {
-                                Icon(
-                                    if (sortAscending) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                    contentDescription = "Sort",
-                                    modifier = Modifier.size(16.dp),
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
+                    listOf("date" to "Date", "amount" to "Amount", "type" to "Type", "paid_by" to "Paid by").forEach { (key, label) ->
+                        FilterChip(
+                            selected = sortKey == key,
+                            onClick = {
+                                if (sortKey == key) sortAscending = !sortAscending else {
+                                    sortKey = key
+                                    sortAscending = key != "date"
+                                }
+                            },
+                            label = { Text(if (sortKey == key) "$label ${if (sortAscending) "up" else "down"}" else label) },
+                        )
                     }
                 }
 
@@ -1582,23 +1553,27 @@ private fun FinancePanel(
                     )
                 } else {
                     filteredAndSorted.forEach { expense ->
-                        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Surface(
+                            modifier = Modifier
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                                .fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
                         ) {
-                            Text(expense.expenseType, modifier = Modifier.weight(1.2f), fontSize = 13.sp)
-                            Text(formatCurrency(expense.amount), modifier = Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                            Text(com.genalpha.cricketacademy.data.displayDate(expense.expenseDate), modifier = Modifier.weight(1f), fontSize = 13.sp)
-                            Text(expense.paidBy, modifier = Modifier.weight(1f), fontSize = 13.sp)
-                        }
-                        if (!expense.comment.isNullOrBlank()) {
-                            Text(
-                                text = "Note: ${expense.comment}",
-                                modifier = Modifier.padding(start = 12.dp, bottom = 12.dp, end = 12.dp),
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                    Text(expense.expenseType, modifier = Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Text(formatCurrency(expense.amount), color = BrandRed, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                                }
+                                Text(
+                                    "${com.genalpha.cricketacademy.data.displayDate(expense.expenseDate)} • Paid by ${expense.paidBy}",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+                                )
+                                if (!expense.comment.isNullOrBlank()) {
+                                    Text(expense.comment.orEmpty(), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f))
+                                }
+                            }
                         }
                     }
                 }
@@ -1616,96 +1591,179 @@ private data class FinanceMonthSummary(
 @Composable
 private fun FinanceRefreshStrip(
     isLoading: Boolean,
-    pullDistance: Float,
     onRefresh: () -> Unit,
 ) {
-    val helperText = when {
-        isLoading -> "Refreshing finance..."
-        pullDistance > 120f -> "Release to refresh"
-        pullDistance > 0f -> "Pull a little more"
-        else -> "Pull down to refresh"
-    }
-
-    Surface(
+    Row(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        TextButton(
+            enabled = !isLoading,
+            onClick = onRefresh,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
         ) {
             if (isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.primary,
-                )
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
             } else {
-                Icon(
-                    Icons.Outlined.Refresh,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp),
-                )
+                Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
             }
-            Text(
-                helperText,
-                modifier = Modifier.weight(1f),
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            TextButton(
-                enabled = !isLoading,
-                onClick = onRefresh,
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-            ) {
-                Text("Refresh", fontSize = 12.sp)
+            Spacer(modifier = Modifier.size(6.dp))
+            Text(if (isLoading) "Refreshing" else "Refresh", fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
+private fun FinanceOverviewCard(
+    monthFees: String,
+    monthExpenses: String,
+    monthNet: String,
+    isNetPositive: Boolean,
+) {
+    Surface(
+        shape = RoundedCornerShape(26.dp),
+        color = if (isNetPositive) BrandBlueDeep else BrandRed,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text("This month net", color = Color.White.copy(alpha = 0.72f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text(monthNet, color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                FinanceGlassMetric("Fees", monthFees, Modifier.weight(1f))
+                FinanceGlassMetric("Expense", monthExpenses, Modifier.weight(1f))
             }
         }
     }
 }
 
 @Composable
-private fun FinanceMiniCard(
-    title: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    accent: Color = BrandBlueDeep,
-    quiet: Boolean = false,
-) {
+private fun FinanceGlassMetric(label: String, value: String, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(
-            1.dp,
-            if (quiet) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
-        ),
+        shape = RoundedCornerShape(18.dp),
+        color = Color.White.copy(alpha = 0.12f),
     ) {
         Column(
-            modifier = Modifier.padding(if (quiet) 11.dp else 13.dp),
-            verticalArrangement = Arrangement.spacedBy(if (quiet) 5.dp else 7.dp),
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(
-                title.uppercase(Locale.getDefault()),
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
-                fontSize = if (quiet) 9.sp else 10.sp,
-                fontWeight = FontWeight.ExtraBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                value,
-                color = accent,
-                fontSize = if (quiet) 14.sp else 17.sp,
-                fontWeight = FontWeight.ExtraBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Text(label.uppercase(Locale.getDefault()), color = Color.White.copy(alpha = 0.68f), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+            Text(value, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FinanceSignalStrip(
+    yearFees: String,
+    totalFees: String,
+    totalExpenses: String,
+    studentMix: String,
+    churnRate: String,
+    oneMonthDropouts: String,
+    sixMonthActive: String,
+) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FinanceSignal("Year", yearFees)
+        FinanceSignal("Overall", totalFees)
+        FinanceSignal("Expenses", totalExpenses, BrandRed)
+        FinanceSignal("Students", studentMix)
+        FinanceSignal("Churn", churnRate, BrandRed)
+        FinanceSignal("1M Left", oneMonthDropouts, BrandRed)
+        FinanceSignal("6M+", sixMonthActive, BrandGreen)
+    }
+}
+
+@Composable
+private fun FinanceSignal(label: String, value: String, accent: Color = BrandBlueDeep) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(label, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.54f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(value, color = accent, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+        }
+    }
+}
+
+@Composable
+private fun FinanceAddExpenseCard(
+    expanded: Boolean,
+    expenseType: String,
+    amount: String,
+    paidBy: String,
+    comment: String,
+    isSaving: Boolean,
+    message: String?,
+    onToggle: () -> Unit,
+    onTypeChange: (String) -> Unit,
+    onAmountChange: (String) -> Unit,
+    onPaidByChange: (String) -> Unit,
+    onCommentChange: (String) -> Unit,
+    onSubmit: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    Text("Expenses", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("Add costs from mobile", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f))
+                }
+                OutlinedButton(onClick = onToggle, shape = RoundedCornerShape(14.dp)) {
+                    Text(if (expanded) "Close" else "Add")
+                }
+            }
+            if (expanded) {
+                AdmissionDropdownField(
+                    label = "Type",
+                    value = expenseType,
+                    options = listOf("Coach Fees", "Purchased accessories", "Transport", "Maid expense", "Ground maintenance", "Other"),
+                    onSelect = onTypeChange,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = amount,
+                        onValueChange = onAmountChange,
+                        label = { Text("Amount") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                    )
+                    Box(modifier = Modifier.weight(1f)) {
+                        AdmissionDropdownField(
+                            label = "Paid by",
+                            value = paidBy,
+                            options = listOf("Sandeep", "Srinivas", "Sujit"),
+                            onSelect = onPaidByChange,
+                        )
+                    }
+                }
+                OutlinedTextField(value = comment, onValueChange = onCommentChange, label = { Text("Comment") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+                Button(enabled = !isSaving, onClick = onSubmit, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                    if (isSaving) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                    else Text("Save expense")
+                }
+            }
+            if (!message.isNullOrBlank()) Text(message, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
         }
     }
 }
@@ -1824,44 +1882,6 @@ private fun ChartLegend(label: String, color: Color) {
                 .background(color),
         )
         Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f))
-    }
-}
-
-@Composable
-fun FinanceStatCard(title: String, value: String, modifier: Modifier = Modifier, accent: Color = BrandBlueDeep) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
-        tonalElevation = 2.dp,
-        shadowElevation = 2.dp
-    ) {
-        Column(
-            modifier = Modifier
-                .background(Brush.linearGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.surface,
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                    )
-                ))
-                .padding(16.dp)
-        ) {
-            Text(
-                title.uppercase(),
-                fontSize = 10.sp,
-                fontWeight = FontWeight.ExtraBold,
-                letterSpacing = 0.1.em,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                value,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = accent,
-            )
-        }
     }
 }
 

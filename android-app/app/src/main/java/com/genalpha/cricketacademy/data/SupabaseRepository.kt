@@ -111,6 +111,28 @@ class SupabaseRepository(
         }
     }
 
+    suspend fun addExpense(
+        session: ManagerSession,
+        expenseType: String,
+        amount: Double,
+        paidBy: String,
+        comment: String,
+    ) = withContext(Dispatchers.IO) {
+        val body = JSONObject()
+            .put("expense_type", expenseType)
+            .put("amount", amount)
+            .put("paid_by", paidBy)
+            .put("comment", comment)
+            .put("created_by", session.email)
+
+        executeWriteRequest(
+            url = "$baseUrl/rest/v1/academy_expenses",
+            session = session,
+            method = "POST",
+            body = body,
+        )
+    }
+
     suspend fun signIn(email: String, password: String): ManagerSession = withContext(Dispatchers.IO) {
         val body = JSONObject()
             .put("email", email)
