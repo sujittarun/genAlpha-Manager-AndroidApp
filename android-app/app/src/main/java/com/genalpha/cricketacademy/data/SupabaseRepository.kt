@@ -48,6 +48,12 @@ class SupabaseRepository(
     private val studentListAdapter = moshi.adapter<List<StudentDto>>(
         Types.newParameterizedType(List::class.java, StudentDto::class.java)
     )
+    private val expenseListAdapter = moshi.adapter<List<AcademyExpense>>(
+        Types.newParameterizedType(List::class.java, AcademyExpense::class.java)
+    )
+    private val paymentListAdapter = moshi.adapter<List<StudentPayment>>(
+        Types.newParameterizedType(List::class.java, StudentPayment::class.java)
+    )
     private val realtimeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val refCounter = AtomicInteger(1)
     private var realtimeSocket: WebSocket? = null
@@ -70,6 +76,38 @@ class SupabaseRepository(
 
             val body = response.body?.string().orEmpty()
             studentListAdapter.fromJson(body).orEmpty().map { it.toDomain() }
+        }
+    }
+
+    suspend fun fetchExpenses(): List<AcademyExpense> = withContext(Dispatchers.IO) {
+        val request = baseRequest("$baseUrl/rest/v1/academy_expenses?select=*&order=expense_date.desc")
+            .header("Authorization", "Bearer $anonKey")
+            .get()
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw SupabaseException(response.code, parseError(response.body?.string()))
+            }
+
+            val body = response.body?.string().orEmpty()
+            expenseListAdapter.fromJson(body).orEmpty()
+        }
+    }
+
+    suspend fun fetchPayments(): List<StudentPayment> = withContext(Dispatchers.IO) {
+        val request = baseRequest("$baseUrl/rest/v1/student_payments?select=*&order=paid_on.desc")
+            .header("Authorization", "Bearer $anonKey")
+            .get()
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw SupabaseException(response.code, parseError(response.body?.string()))
+            }
+
+            val body = response.body?.string().orEmpty()
+            paymentListAdapter.fromJson(body).orEmpty()
         }
     }
 

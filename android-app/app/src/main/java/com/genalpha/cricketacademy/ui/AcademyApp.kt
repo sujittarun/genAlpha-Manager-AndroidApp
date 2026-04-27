@@ -47,6 +47,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Logout
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DarkMode
@@ -124,7 +127,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -622,6 +627,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
             bottomBar = {
                 AppBottomBar(
                     selectedView = selectedView,
+                    showFinance = uiState.session != null,
                     onSelected = { view ->
                         if ((view == AppView.Manager || view == AppView.Finance) && selectedView != view) {
                             pendingProtectedView = view
@@ -764,11 +770,11 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         item {
                             PublicViewHeader(
                                 title = "Finance",
-                                subtitle = "Track collected fees and simple academy expenses. Full metrics activate after running the finance SQL migration.",
+                                subtitle = "Track collected fees and simple academy expenses.",
                             )
                         }
                         item {
-                            FinanceComingSoonPanel()
+                            FinancePanel(uiState = uiState)
                         }
                     } else if (selectedView == AppView.Admission) {
                         item {
@@ -1324,12 +1330,13 @@ private fun AdmissionActionsSection(
 @Composable
 private fun AppBottomBar(
     selectedView: AppView,
+    showFinance: Boolean,
     onSelected: (AppView) -> Unit,
 ) {
     NavigationBar(
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
-        AppView.entries.forEach { view ->
+        AppView.entries.filter { view -> view != AppView.Finance || showFinance }.forEach { view ->
             val icon = when (view) {
                 AppView.Admission -> Icons.Outlined.Description
                 AppView.Player -> Icons.Outlined.Person
@@ -1347,23 +1354,196 @@ private fun AppBottomBar(
 }
 
 @Composable
-private fun FinanceComingSoonPanel() {
+private fun FinancePanel(uiState: AcademyUiState) {
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var sortKey by rememberSaveable { mutableStateOf("date") }
+    var sortAscending by rememberSaveable { mutableStateOf(false) }
+
+    val monthKey = java.time.YearMonth.now().toString() // "YYYY-MM"
+    val yearKey = java.time.Year.now().toString()       // "YYYY"
+
+    val initialFees = uiState.kids
+        .filter { it.feesPaid }
+        .map { com.genalpha.cricketacademy.data.StudentPayment(id = "", studentId = it.id, amount = it.amountPaid, paidOn = it.joinDate) }
+
+    val allFees = initialFees + uiState.payments
+
+    fun sumFees(dateKey: String = ""): Double = allFees
+        .filter { dateKey.isEmpty() || it.paidOn.startsWith(dateKey) }
+        .sumOf { it.amount }
+
+    val monthFees = sumFees(monthKey)
+    val yearFees = sumFees(yearKey)
+    val totalFees = sumFees()
+    val totalExpenses = uiState.expenses.sumOf { it.amount }
+    fun formatCurrency(value: Double): String = "Rs ${String.format(Locale.US, "%,.0f", value)}"
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(24.dp),
+        modifier = Modifier.padding(horizontal = 16.dp)
+    ) {
+        // Metric Tiles
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            FinanceStatCard(title = "Month Fees", value = formatCurrency(monthFees), modifier = Modifier.weight(1f))
+            FinanceStatCard(title = "Year Fees", value = formatCurrency(yearFees), modifier = Modifier.weight(1f))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            FinanceStatCard(title = "Total Fees", value = formatCurrency(totalFees), modifier = Modifier.weight(1f))
+            FinanceStatCard(title = "Expenses", value = formatCurrency(totalExpenses), modifier = Modifier.weight(1f))
+        }
+
+        // Search
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("Search by name or type...") },
+            singleLine = true,
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+            shape = RoundedCornerShape(12.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+            )
+        )
+
+        // Expenses Table
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f))
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val headers = listOf(
+                        "type" to "Type",
+                        "amount" to "Amount",
+                        "date" to "Date",
+                        "paid_by" to "Paid By"
+                    )
+                    headers.forEachIndexed { index, (key, label) ->
+                        val weight = if (index == 0) 1.2f else 1f
+                        Row(
+                            modifier = Modifier
+                                .weight(weight)
+                                .clickable {
+                                    if (sortKey == key) {
+                                        sortAscending = !sortAscending
+                                    } else {
+                                        sortKey = key
+                                        sortAscending = true
+                                    }
+                                },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = label,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (sortKey == key) {
+                                Icon(
+                                    if (sortAscending) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = "Sort",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+
+                val filteredAndSorted = uiState.expenses
+                    .filter {
+                        searchQuery.isEmpty() ||
+                        it.expenseType.contains(searchQuery, ignoreCase = true) ||
+                        it.paidBy.contains(searchQuery, ignoreCase = true)
+                    }
+                    .sortedWith { a, b ->
+                        val result = when (sortKey) {
+                            "type" -> a.expenseType.compareTo(b.expenseType)
+                            "amount" -> a.amount.compareTo(b.amount)
+                            "paid_by" -> a.paidBy.compareTo(b.paidBy)
+                            else -> a.expenseDate.compareTo(b.expenseDate)
+                        }
+                        if (sortAscending) result else -result
+                    }
+
+                if (filteredAndSorted.isEmpty()) {
+                    Text(
+                        "No expenses found.",
+                        modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    filteredAndSorted.forEach { expense ->
+                        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(expense.expenseType, modifier = Modifier.weight(1.2f), fontSize = 13.sp)
+                            Text(formatCurrency(expense.amount), modifier = Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Text(com.genalpha.cricketacademy.data.displayDate(expense.expenseDate), modifier = Modifier.weight(1f), fontSize = 13.sp)
+                            Text(expense.paidBy, modifier = Modifier.weight(1f), fontSize = 13.sp)
+                        }
+                        if (!expense.comment.isNullOrBlank()) {
+                            Text(
+                                text = "Note: ${expense.comment}",
+                                modifier = Modifier.padding(start = 12.dp, bottom = 12.dp, end = 12.dp),
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun FinanceStatCard(title: String, value: String, modifier: Modifier = Modifier) {
     Surface(
-        shape = RoundedCornerShape(24.dp),
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+        tonalElevation = 2.dp,
+        shadowElevation = 2.dp
     ) {
         Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier
+                .background(Brush.linearGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.surface,
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    )
+                ))
+                .padding(16.dp)
         ) {
-            Text("Finance setup added", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
             Text(
-                "Run the finance SQL migration first. Then this view can show fee totals, expenses, and add-expense controls in the next pass.",
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
+                title.uppercase(),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 0.1.em,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                value,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
     }

@@ -128,6 +128,22 @@ data class SlotSummary(
     val count: Int,
 )
 
+data class AcademyExpense(
+    val id: String,
+    @Json(name = "expense_type") val expenseType: String,
+    val amount: Double,
+    @Json(name = "expense_date") val expenseDate: String,
+    @Json(name = "paid_by") val paidBy: String,
+    val comment: String? = null,
+)
+
+data class StudentPayment(
+    val id: String,
+    @Json(name = "student_id") val studentId: String,
+    val amount: Double,
+    @Json(name = "paid_on") val paidOn: String,
+)
+
 data class AuthPayload(
     val email: String,
     val password: String,

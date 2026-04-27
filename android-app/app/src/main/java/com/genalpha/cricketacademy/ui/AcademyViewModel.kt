@@ -15,6 +15,8 @@ import com.genalpha.cricketacademy.data.StudentRealtimeListener
 import com.genalpha.cricketacademy.data.StudentTimelineItem
 import com.genalpha.cricketacademy.data.SupabaseException
 import com.genalpha.cricketacademy.data.SupabaseRepository
+import com.genalpha.cricketacademy.data.AcademyExpense
+import com.genalpha.cricketacademy.data.StudentPayment
 import com.genalpha.cricketacademy.data.buildSlotSummary
 import com.genalpha.cricketacademy.data.buildStats
 import com.genalpha.cricketacademy.data.calculateAgeFromDate
@@ -43,6 +45,9 @@ data class AcademyUiState(
     val kids: List<Student> = emptyList(),
     val todayAttendanceIds: Set<String> = emptySet(),
     val attendanceCounts: Map<String, Int> = emptyMap(),
+    val expenses: List<AcademyExpense> = emptyList(),
+    val payments: List<StudentPayment> = emptyList(),
+    val isFinanceLoading: Boolean = false,
     val selectedSlotFilter: String = "",
     val searchQuery: String = "",
     val darkModeEnabled: Boolean = false,
@@ -113,6 +118,7 @@ class AcademyViewModel(
             loadKids()
             loadTodayAttendance()
             loadAttendanceCounts()
+            loadFinance()
             startPlayersLiveSync()
             startAttendanceLiveSync()
         }
@@ -161,6 +167,7 @@ class AcademyViewModel(
             loadKids()
             loadTodayAttendance()
             loadAttendanceCounts()
+            loadFinance()
         }
     }
 
@@ -242,6 +249,29 @@ class AcademyViewModel(
                 it.copy(
                     isAttendanceRefreshing = false,
                     errorMessage = error.message ?: "Unable to load today's attendance.",
+                )
+            }
+        }
+    }
+
+    suspend fun loadFinance() {
+        _uiState.update { it.copy(isFinanceLoading = true) }
+        try {
+            val fetchedExpenses = repository.fetchExpenses()
+            val fetchedPayments = repository.fetchPayments()
+
+            _uiState.update {
+                it.copy(
+                    expenses = fetchedExpenses,
+                    payments = fetchedPayments,
+                    isFinanceLoading = false,
+                )
+            }
+        } catch (error: Exception) {
+            _uiState.update {
+                it.copy(
+                    isFinanceLoading = false,
+                    errorMessage = error.message ?: "Unable to load finance data.",
                 )
             }
         }
