@@ -17,10 +17,10 @@ supabase secrets set OPENAI_API_KEY=sk-your-key-here
 supabase secrets set OPENAI_MODEL=gpt-4o-mini
 ```
 
-4. Deploy the function:
+4. Deploy the function without JWT verification. This is required because the public website and Android app use the Supabase publishable key, not a user login JWT.
 
 ```sh
-supabase functions deploy extract-admission
+supabase functions deploy extract-admission --no-verify-jwt
 ```
 
 ## How it works

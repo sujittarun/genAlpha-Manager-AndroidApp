@@ -1,0 +1,2 @@
+[functions.extract-admission]
+verify_jwt = false
