@@ -1,28 +1,31 @@
-<!--
-  Gen Alpha Cricket Academy receipt template reference.
-  The native Android PDF generator in AcademyApp.kt mirrors this layout using PdfDocument.
-  Keep this file as the visual source when changing receipt style.
--->
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Gen Alpha Receipt Template</title>
     <style>
       :root {
         --navy: #071a3e;
+        --deep-blue: #0d2d66;
         --blue: #1f5fbf;
         --gold: #f4be2e;
         --ink: #10264f;
         --muted: #66748c;
         --paper: #ffffff;
-        --soft-blue: #f2f7ff;
-        --soft-gold: #fff6d8;
+        --line: #dce6f4;
+        --soft-blue: #f4f8ff;
+        --soft-gold: #fff7dc;
         --success: #178553;
       }
 
+      * { box-sizing: border-box; }
+
       body {
         margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
         padding: 28px;
         background: #eaf1fb;
         font-family: "Aptos", "Segoe UI", sans-serif;
@@ -30,88 +33,230 @@
       }
 
       .receipt {
-        max-width: 680px;
-        border-radius: 34px;
-        padding: 22px;
+        width: min(760px, 100%);
+        min-height: 1040px;
+        display: grid;
+        grid-template-columns: 104px 1fr;
+        overflow: hidden;
+        border-radius: 28px;
         background: var(--paper);
-        border: 1px solid #d9e3f2;
-        box-shadow: 0 30px 80px rgba(7, 26, 62, 0.16);
+        border: 1px solid var(--line);
+        box-shadow: 0 32px 90px rgba(7, 26, 62, 0.16);
       }
 
-      .hero {
+      .rail {
         position: relative;
-        overflow: hidden;
-        min-height: 230px;
-        border-radius: 28px;
-        padding: 28px;
-        background: var(--navy);
+        padding: 28px 18px;
+        background: linear-gradient(180deg, var(--navy), var(--deep-blue));
         color: white;
       }
 
-      .hero::before {
+      .rail::after {
         content: "";
         position: absolute;
-        inset: 0 0 auto;
-        height: 11px;
-        background: linear-gradient(90deg, var(--gold), #ffe996, var(--blue));
+        top: 0;
+        right: 0;
+        width: 9px;
+        height: 100%;
+        background: var(--gold);
       }
 
-      .status {
-        position: absolute;
-        top: 28px;
-        right: 28px;
-        padding: 9px 18px;
-        border-radius: 999px;
-        background: var(--success);
-        font-weight: 950;
-      }
-
-      .summary,
-      .details {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
-      }
-
-      .summary {
-        margin: -34px 20px 0;
-        position: relative;
-      }
-
-      .card {
-        border: 1px solid #e1e9f5;
-        border-radius: 22px;
-        padding: 16px;
+      .rail img {
+        width: 58px;
+        height: 100px;
+        object-fit: contain;
+        border-radius: 18px;
+        padding: 7px;
         background: white;
       }
 
-      .amount {
-        background: var(--soft-gold);
+      .rail-wordmark {
+        position: absolute;
+        left: 50%;
+        bottom: 58px;
+        transform: translateX(-50%) rotate(-90deg);
+        transform-origin: center;
+        white-space: nowrap;
+        font-size: 0.72rem;
+        font-weight: 950;
+        letter-spacing: 0.16em;
+      }
+
+      .content {
+        padding: 48px 46px 42px;
+      }
+
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        gap: 24px;
+        padding-bottom: 28px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .kicker {
+        margin: 0 0 10px;
+        color: var(--blue);
+        font-size: 0.74rem;
+        font-weight: 950;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        color: var(--ink);
+        font-size: clamp(2.1rem, 5vw, 3.1rem);
+        line-height: 0.95;
+      }
+
+      .sub {
+        margin: 12px 0 0;
+        color: var(--muted);
+        font-weight: 700;
+      }
+
+      .paid {
+        align-self: start;
+        padding: 10px 18px;
+        border-radius: 999px;
+        background: var(--success);
+        color: white;
+        font-weight: 950;
+        letter-spacing: 0.08em;
+      }
+
+      .amount-row {
+        display: grid;
+        grid-template-columns: 1fr 180px;
+        gap: 16px;
+        margin-top: 28px;
+      }
+
+      .receipt-no,
+      .amount,
+      .player,
+      .line-item,
+      .footer {
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 17px 19px;
+      }
+
+      .receipt-no { background: white; }
+      .amount { background: var(--soft-gold); }
+
+      .label {
+        display: block;
+        margin-bottom: 7px;
+        color: var(--muted);
+        font-size: 0.72rem;
+        font-weight: 950;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+      }
+
+      .value {
+        color: var(--ink);
+        font-size: 1.25rem;
+        font-weight: 950;
+        line-height: 1.12;
       }
 
       .player {
-        margin: 18px 20px 0;
+        display: grid;
+        grid-template-columns: 1fr 130px;
+        gap: 16px;
+        margin-top: 18px;
         background: var(--soft-blue);
       }
 
-      .details {
-        margin: 18px 20px 0;
+      .section-title {
+        margin: 34px 0 12px;
+        color: var(--blue);
+        font-size: 0.78rem;
+        font-weight: 950;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .detail-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .line-item {
+        display: grid;
+        grid-template-columns: 190px 1fr;
+        align-items: center;
+        min-height: 54px;
+      }
+
+      .line-item:nth-child(even) { background: #f8fbff; }
+
+      .footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 22px;
+        margin-top: 36px;
+        background: #fbfcff;
+      }
+
+      .footer p {
+        margin: 0;
+        color: var(--muted);
+        font-weight: 650;
+      }
+
+      .footer strong {
+        color: var(--deep-blue);
+        white-space: nowrap;
       }
     </style>
   </head>
   <body>
     <article class="receipt">
-      <section class="hero">
-        <p>GEN ALPHA CRICKET ACADEMY</p>
-        <h1>{{receiptType}}</h1>
-        <span class="status">PAID</span>
-      </section>
-      <section class="summary">
-        <div class="card">{{receiptNo}}</div>
-        <div class="card amount">{{amountPaid}}</div>
-      </section>
-      <section class="card player">{{playerName}} • {{regNo}}</section>
-      <section class="details">{{detailCards}}</section>
+      <aside class="rail">
+        <img src="../assets/og-image.jpg" alt="Gen Alpha Cricket Academy logo" />
+        <div class="rail-wordmark">GEN ALPHA CRICKET ACADEMY</div>
+      </aside>
+      <main class="content">
+        <section class="topbar">
+          <div>
+            <p class="kicker">Payment Confirmation</p>
+            <h1>{{receiptType}}</h1>
+            <p class="sub">Official digital receipt for academy fees</p>
+          </div>
+          <span class="paid">PAID</span>
+        </section>
+        <section class="amount-row">
+          <div class="receipt-no">
+            <span class="label">Receipt No</span>
+            <strong class="value">{{receiptNo}}</strong>
+          </div>
+          <div class="amount">
+            <span class="label">Amount Paid</span>
+            <strong class="value">{{amountPaid}}</strong>
+          </div>
+        </section>
+        <section class="player">
+          <div>
+            <span class="label">Received From</span>
+            <strong class="value">{{playerName}}</strong>
+          </div>
+          <div>
+            <span class="label">Reg No</span>
+            <strong class="value">{{regNo}}</strong>
+          </div>
+        </section>
+        <h2 class="section-title">Receipt Details</h2>
+        <section class="detail-list">{{detailRows}}</section>
+        <footer class="footer">
+          <p>Fees once paid are recorded against the player profile. Please keep this confirmation for academy reference.</p>
+          <strong>Thank you</strong>
+        </footer>
+      </main>
     </article>
   </body>
 </html>
