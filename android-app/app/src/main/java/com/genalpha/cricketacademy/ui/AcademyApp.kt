@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -1393,6 +1394,22 @@ private fun FinancePanel(
     val yearFees = sumFees(yearKey)
     val totalFees = sumFees()
     val totalExpenses = uiState.expenses.sumOf { it.amount }
+    fun sumExpenses(dateKey: String = ""): Double = uiState.expenses
+        .filter { dateKey.isEmpty() || it.expenseDate.startsWith(dateKey) }
+        .sumOf { it.amount }
+    val monthExpenses = sumExpenses(monthKey)
+    val monthNet = monthFees - monthExpenses
+    val activeStudents = uiState.kids.count { it.isActive() }
+    val discontinuedStudents = uiState.kids.count { !it.isActive() }
+    val monthBuckets = (5 downTo 0).map { offset ->
+        val month = java.time.YearMonth.now().minusMonths(offset.toLong())
+        val key = month.toString()
+        FinanceMonthSummary(
+            label = month.month.getDisplayName(java.time.format.TextStyle.SHORT, Locale.US),
+            fees = sumFees(key),
+            expenses = sumExpenses(key),
+        )
+    }
     fun formatCurrency(value: Double): String = "Rs ${String.format(Locale.US, "%,.0f", value)}"
 
     Column(
@@ -1435,6 +1452,25 @@ private fun FinancePanel(
             FinanceStatCard(title = "Total Fees", value = formatCurrency(totalFees), modifier = Modifier.weight(1f))
             FinanceStatCard(title = "Expenses", value = formatCurrency(totalExpenses), modifier = Modifier.weight(1f))
         }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            FinanceMiniCard(title = "Month Expense", value = formatCurrency(monthExpenses), modifier = Modifier.weight(1f))
+            FinanceMiniCard(
+                title = "Month Net",
+                value = formatCurrency(monthNet),
+                modifier = Modifier.weight(1f),
+                accent = if (monthNet >= 0) BrandGreen else BrandRed,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            FinanceMiniCard(title = "Active Students", value = activeStudents.toString(), modifier = Modifier.weight(1f))
+            FinanceMiniCard(title = "Discontinued", value = discontinuedStudents.toString(), modifier = Modifier.weight(1f), accent = BrandRed)
+        }
+
+        FinanceMiniChart(
+            months = monthBuckets,
+            formatCurrency = { value -> formatCurrency(value) },
+        )
 
         // Search
         OutlinedTextField(
@@ -1555,6 +1591,12 @@ private fun FinancePanel(
     }
 }
 
+private data class FinanceMonthSummary(
+    val label: String,
+    val fees: Double,
+    val expenses: Double,
+)
+
 @Composable
 private fun FinanceRefreshStrip(
     isLoading: Boolean,
@@ -1608,6 +1650,158 @@ private fun FinanceRefreshStrip(
                 Text("Refresh", fontSize = 12.sp)
             }
         }
+    }
+}
+
+@Composable
+private fun FinanceMiniCard(
+    title: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    accent: Color = BrandBlueDeep,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(13.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Text(
+                title.uppercase(Locale.getDefault()),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                value,
+                color = accent,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun FinanceMiniChart(
+    months: List<FinanceMonthSummary>,
+    formatCurrency: (Double) -> String,
+) {
+    val maxValue = months.flatMap { listOf(it.fees, it.expenses) }.maxOrNull()?.coerceAtLeast(1.0) ?: 1.0
+
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column {
+                    Text(
+                        "6 MONTH VIEW",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                    )
+                    Text("Fees vs expenses", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    ChartLegend(label = "Fees", color = BrandBlue)
+                    ChartLegend(label = "Expenses", color = BrandRed)
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                months.forEach { month ->
+                    val feeHeight = ((month.fees / maxValue) * 62).coerceAtLeast(5.0).toFloat().dp
+                    val expenseHeight = ((month.expenses / maxValue) * 62).coerceAtLeast(5.0).toFloat().dp
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .height(68.dp)
+                                .fillMaxWidth()
+                                .background(
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f),
+                                    RoundedCornerShape(12.dp),
+                                )
+                                .padding(horizontal = 5.dp, vertical = 5.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.Bottom,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(9.dp)
+                                    .height(feeHeight)
+                                    .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                                    .background(BrandBlue),
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Box(
+                                modifier = Modifier
+                                    .width(9.dp)
+                                    .height(expenseHeight)
+                                    .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                                    .background(BrandRed),
+                            )
+                        }
+                        Text(
+                            month.label,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                        )
+                        Text(
+                            "${formatCurrency(month.fees)} / ${formatCurrency(month.expenses)}",
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.48f),
+                            fontSize = 9.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChartLegend(label: String, color: Color) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(color),
+        )
+        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f))
     }
 }
 
