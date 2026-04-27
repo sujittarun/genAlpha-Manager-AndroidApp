@@ -991,6 +991,12 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                     attachedAdmissionDocumentLabel = null
                                     admissionInitialDraft = null
                                 }
+                                if (result.success && draft.feesPaid) {
+                                    context.openWhatsappReceipt(
+                                        phone = draft.parentContactNo,
+                                        receiptText = buildAndroidAdmissionReceipt(draft, result.message),
+                                    )
+                                }
                                 scope.launch {
                                     snackbarHostState.showSnackbar(result.message)
                                 }
@@ -1004,11 +1010,20 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         editingStudent = editingStudent,
                         onDismiss = { showEditorSheet = false },
                         onSubmit = { draft ->
+                            val wasUnpaid = editingStudent?.feesPaid == false
                             viewModel.saveStudent(draft, editingStudent).also { result ->
+                                val paidNow = draft.feesPaid
+                                val studentForReceipt = editingStudent
                                 if (result.success) {
                                     showEditorSheet = false
                                     editingStudent = null
                                     selectedStudent = null
+                                }
+                                if (result.success && wasUnpaid && paidNow && studentForReceipt != null) {
+                                    context.openWhatsappReceipt(
+                                        phone = studentForReceipt.parentContactNo,
+                                        receiptText = buildAndroidPlayerPaidReceipt(studentForReceipt, draft),
+                                    )
                                 }
                                 scope.launch {
                                     snackbarHostState.showSnackbar(result.message)
@@ -4650,11 +4665,6 @@ private fun AdmissionFormSheet(
                             val result = onSubmit(draft)
                             if (!result.success) {
                                 inlineMessage = result.message
-                            } else {
-                                context.sharePlainText(
-                                    title = "Share admission receipt",
-                                    text = buildAndroidAdmissionReceipt(draft, result.message),
-                                )
                             }
                             isSubmitting = false
                         }
@@ -4962,6 +4972,25 @@ private fun Context.sharePlainText(title: String, text: String) {
     startActivity(Intent.createChooser(sendIntent, title))
 }
 
+private fun Context.openWhatsappReceipt(phone: String, receiptText: String) {
+    val normalizedPhone = normalizeWhatsappPhone(phone)
+    if (normalizedPhone.isBlank()) {
+        sharePlainText("Share admission receipt", receiptText)
+        return
+    }
+    val uri = Uri.parse("https://wa.me/$normalizedPhone?text=${Uri.encode(receiptText)}")
+    startActivity(Intent(Intent.ACTION_VIEW, uri))
+}
+
+private fun normalizeWhatsappPhone(phone: String): String {
+    val digits = phone.filter { it.isDigit() }
+    return when {
+        digits.length == 10 -> "91$digits"
+        digits.length == 12 && digits.startsWith("91") -> digits
+        else -> digits
+    }
+}
+
 private fun formatRupees(value: Double): String = "Rs ${String.format(Locale.US, "%,.0f", value)}"
 
 private fun buildAndroidAdmissionReceipt(draft: AdmissionDraft, resultMessage: String): String {
@@ -4982,6 +5011,24 @@ private fun buildAndroidAdmissionReceipt(draft: AdmissionDraft, resultMessage: S
         "Fee Status: ${if (draft.feesPaid) "Paid" else "Not paid"}",
         "Amount: ${formatRupees(amount)}",
         "Jersey: ${draft.jerseySize.ifBlank { "Not set" }}${if ((draft.jerseyPairs.toIntOrNull() ?: 0) > 0) " (${draft.jerseyPairs} pair)" else ""}",
+        "",
+        "Thank you for choosing Gen Alpha Cricket Academy.",
+    ).joinToString("\n")
+}
+
+private fun buildAndroidPlayerPaidReceipt(student: Student, draft: StudentDraft): String {
+    val amount = draft.amountPaid.toDoubleOrNull() ?: student.amountPaid
+    return listOf(
+        "Gen Alpha Cricket Academy - Admission Receipt",
+        "Reg No: ${student.regNo ?: "Saved"}",
+        "Player: ${draft.name.ifBlank { student.name }}",
+        "Parent/Guardian: ${student.fatherGuardianName.ifBlank { "Parent" }}",
+        "Contact: ${student.parentContactNo}",
+        "Join Date: ${displayDate(draft.joinDate.ifBlank { student.joinDate })}",
+        "Time Slot: ${draft.timeSlot.ifBlank { student.timeSlot.ifBlank { "Not set" } }}",
+        "Fee Status: Paid",
+        "Amount: ${formatRupees(amount)}",
+        "Jersey: ${draft.jerseySize.ifBlank { student.jerseySize.ifBlank { "Not set" } }}${if ((draft.jerseyPairs.toIntOrNull() ?: student.jerseyPairs) > 0) " (${draft.jerseyPairs.ifBlank { student.jerseyPairs.toString() }} pair)" else ""}",
         "",
         "Thank you for choosing Gen Alpha Cricket Academy.",
     ).joinToString("\n")
