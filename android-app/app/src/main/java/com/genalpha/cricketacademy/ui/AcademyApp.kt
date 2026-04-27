@@ -64,8 +64,6 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.PersonAddAlt1
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -622,6 +620,12 @@ fun AcademyApp(viewModel: AcademyViewModel) {
         }
     }
 
+    LaunchedEffect(uiState.session?.accessToken) {
+        if (uiState.session != null) {
+            viewModel.loadFinance()
+        }
+    }
+
     LaunchedEffect(financePullRefreshState.isRefreshing) {
         if (financePullRefreshState.isRefreshing) {
             viewModel.loadFinance()
@@ -717,9 +721,9 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                 ) {
                     if (selectedView == AppView.Manager) {
                     item {
-                        HeaderSection(
-                            session = uiState.session,
-                            darkModeEnabled = uiState.darkModeEnabled,
+                            HeaderSection(
+                                session = uiState.session,
+                                darkModeEnabled = uiState.darkModeEnabled,
                             onToggleDarkMode = viewModel::toggleDarkMode,
                             onLogin = { showLoginSheet = true },
                             onLogout = {
@@ -1139,9 +1143,11 @@ private fun HeaderSection(
                         Text(
                             text = "Staff Dashboard",
                             color = Color.White,
-                            fontSize = 30.sp,
+                            fontSize = 24.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            lineHeight = 31.sp,
+                            lineHeight = 27.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
                         )
                         Text(
                             text = "Track admissions, fees, renewals, jersey orders, and coaching batches in one place.",
@@ -1152,19 +1158,19 @@ private fun HeaderSection(
                     }
 
                     BrandPosterCard(
-                        modifier = Modifier.widthIn(min = 92.dp, max = 108.dp),
-                        imageModifier = Modifier.height(124.dp),
+                        modifier = Modifier.widthIn(min = 72.dp, max = 84.dp),
+                        imageModifier = Modifier.height(104.dp),
                     )
                 }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     FilledTonalIconButton(
                         onClick = onToggleDarkMode,
-                        modifier = Modifier.size(42.dp),
+                        modifier = Modifier.size(40.dp),
                         shape = RoundedCornerShape(14.dp),
                         colors = androidx.compose.material3.IconButtonDefaults.filledTonalIconButtonColors(
                             containerColor = Color.White.copy(alpha = 0.14f),
@@ -1180,6 +1186,7 @@ private fun HeaderSection(
                     if (session == null) {
                         Button(
                             onClick = onLogin,
+                            modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(18.dp),
                             colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                                 containerColor = BrandGold,
@@ -1188,16 +1195,8 @@ private fun HeaderSection(
                         ) {
                             Icon(Icons.Outlined.Person, contentDescription = null)
                             Spacer(modifier = Modifier.size(8.dp))
-                            Text("Staff Login")
+                            Text("Staff Login", maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                        AssistChip(
-                            onClick = {},
-                            label = { Text("Read only") },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = Color.White.copy(alpha = 0.14f),
-                                labelColor = Color.White,
-                            ),
-                        )
                     } else {
                         Surface(
                             modifier = Modifier.weight(1f),
@@ -1209,7 +1208,10 @@ private fun HeaderSection(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
                                     Text(
                                         text = "Staff signed in",
                                         color = Color.White.copy(alpha = 0.72f),
@@ -1224,11 +1226,20 @@ private fun HeaderSection(
                                         overflow = TextOverflow.Ellipsis,
                                     )
                                 }
-                                IconButton(onClick = onLogout) {
+                                TextButton(onClick = onLogout) {
                                     Icon(
                                         Icons.AutoMirrored.Outlined.Logout,
-                                        contentDescription = "Logout",
+                                        contentDescription = null,
                                         tint = Color.White,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                    Spacer(modifier = Modifier.size(4.dp))
+                                    Text(
+                                        "Logout",
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
                                     )
                                 }
                             }
@@ -1493,6 +1504,7 @@ private fun FinancePanel(
             monthExpenses = formatCurrency(monthExpenses),
             monthNet = formatCurrency(monthNet),
             isNetPositive = monthNet >= 0,
+            darkModeEnabled = uiState.darkModeEnabled,
         )
         FinanceSignalStrip(
             yearFees = formatCurrency(yearFees),
@@ -1648,39 +1660,59 @@ private fun FinanceOverviewCard(
     monthExpenses: String,
     monthNet: String,
     isNetPositive: Boolean,
+    darkModeEnabled: Boolean,
 ) {
+    val containerColor = when {
+        isNetPositive && darkModeEnabled -> Color(0xFF163F2D)
+        isNetPositive -> Color(0xFFEAF8EF)
+        darkModeEnabled -> Color(0xFF4A1F24)
+        else -> Color(0xFFFFECEC)
+    }
+    val contentColor = when {
+        isNetPositive && darkModeEnabled -> Color(0xFFC7F7D2)
+        isNetPositive -> Color(0xFF146C43)
+        darkModeEnabled -> Color(0xFFFFC9C9)
+        else -> Color(0xFFB42318)
+    }
+    val metricColor = if (darkModeEnabled) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.72f)
     Surface(
         shape = RoundedCornerShape(26.dp),
-        color = if (isNetPositive) BrandBlueDeep else BrandRed,
+        color = containerColor,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
             modifier = Modifier.padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("This month net", color = Color.White.copy(alpha = 0.72f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            Text(monthNet, color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("This month net", color = contentColor.copy(alpha = 0.74f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text(monthNet, color = contentColor, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                FinanceGlassMetric("Fees", monthFees, Modifier.weight(1f))
-                FinanceGlassMetric("Expense", monthExpenses, Modifier.weight(1f))
+                FinanceGlassMetric("Fees", monthFees, contentColor, metricColor, Modifier.weight(1f))
+                FinanceGlassMetric("Expense", monthExpenses, contentColor, metricColor, Modifier.weight(1f))
             }
         }
     }
 }
 
 @Composable
-private fun FinanceGlassMetric(label: String, value: String, modifier: Modifier = Modifier) {
+private fun FinanceGlassMetric(
+    label: String,
+    value: String,
+    contentColor: Color,
+    containerColor: Color,
+    modifier: Modifier = Modifier,
+) {
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(18.dp),
-        color = Color.White.copy(alpha = 0.12f),
+        color = containerColor,
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(label.uppercase(Locale.getDefault()), color = Color.White.copy(alpha = 0.68f), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
-            Text(value, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(label.uppercase(Locale.getDefault()), color = contentColor.copy(alpha = 0.68f), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+            Text(value, color = contentColor, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

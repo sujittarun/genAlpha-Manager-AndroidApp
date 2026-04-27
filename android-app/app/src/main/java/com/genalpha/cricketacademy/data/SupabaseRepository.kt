@@ -117,7 +117,7 @@ class SupabaseRepository(
         amount: Double,
         paidBy: String,
         comment: String,
-    ) = withContext(Dispatchers.IO) {
+    ): AcademyExpense = withContext(Dispatchers.IO) {
         val body = JSONObject()
             .put("expense_type", expenseType)
             .put("amount", amount)
@@ -125,12 +125,14 @@ class SupabaseRepository(
             .put("comment", comment)
             .put("created_by", session.email)
 
-        executeWriteRequest(
+        val responseBody = executeWriteRequestReturningBody(
             url = "$baseUrl/rest/v1/academy_expenses",
             session = session,
             method = "POST",
             body = body,
         )
+        expenseListAdapter.fromJson(responseBody).orEmpty().firstOrNull()
+            ?: throw SupabaseException(200, "Expense saved, but the saved record could not be read.")
     }
 
     suspend fun signIn(email: String, password: String): ManagerSession = withContext(Dispatchers.IO) {
@@ -646,6 +648,33 @@ class SupabaseRepository(
         }
     }
 
+    private fun executeWriteRequestReturningBody(
+        url: String,
+        session: ManagerSession,
+        method: String,
+        body: JSONObject?,
+    ): String {
+        val requestBody = body?.toString()?.toRequestBody(JSON_MEDIA_TYPE)
+        val builder = baseRequest(url)
+            .header("Authorization", "Bearer ${session.accessToken}")
+            .header("Prefer", "return=representation")
+
+        when (method) {
+            "POST" -> builder.post(requireNotNull(requestBody))
+            "PATCH" -> builder.patch(requireNotNull(requestBody))
+            "DELETE" -> builder.delete()
+            else -> error("Unsupported method $method")
+        }
+
+        client.newCall(builder.build()).execute().use { response ->
+            val responseBody = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw SupabaseException(response.code, parseError(responseBody))
+            }
+            return responseBody
+        }
+    }
+
     private fun studentPayload(
         draft: StudentDraft,
         renewals: List<String>,
@@ -791,6 +820,18 @@ class SupabaseRepository(
                                     .put("schema", "public")
                                     .put("table", "attendance")
                             )
+                            .put(
+                                JSONObject()
+                                    .put("event", "*")
+                                    .put("schema", "public")
+                                    .put("table", "academy_expenses")
+                            )
+                            .put(
+                                JSONObject()
+                                    .put("event", "*")
+                                    .put("schema", "public")
+                                    .put("table", "student_payments")
+                            )
                     )
                     .put("private", false)
             )
@@ -842,6 +883,16 @@ class SupabaseRepository(
                             if (studentId.isNotBlank() && attendanceDate.isNotBlank()) {
                                 realtimeListener?.onAttendanceDeleted(studentId, attendanceDate)
                             }
+                        } else if (table == "academy_expenses") {
+                            val deletedId = oldRecord?.optString("id").orEmpty()
+                            if (deletedId.isNotBlank()) {
+                                realtimeListener?.onExpenseDeleted(deletedId)
+                            }
+                        } else if (table == "student_payments") {
+                            val deletedId = oldRecord?.optString("id").orEmpty()
+                            if (deletedId.isNotBlank()) {
+                                realtimeListener?.onPaymentDeleted(deletedId)
+                            }
                         } else {
                             val deletedId = oldRecord?.optString("id").orEmpty()
                             if (deletedId.isNotBlank()) {
@@ -857,6 +908,10 @@ class SupabaseRepository(
                             if (studentId.isNotBlank() && attendanceDate.isNotBlank()) {
                                 realtimeListener?.onAttendanceUpsert(studentId, attendanceDate)
                             }
+                        } else if (table == "academy_expenses") {
+                            realtimeListener?.onExpenseUpsert(record.toRealtimeExpense())
+                        } else if (table == "student_payments") {
+                            realtimeListener?.onPaymentUpsert(record.toRealtimePayment())
                         } else {
                             realtimeListener?.onStudentUpsert(record.toRealtimeStudent())
                         }
@@ -911,6 +966,26 @@ class SupabaseRepository(
             } else {
                 null
             },
+        )
+    }
+
+    private fun JSONObject.toRealtimeExpense(): AcademyExpense {
+        return AcademyExpense(
+            id = optSafeString("id"),
+            expenseType = optSafeString("expense_type"),
+            amount = optDoubleValue("amount"),
+            expenseDate = optSafeString("expense_date"),
+            paidBy = optSafeString("paid_by"),
+            comment = optSafeString("comment"),
+        )
+    }
+
+    private fun JSONObject.toRealtimePayment(): StudentPayment {
+        return StudentPayment(
+            id = optSafeString("id"),
+            studentId = optSafeString("student_id"),
+            amount = optDoubleValue("amount"),
+            paidOn = optSafeString("paid_on"),
         )
     }
 
@@ -973,6 +1048,10 @@ interface StudentRealtimeListener {
     fun onStudentDeleted(studentId: String)
     fun onAttendanceUpsert(studentId: String, attendanceDate: String) {}
     fun onAttendanceDeleted(studentId: String, attendanceDate: String) {}
+    fun onExpenseUpsert(expense: AcademyExpense) {}
+    fun onExpenseDeleted(expenseId: String) {}
+    fun onPaymentUpsert(payment: StudentPayment) {}
+    fun onPaymentDeleted(paymentId: String) {}
     fun onStatus(message: String) {}
     fun onError(message: String) {}
 }

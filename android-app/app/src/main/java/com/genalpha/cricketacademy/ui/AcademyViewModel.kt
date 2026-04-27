@@ -100,6 +100,26 @@ class AcademyViewModel(
                 )
             }
         }
+
+        override fun onExpenseUpsert(expense: AcademyExpense) {
+            upsertLocalExpense(expense)
+        }
+
+        override fun onExpenseDeleted(expenseId: String) {
+            _uiState.update { state ->
+                state.copy(expenses = state.expenses.filterNot { it.id == expenseId })
+            }
+        }
+
+        override fun onPaymentUpsert(payment: StudentPayment) {
+            upsertLocalPayment(payment)
+        }
+
+        override fun onPaymentDeleted(paymentId: String) {
+            _uiState.update { state ->
+                state.copy(payments = state.payments.filterNot { it.id == paymentId })
+            }
+        }
     }
 
     private val _uiState = MutableStateFlow(
@@ -300,10 +320,10 @@ class AcademyViewModel(
         if (amount <= 0.0) return OperationResult(false, "Enter a valid expense amount.")
 
         return try {
-            withFreshSession { session ->
+            val created = withFreshSession { session ->
                 repository.addExpense(session, expenseType, amount, paidBy, comment.trim())
             }
-            loadFinance()
+            upsertLocalExpense(created)
             OperationResult(true, "Expense added.")
         } catch (error: Exception) {
             OperationResult(false, error.message ?: "Unable to add expense.")
@@ -492,6 +512,7 @@ class AcademyViewModel(
                     updatedBy = session.email,
                 )
             )
+            refreshFinanceInBackground()
             refreshInBackground()
             OperationResult(true, "${student.name} renewal payment recorded.")
         } catch (error: Exception) {
@@ -683,6 +704,30 @@ class AcademyViewModel(
                     }
                 delay(1000)
             }
+        }
+    }
+
+    private fun upsertLocalExpense(expense: AcademyExpense) {
+        _uiState.update { state ->
+            state.copy(
+                expenses = (state.expenses.filterNot { it.id == expense.id } + expense)
+                    .sortedByDescending { it.expenseDate },
+            )
+        }
+    }
+
+    private fun upsertLocalPayment(payment: StudentPayment) {
+        _uiState.update { state ->
+            state.copy(
+                payments = (state.payments.filterNot { it.id == payment.id } + payment)
+                    .sortedByDescending { it.paidOn },
+            )
+        }
+    }
+
+    private fun refreshFinanceInBackground() {
+        viewModelScope.launch {
+            loadFinance()
         }
     }
 
