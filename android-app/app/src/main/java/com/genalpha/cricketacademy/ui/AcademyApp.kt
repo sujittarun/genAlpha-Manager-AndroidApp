@@ -149,6 +149,7 @@ import com.genalpha.cricketacademy.data.StudentTimelineItem
 import com.genalpha.cricketacademy.data.calculateAgeFromDate
 import com.genalpha.cricketacademy.data.cardTimelineLabel
 import com.genalpha.cricketacademy.data.currentDatePickerValues
+import com.genalpha.cricketacademy.data.daysSince
 import com.genalpha.cricketacademy.data.displayDate
 import com.genalpha.cricketacademy.data.isActive
 import com.genalpha.cricketacademy.data.isFeesPending
@@ -1401,6 +1402,9 @@ private fun FinancePanel(
     val monthNet = monthFees - monthExpenses
     val activeStudents = uiState.kids.count { it.isActive() }
     val discontinuedStudents = uiState.kids.count { !it.isActive() }
+    val oneMonthDropouts = uiState.kids.count { !it.isActive() && it.renewals.isEmpty() }
+    val sixMonthActiveStudents = uiState.kids.count { it.isActive() && daysSince(it.joinDate) >= 180 }
+    val churnRate = if (uiState.kids.isEmpty()) 0 else ((discontinuedStudents.toDouble() / uiState.kids.size) * 100).toInt()
     val monthBuckets = (5 downTo 0).map { offset ->
         val month = java.time.YearMonth.now().minusMonths(offset.toLong())
         val key = month.toString()
@@ -1463,8 +1467,21 @@ private fun FinancePanel(
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            FinanceMiniCard(title = "Active Students", value = activeStudents.toString(), modifier = Modifier.weight(1f))
-            FinanceMiniCard(title = "Discontinued", value = discontinuedStudents.toString(), modifier = Modifier.weight(1f), accent = BrandRed)
+            FinanceMiniCard(
+                title = "Students",
+                value = "$activeStudents active / $discontinuedStudents left",
+                modifier = Modifier.weight(1.35f),
+            )
+            FinanceMiniCard(
+                title = "Churn Rate",
+                value = "$churnRate%",
+                modifier = Modifier.weight(0.65f),
+                accent = if (churnRate > 20) BrandRed else BrandBlueDeep,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            FinanceMiniCard(title = "1-Month Dropouts", value = oneMonthDropouts.toString(), modifier = Modifier.weight(1f), accent = BrandRed)
+            FinanceMiniCard(title = "6+ Month Active", value = sixMonthActiveStudents.toString(), modifier = Modifier.weight(1f), accent = BrandGreen)
         }
 
         FinanceMiniChart(
