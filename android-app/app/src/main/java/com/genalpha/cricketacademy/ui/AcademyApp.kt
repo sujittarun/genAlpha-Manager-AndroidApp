@@ -314,34 +314,38 @@ private fun PublicViewHeader(
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(20.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = title,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 28.sp,
-                    lineHeight = 30.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                )
-                Text(
-                    text = subtitle,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp,
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 24.sp,
+                        lineHeight = 27.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                BrandPosterCard(
+                    modifier = Modifier.widthIn(min = 68.dp, max = 76.dp),
+                    imageModifier = Modifier.height(92.dp),
                 )
             }
-            BrandPosterCard(
-                modifier = Modifier.widthIn(min = 84.dp, max = 92.dp),
-                imageModifier = Modifier.height(116.dp),
+            Text(
+                text = subtitle,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
             )
         }
     }
@@ -650,7 +654,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     val safeDensity = remember(density) {
         Density(
             density = density.density,
-            fontScale = density.fontScale.coerceIn(0.92f, 1.14f),
+            fontScale = density.fontScale.coerceIn(0.92f, 1.0f),
         )
     }
 
@@ -1400,8 +1404,15 @@ private fun AppBottomBar(
             NavigationBarItem(
                 selected = selectedView == view,
                 onClick = { onSelected(view) },
-                icon = { Icon(icon, contentDescription = view.label) },
-                label = { Text(view.label) },
+                icon = { Icon(icon, contentDescription = view.label, modifier = Modifier.size(22.dp)) },
+                label = {
+                    Text(
+                        view.label,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
             )
         }
     }
