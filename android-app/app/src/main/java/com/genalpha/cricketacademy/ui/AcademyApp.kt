@@ -1448,23 +1448,22 @@ private fun FinancePanel(
         )
 
         // Metric Tiles
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-            FinanceStatCard(title = "Month Fees", value = formatCurrency(monthFees), modifier = Modifier.weight(1f))
-            FinanceStatCard(title = "Year Fees", value = formatCurrency(yearFees), modifier = Modifier.weight(1f))
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-            FinanceStatCard(title = "Total Fees", value = formatCurrency(totalFees), modifier = Modifier.weight(1f))
-            FinanceStatCard(title = "Expenses", value = formatCurrency(totalExpenses), modifier = Modifier.weight(1f))
-        }
-
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            FinanceMiniCard(title = "Month Expense", value = formatCurrency(monthExpenses), modifier = Modifier.weight(1f))
+            FinanceStatCard(title = "Month Fees", value = formatCurrency(monthFees), modifier = Modifier.weight(1f))
+            FinanceStatCard(title = "Month Expense", value = formatCurrency(monthExpenses), modifier = Modifier.weight(1f), accent = BrandRed)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             FinanceMiniCard(
                 title = "Month Net",
                 value = formatCurrency(monthNet),
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1.25f),
                 accent = if (monthNet >= 0) BrandGreen else BrandRed,
             )
+            FinanceMiniCard(title = "Year Fees", value = formatCurrency(yearFees), modifier = Modifier.weight(0.75f), quiet = true)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            FinanceMiniCard(title = "Overall Fees", value = formatCurrency(totalFees), modifier = Modifier.weight(1f), quiet = true)
+            FinanceMiniCard(title = "Expenses", value = formatCurrency(totalExpenses), modifier = Modifier.weight(1f), accent = BrandRed, quiet = true)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             FinanceMiniCard(
@@ -1676,21 +1675,25 @@ private fun FinanceMiniCard(
     value: String,
     modifier: Modifier = Modifier,
     accent: Color = BrandBlueDeep,
+    quiet: Boolean = false,
 ) {
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+        border = BorderStroke(
+            1.dp,
+            if (quiet) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+        ),
     ) {
         Column(
-            modifier = Modifier.padding(13.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp),
+            modifier = Modifier.padding(if (quiet) 11.dp else 13.dp),
+            verticalArrangement = Arrangement.spacedBy(if (quiet) 5.dp else 7.dp),
         ) {
             Text(
                 title.uppercase(Locale.getDefault()),
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
-                fontSize = 10.sp,
+                fontSize = if (quiet) 9.sp else 10.sp,
                 fontWeight = FontWeight.ExtraBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -1698,7 +1701,7 @@ private fun FinanceMiniCard(
             Text(
                 value,
                 color = accent,
-                fontSize = 17.sp,
+                fontSize = if (quiet) 14.sp else 17.sp,
                 fontWeight = FontWeight.ExtraBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -1750,6 +1753,7 @@ private fun FinanceMiniChart(
                 verticalAlignment = Alignment.Bottom,
             ) {
                 months.forEach { month ->
+                    val net = month.fees - month.expenses
                     val feeHeight = ((month.fees / maxValue) * 62).coerceAtLeast(5.0).toFloat().dp
                     val expenseHeight = ((month.expenses / maxValue) * 62).coerceAtLeast(5.0).toFloat().dp
                     Column(
@@ -1793,9 +1797,10 @@ private fun FinanceMiniChart(
                             maxLines = 1,
                         )
                         Text(
-                            "${formatCurrency(month.fees)} / ${formatCurrency(month.expenses)}",
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.48f),
+                            "Net ${formatCurrency(net)}",
+                            color = if (net >= 0) BrandGreen else BrandRed,
                             fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -1823,7 +1828,7 @@ private fun ChartLegend(label: String, color: Color) {
 }
 
 @Composable
-fun FinanceStatCard(title: String, value: String, modifier: Modifier = Modifier) {
+fun FinanceStatCard(title: String, value: String, modifier: Modifier = Modifier, accent: Color = BrandBlueDeep) {
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
@@ -1854,7 +1859,7 @@ fun FinanceStatCard(title: String, value: String, modifier: Modifier = Modifier)
                 value,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = accent,
             )
         }
     }
