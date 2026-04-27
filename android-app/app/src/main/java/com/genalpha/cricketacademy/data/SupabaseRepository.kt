@@ -255,6 +255,54 @@ class SupabaseRepository(
         }
     }
 
+    suspend fun extractAdmissionDraft(
+        fileBase64: String,
+        mimeType: String,
+        fileName: String,
+    ): AdmissionDraft = withContext(Dispatchers.IO) {
+        val body = JSONObject()
+            .put("fileBase64", fileBase64)
+            .put("mimeType", mimeType)
+            .put("fileName", fileName)
+            .toString()
+            .toRequestBody(JSON_MEDIA_TYPE)
+
+        val request = baseRequest("$baseUrl/functions/v1/extract-admission")
+            .header("Authorization", "Bearer $anonKey")
+            .post(body)
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            val rawBody = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw SupabaseException(response.code, parseError(rawBody))
+            }
+
+            val result = JSONObject(rawBody)
+            val fields = result.optJSONObject("fields")
+                ?: throw SupabaseException(response.code, "AI could not find admission fields in this document.")
+
+            AdmissionDraft(
+                applicantName = fields.optSafeString("applicantName"),
+                nationality = fields.optSafeString("nationality").ifBlank { "Indian" },
+                dateOfBirth = fields.optSafeString("dateOfBirth"),
+                gender = fields.optSafeString("gender"),
+                fatherGuardianName = fields.optSafeString("fatherGuardianName"),
+                alternateContactNo = fields.optSafeString("alternateContactNo").filter(Char::isDigit).take(10),
+                parentContactNo = fields.optSafeString("parentContactNo").filter(Char::isDigit).take(10),
+                city = fields.optSafeString("city"),
+                address = fields.optSafeString("address"),
+                schoolCollege = fields.optSafeString("schoolCollege"),
+                parentAadhaarNo = fields.optSafeString("parentAadhaarNo").filter(Char::isDigit),
+                timeSlot = normalizeAdmissionSlot(fields.optSafeString("timeSlot")),
+                batsmanStyle = fields.optSafeString("batsmanStyle"),
+                bowlingStyles = fields.optStringList("bowlingStyles"),
+                readyToStartNow = fields.optBoolean("readyToStartNow", false),
+                comments = fields.optSafeString("comments"),
+            )
+        }
+    }
+
     suspend fun fetchTodayAttendance(date: String = todayIsoDate()): Set<String> = withContext(Dispatchers.IO) {
         val request = baseRequest("$baseUrl/rest/v1/attendance?select=student_id&attendance_date=eq.$date")
             .header("Authorization", "Bearer $anonKey")
@@ -793,6 +841,13 @@ class SupabaseRepository(
                 if (value.isNotBlank()) add(value)
             }
         }
+    }
+
+    private fun normalizeAdmissionSlot(value: String): String {
+        val compact = value.uppercase().replace("\\s+".toRegex(), "")
+        return listOf("6AM", "7:30AM", "4PM", "5:30PM", "7PM")
+            .firstOrNull { it.uppercase().replace("\\s+".toRegex(), "") == compact }
+            .orEmpty()
     }
 
     companion object {

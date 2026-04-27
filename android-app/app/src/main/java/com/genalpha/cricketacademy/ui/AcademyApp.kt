@@ -1,9 +1,12 @@
 package com.genalpha.cricketacademy.ui
 
 import android.app.DatePickerDialog
+import android.content.ContentValues
+import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
 import android.net.Uri
+import android.provider.MediaStore
+import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.text.BasicTextField
@@ -145,7 +148,9 @@ import com.genalpha.cricketacademy.data.studentType
 import com.genalpha.cricketacademy.data.todayIsoDate
 import com.genalpha.cricketacademy.data.toDraft
 import com.genalpha.cricketacademy.data.trackingCaption
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Calendar
 import java.util.Locale
 
@@ -459,6 +464,7 @@ private fun themedBadgeTone(
 fun AcademyApp(viewModel: AcademyViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val filteredKids = remember(uiState.kids, uiState.selectedSlotFilter, uiState.searchQuery) { viewModel.filteredKids() }
     val stats = remember(uiState.kids) { viewModel.stats() }
@@ -473,6 +479,8 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     var showAdmissionSheet by rememberSaveable { mutableStateOf(false) }
     var showScanSourceSheet by rememberSaveable { mutableStateOf(false) }
     var attachedAdmissionDocumentLabel by rememberSaveable { mutableStateOf<String?>(null) }
+    var admissionInitialDraft by remember { mutableStateOf<AdmissionDraft?>(null) }
+    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
     var isScanLoading by rememberSaveable { mutableStateOf(false) }
     var editingStudent by remember { mutableStateOf<Student?>(null) }
     var showEditorSheet by rememberSaveable { mutableStateOf(false) }
@@ -489,21 +497,55 @@ fun AcademyApp(viewModel: AcademyViewModel) {
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             isScanLoading = true
+            val result = runCatching {
+                val (fileBase64, mimeType) = withContext(Dispatchers.IO) {
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: throw IllegalStateException("Unable to read selected document.")
+                    Base64.encodeToString(bytes, Base64.NO_WRAP) to
+                        (context.contentResolver.getType(uri) ?: "image/jpeg")
+                }
+                viewModel.extractAdmissionDraft(
+                    fileBase64 = fileBase64,
+                    mimeType = mimeType,
+                    fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "admission-document",
+                )
+            }.getOrElse {
+                com.genalpha.cricketacademy.ui.AdmissionExtractionResult(false, it.message ?: "Unable to read document.", null)
+            }
+            admissionInitialDraft = result.draft
             attachedAdmissionDocumentLabel =
-                uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { null }
-                    ?: "Imported document attached"
+                if (result.success) "AI filled from imported document" else "Imported document attached"
             showAdmissionSheet = true
+            snackbarHostState.showSnackbar(result.message)
             isScanLoading = false
         }
     }
     val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicturePreview()
-    ) { bitmap: Bitmap? ->
-        if (bitmap == null) return@rememberLauncherForActivityResult
+        contract = ActivityResultContracts.TakePicture()
+    ) { captured: Boolean ->
+        val uri = pendingCameraUri
+        if (!captured || uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             isScanLoading = true
-            attachedAdmissionDocumentLabel = "Camera scan attached"
+            val result = runCatching {
+                val fileBase64 = withContext(Dispatchers.IO) {
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: throw IllegalStateException("Unable to read camera scan.")
+                    Base64.encodeToString(bytes, Base64.NO_WRAP)
+                }
+                viewModel.extractAdmissionDraft(
+                    fileBase64 = fileBase64,
+                    mimeType = context.contentResolver.getType(uri) ?: "image/jpeg",
+                    fileName = "camera-scan.jpg",
+                )
+            }.getOrElse {
+                AdmissionExtractionResult(false, it.message ?: "Unable to read camera scan.", null)
+            }
+            admissionInitialDraft = result.draft
+            attachedAdmissionDocumentLabel =
+                if (result.success) "AI filled from camera scan" else "Camera scan attached"
             showAdmissionSheet = true
+            snackbarHostState.showSnackbar(result.message)
             isScanLoading = false
         }
     }
@@ -709,6 +751,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                 isScanLoading = isScanLoading,
                                 onOpen = {
                                     attachedAdmissionDocumentLabel = null
+                                    admissionInitialDraft = null
                                     showAdmissionSheet = true
                                 },
                                 onScan = { showScanSourceSheet = true },
@@ -822,7 +865,9 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         onDismiss = { showScanSourceSheet = false },
                         onCamera = {
                             showScanSourceSheet = false
-                            cameraLauncher.launch(null)
+                            val uri = context.createAdmissionScanUri()
+                            pendingCameraUri = uri
+                            cameraLauncher.launch(uri)
                         },
                         onPhotos = {
                             showScanSourceSheet = false
@@ -838,12 +883,15 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         onDismiss = {
                             showAdmissionSheet = false
                             attachedAdmissionDocumentLabel = null
+                            admissionInitialDraft = null
                         },
+                        initialDraft = admissionInitialDraft,
                         onSubmit = { draft ->
                             viewModel.submitAdmission(draft).also { result ->
                                 if (result.success) {
                                     showAdmissionSheet = false
                                     attachedAdmissionDocumentLabel = null
+                                    admissionInitialDraft = null
                                 }
                                 scope.launch {
                                     snackbarHostState.showSnackbar(result.message)
@@ -1289,7 +1337,7 @@ private fun ScanSourceSheet(
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                "You can scan with the camera or import an image from photos. The document will stay attached to the admission form for reference while parents fill the details manually.",
+                "Scan with the camera or import an image from photos. AI will fill the readable fields, then parents can review before submitting.",
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
@@ -3108,31 +3156,33 @@ private fun AdmissionFormSheet(
     attachedDocumentLabel: String?,
     onLoadRegNo: suspend () -> Long,
     onDismiss: () -> Unit,
+    initialDraft: AdmissionDraft?,
     onSubmit: suspend (AdmissionDraft) -> OperationResult,
 ) {
-    var applicantName by rememberSaveable { mutableStateOf("") }
-    var nationality by rememberSaveable { mutableStateOf("Indian") }
-    var birthDay by rememberSaveable { mutableStateOf("") }
-    var birthMonth by rememberSaveable { mutableStateOf("") }
-    var birthYear by rememberSaveable { mutableStateOf("") }
-    var gender by rememberSaveable { mutableStateOf("") }
-    var fatherGuardianName by rememberSaveable { mutableStateOf("") }
-    var alternateContactNo by rememberSaveable { mutableStateOf("") }
-    var parentContactNo by rememberSaveable { mutableStateOf("") }
-    var city by rememberSaveable { mutableStateOf("") }
-    var address by rememberSaveable { mutableStateOf("") }
-    var schoolCollege by rememberSaveable { mutableStateOf("") }
-    var parentAadhaarNo by rememberSaveable { mutableStateOf("") }
-    var timeSlot by rememberSaveable { mutableStateOf("") }
+    val initialDobParts = remember(initialDraft?.dateOfBirth) { splitAdmissionDateParts(initialDraft?.dateOfBirth.orEmpty()) }
+    var applicantName by rememberSaveable { mutableStateOf(initialDraft?.applicantName.orEmpty()) }
+    var nationality by rememberSaveable { mutableStateOf(initialDraft?.nationality?.ifBlank { "Indian" } ?: "Indian") }
+    var birthDay by rememberSaveable { mutableStateOf(initialDobParts.first) }
+    var birthMonth by rememberSaveable { mutableStateOf(initialDobParts.second) }
+    var birthYear by rememberSaveable { mutableStateOf(initialDobParts.third) }
+    var gender by rememberSaveable { mutableStateOf(initialDraft?.gender.orEmpty()) }
+    var fatherGuardianName by rememberSaveable { mutableStateOf(initialDraft?.fatherGuardianName.orEmpty()) }
+    var alternateContactNo by rememberSaveable { mutableStateOf(initialDraft?.alternateContactNo.orEmpty()) }
+    var parentContactNo by rememberSaveable { mutableStateOf(initialDraft?.parentContactNo.orEmpty()) }
+    var city by rememberSaveable { mutableStateOf(initialDraft?.city.orEmpty()) }
+    var address by rememberSaveable { mutableStateOf(initialDraft?.address.orEmpty()) }
+    var schoolCollege by rememberSaveable { mutableStateOf(initialDraft?.schoolCollege.orEmpty()) }
+    var parentAadhaarNo by rememberSaveable { mutableStateOf(initialDraft?.parentAadhaarNo.orEmpty()) }
+    var timeSlot by rememberSaveable { mutableStateOf(initialDraft?.timeSlot.orEmpty()) }
     var joinDate by rememberSaveable { mutableStateOf(todayIsoDate()) }
     var feesPaid by rememberSaveable { mutableStateOf(false) }
     var feePlan by rememberSaveable { mutableStateOf("monthly") }
     var jerseySize by rememberSaveable { mutableStateOf("") }
     var jerseyPairs by rememberSaveable { mutableStateOf("0") }
-    var comments by rememberSaveable { mutableStateOf("") }
-    var batsmanStyle by rememberSaveable { mutableStateOf("") }
-    var bowlingStyles by rememberSaveable { mutableStateOf(emptySet<String>()) }
-    var readyToStartNow by rememberSaveable { mutableStateOf(false) }
+    var comments by rememberSaveable { mutableStateOf(initialDraft?.comments.orEmpty()) }
+    var batsmanStyle by rememberSaveable { mutableStateOf(initialDraft?.batsmanStyle.orEmpty()) }
+    var bowlingStyles by rememberSaveable { mutableStateOf(initialDraft?.bowlingStyles.orEmpty().toSet()) }
+    var readyToStartNow by rememberSaveable { mutableStateOf(initialDraft?.readyToStartNow == true) }
     var consentAccepted by rememberSaveable { mutableStateOf(false) }
     var termsAccepted by rememberSaveable { mutableStateOf(false) }
     var inlineMessage by rememberSaveable { mutableStateOf("") }
@@ -4094,4 +4144,24 @@ private fun TimeSlotSelector(
             }
         }
     }
+}
+
+private fun splitAdmissionDateParts(date: String): Triple<String, String, String> {
+    val parts = date.split("-")
+    if (parts.size != 3) return Triple("", "", "")
+
+    val year = parts[0].takeIf { it.length == 4 }.orEmpty()
+    val month = parts[1].toIntOrNull()?.let { AdmissionMonths.getOrNull(it - 1) }.orEmpty()
+    val day = parts[2].toIntOrNull()?.toString().orEmpty()
+    return Triple(day, month, year)
+}
+
+private fun Context.createAdmissionScanUri(): Uri {
+    val values = ContentValues().apply {
+        put(MediaStore.Images.Media.DISPLAY_NAME, "gen-alpha-admission-${System.currentTimeMillis()}.jpg")
+        put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+    }
+
+    return contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+        ?: throw IllegalStateException("Unable to open camera storage.")
 }

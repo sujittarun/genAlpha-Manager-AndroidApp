@@ -205,6 +205,26 @@ class AcademyViewModel(
 
     suspend fun peekNextAdmissionRegNo(): Long = repository.peekNextAdmissionRegNo()
 
+    suspend fun extractAdmissionDraft(
+        fileBase64: String,
+        mimeType: String,
+        fileName: String,
+    ): AdmissionExtractionResult {
+        return try {
+            AdmissionExtractionResult(
+                success = true,
+                message = "AI filled the readable fields. Please review before submitting.",
+                draft = repository.extractAdmissionDraft(fileBase64, mimeType, fileName),
+            )
+        } catch (error: Exception) {
+            AdmissionExtractionResult(
+                success = false,
+                message = error.message ?: "Unable to read admission document.",
+                draft = null,
+            )
+        }
+    }
+
     suspend fun loadTodayAttendance() {
         _uiState.update { it.copy(isAttendanceRefreshing = true) }
         try {
@@ -734,3 +754,9 @@ class AcademyViewModelFactory(
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
+
+data class AdmissionExtractionResult(
+    val success: Boolean,
+    val message: String,
+    val draft: AdmissionDraft?,
+)
