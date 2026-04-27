@@ -145,6 +145,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.genalpha.cricketacademy.R
 import com.genalpha.cricketacademy.data.AdmissionDraft
+import com.genalpha.cricketacademy.data.AcademyExpense
 import com.genalpha.cricketacademy.data.ManagerSession
 import com.genalpha.cricketacademy.data.OperationResult
 import com.genalpha.cricketacademy.data.Student
@@ -1446,6 +1447,7 @@ private fun FinancePanel(
     var expenseMessage by remember { mutableStateOf<String?>(null) }
     var isAddingExpense by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     fun calendarMonthKey(calendar: java.util.Calendar): String =
         String.format(Locale.US, "%04d-%02d", calendar.get(java.util.Calendar.YEAR), calendar.get(java.util.Calendar.MONTH) + 1)
@@ -1520,6 +1522,30 @@ private fun FinancePanel(
             months = monthBuckets,
             formatCurrency = { value -> formatCurrency(value) },
         )
+
+        OutlinedButton(
+            onClick = {
+                context.sharePlainText(
+                    title = "Share monthly finance backup",
+                    text = buildAndroidMonthlyFinanceBackup(
+                        monthLabel = nowCalendar.getDisplayName(java.util.Calendar.MONTH, java.util.Calendar.LONG, Locale.US).orEmpty() +
+                            " ${nowCalendar.get(java.util.Calendar.YEAR)}",
+                        activeStudents = activeStudents,
+                        discontinuedStudents = discontinuedStudents,
+                        fees = monthFees,
+                        expenses = monthExpenses,
+                        net = monthNet,
+                        expenseRows = uiState.expenses.filter { it.expenseDate.startsWith(monthKey) },
+                    ),
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+        ) {
+            Icon(Icons.Outlined.Description, contentDescription = null)
+            Spacer(modifier = Modifier.size(8.dp))
+            Text("Share monthly backup")
+        }
 
         FinanceAddExpenseCard(
             expanded = showExpenseForm,
@@ -4593,38 +4619,42 @@ private fun AdmissionFormSheet(
                         scope.launch {
                             isSubmitting = true
                             inlineMessage = ""
-                            val result = onSubmit(
-                                AdmissionDraft(
-                                    applicantName = applicantName,
-                                    nationality = nationality,
-                                    dateOfBirth = dateOfBirth,
-                                    gender = gender,
-                                    fatherGuardianName = fatherGuardianName,
-                                    alternateContactNo = alternateContactNo,
-                                    parentContactNo = parentContactNo,
-                                    city = city,
-                                    address = address,
-                                    schoolCollege = schoolCollege,
-                                    parentAadhaarNo = parentAadhaarNo,
-                                    timeSlot = timeSlot,
-                                    joinDate = joinDate,
-                                    feesPaid = feesPaid,
-                                    amountPaid = if (feesPaid) String.format(Locale.US, "%.2f", planAmount) else "0",
-                                    jerseySize = jerseySize,
-                                    jerseyPairs = jerseyPairs.ifBlank { "0" },
-                                    paymentMethod = "UPI",
-                                    paymentUpiId = upiId,
-                                    paymentReference = "",
-                                    comments = comments,
-                                    batsmanStyle = batsmanStyle,
-                                    bowlingStyles = bowlingStyles.toList(),
-                                    readyToStartNow = readyToStartNow,
-                                    consentAccepted = consentAccepted,
-                                    termsAccepted = termsAccepted,
-                                )
+                            val draft = AdmissionDraft(
+                                applicantName = applicantName,
+                                nationality = nationality,
+                                dateOfBirth = dateOfBirth,
+                                gender = gender,
+                                fatherGuardianName = fatherGuardianName,
+                                alternateContactNo = alternateContactNo,
+                                parentContactNo = parentContactNo,
+                                city = city,
+                                address = address,
+                                schoolCollege = schoolCollege,
+                                parentAadhaarNo = parentAadhaarNo,
+                                timeSlot = timeSlot,
+                                joinDate = joinDate,
+                                feesPaid = feesPaid,
+                                amountPaid = if (feesPaid) String.format(Locale.US, "%.2f", planAmount) else "0",
+                                jerseySize = jerseySize,
+                                jerseyPairs = jerseyPairs.ifBlank { "0" },
+                                paymentMethod = "UPI",
+                                paymentUpiId = upiId,
+                                paymentReference = "",
+                                comments = comments,
+                                batsmanStyle = batsmanStyle,
+                                bowlingStyles = bowlingStyles.toList(),
+                                readyToStartNow = readyToStartNow,
+                                consentAccepted = consentAccepted,
+                                termsAccepted = termsAccepted,
                             )
+                            val result = onSubmit(draft)
                             if (!result.success) {
                                 inlineMessage = result.message
+                            } else {
+                                context.sharePlainText(
+                                    title = "Share admission receipt",
+                                    text = buildAndroidAdmissionReceipt(draft, result.message),
+                                )
                             }
                             isSubmitting = false
                         }
@@ -4922,6 +4952,72 @@ private fun splitAdmissionDateParts(date: String): Triple<String, String, String
     val month = parts[1].toIntOrNull()?.let { AdmissionMonths.getOrNull(it - 1) }.orEmpty()
     val day = parts[2].toIntOrNull()?.toString().orEmpty()
     return Triple(day, month, year)
+}
+
+private fun Context.sharePlainText(title: String, text: String) {
+    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, text)
+    }
+    startActivity(Intent.createChooser(sendIntent, title))
+}
+
+private fun formatRupees(value: Double): String = "Rs ${String.format(Locale.US, "%,.0f", value)}"
+
+private fun buildAndroidAdmissionReceipt(draft: AdmissionDraft, resultMessage: String): String {
+    val regNo = Regex("""Reg No\s+([A-Za-z0-9-]+)""")
+        .find(resultMessage)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?: "Saved"
+    val amount = draft.amountPaid.toDoubleOrNull() ?: 0.0
+    return listOf(
+        "Gen Alpha Cricket Academy - Admission Receipt",
+        "Reg No: $regNo",
+        "Player: ${draft.applicantName}",
+        "Parent/Guardian: ${draft.fatherGuardianName}",
+        "Contact: ${draft.parentContactNo}",
+        "Join Date: ${displayDate(draft.joinDate)}",
+        "Time Slot: ${draft.timeSlot}",
+        "Fee Status: ${if (draft.feesPaid) "Paid" else "Not paid"}",
+        "Amount: ${formatRupees(amount)}",
+        "Jersey: ${draft.jerseySize.ifBlank { "Not set" }}${if ((draft.jerseyPairs.toIntOrNull() ?: 0) > 0) " (${draft.jerseyPairs} pair)" else ""}",
+        "",
+        "Thank you for choosing Gen Alpha Cricket Academy.",
+    ).joinToString("\n")
+}
+
+private fun buildAndroidMonthlyFinanceBackup(
+    monthLabel: String,
+    activeStudents: Int,
+    discontinuedStudents: Int,
+    fees: Double,
+    expenses: Double,
+    net: Double,
+    expenseRows: List<AcademyExpense>,
+): String {
+    val expenseLines = expenseRows.take(20).map {
+        "- ${displayDate(it.expenseDate)} | ${it.expenseType} | ${formatRupees(it.amount)} | ${it.paidBy}"
+    }
+    return buildString {
+        appendLine("Gen Alpha Cricket Academy - Monthly Backup")
+        appendLine("Month: $monthLabel")
+        appendLine("Active students: $activeStudents")
+        appendLine("Discontinued students: $discontinuedStudents")
+        appendLine("Fees collected: ${formatRupees(fees)}")
+        appendLine("Expenses: ${formatRupees(expenses)}")
+        appendLine("Net: ${formatRupees(net)}")
+        appendLine()
+        appendLine("Expenses")
+        if (expenseLines.isEmpty()) {
+            appendLine("- No expenses recorded this month.")
+        } else {
+            expenseLines.forEach { appendLine(it) }
+            if (expenseRows.size > expenseLines.size) {
+                appendLine("- ${expenseRows.size - expenseLines.size} more expense rows not shown.")
+            }
+        }
+    }
 }
 
 private fun Context.createAdmissionScanUri(): Uri {
