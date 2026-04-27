@@ -1,8 +1,32 @@
-# OpenAI Admission Extraction Setup
+# Admission Document Extraction Setup
 
-This feature runs in a Supabase Edge Function so the OpenAI API key is never stored in the website or Android app.
+This feature runs in a Supabase Edge Function so AI provider keys are never stored in the website or Android app.
 
-## One-time setup
+The function uses Azure Document Intelligence first when Azure secrets are configured. OpenAI remains available as a future fallback if you later add API credits.
+
+## Azure free option
+
+Azure Document Intelligence has a free F0 tier with 500 pages per month. This is the best free fit for the academy's current upload volume.
+
+Create an Azure AI Document Intelligence resource, choose the free `F0` pricing tier, then copy:
+
+- Endpoint
+- Key 1
+
+Add those as Supabase secrets:
+
+```sh
+supabase secrets set AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT=https://your-resource.cognitiveservices.azure.com/
+supabase secrets set AZURE_DOCUMENT_INTELLIGENCE_KEY=your-azure-key
+```
+
+Deploy the function without JWT verification:
+
+```sh
+supabase functions deploy extract-admission --no-verify-jwt
+```
+
+## Optional OpenAI setup
 
 1. Install and log in to the Supabase CLI if it is not already configured.
 2. From the project root, set your OpenAI API key as a Supabase secret:
