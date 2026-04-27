@@ -404,6 +404,38 @@ class AcademyViewModel(
         }
     }
 
+    suspend fun recordRenewalPayment(
+        student: Student,
+        planType: String,
+        monthsCovered: Int,
+        amount: Double,
+        comment: String,
+    ): OperationResult {
+        if (!student.isRenewalPending()) {
+            return OperationResult(false, "This player is not due for renewal yet.")
+        }
+        if (amount <= 0.0) {
+            return OperationResult(false, "Enter a valid renewal amount.")
+        }
+
+        return try {
+            val session = withFreshSession { session ->
+                repository.recordRenewalPayment(student, session.email, session, planType, monthsCovered, amount, comment)
+                session
+            }
+            upsertLocalStudent(
+                student.copy(
+                    renewals = student.renewals + student.nextRenewalCycleDate(),
+                    updatedBy = session.email,
+                )
+            )
+            refreshInBackground()
+            OperationResult(true, "${student.name} renewal payment recorded.")
+        } catch (error: Exception) {
+            OperationResult(false, error.message ?: "Unable to record renewal payment.")
+        }
+    }
+
     suspend fun toggleStatus(student: Student): OperationResult {
         return try {
             val session = withFreshSession { session ->

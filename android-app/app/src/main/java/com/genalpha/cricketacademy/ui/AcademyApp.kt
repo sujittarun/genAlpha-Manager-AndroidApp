@@ -253,6 +253,7 @@ private enum class AppView(val label: String) {
     Admission("Admission"),
     Player("Attendance"),
     Manager("Staff"),
+    Finance("Finance"),
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -481,6 +482,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     val activePlayers = remember(uiState.kids) { uiState.kids.filter { it.isActive() } }
 
     var selectedView by rememberSaveable { mutableStateOf(AppView.Admission) }
+    var pendingProtectedView by rememberSaveable { mutableStateOf(AppView.Manager) }
     var showManagerPinSheet by rememberSaveable { mutableStateOf(false) }
     var showLoginSheet by rememberSaveable { mutableStateOf(false) }
     var showAdmissionSheet by rememberSaveable { mutableStateOf(false) }
@@ -493,6 +495,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     var showEditorSheet by rememberSaveable { mutableStateOf(false) }
     var selectedStudent by remember { mutableStateOf<Student?>(null) }
     var showDetailSheet by rememberSaveable { mutableStateOf(false) }
+    var renewalStudent by remember { mutableStateOf<Student?>(null) }
     var showAttendanceHistory by rememberSaveable { mutableStateOf(false) }
     var attendanceHistoryCache by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
     var timelineCache by remember { mutableStateOf<Map<String, List<StudentTimelineItem>>>(emptyMap()) }
@@ -620,7 +623,8 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                 AppBottomBar(
                     selectedView = selectedView,
                     onSelected = { view ->
-                        if (view == AppView.Manager && selectedView != AppView.Manager) {
+                        if ((view == AppView.Manager || view == AppView.Finance) && selectedView != view) {
+                            pendingProtectedView = view
                             showManagerPinSheet = true
                         } else {
                             selectedView = view
@@ -756,6 +760,16 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                             }
                         }
                     }
+                    } else if (selectedView == AppView.Finance) {
+                        item {
+                            PublicViewHeader(
+                                title = "Finance",
+                                subtitle = "Track collected fees and simple academy expenses. Full metrics activate after running the finance SQL migration.",
+                            )
+                        }
+                        item {
+                            FinanceComingSoonPanel()
+                        }
                     } else if (selectedView == AppView.Admission) {
                         item {
                             PublicViewHeader(
@@ -863,7 +877,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         onDismiss = { showManagerPinSheet = false },
                         onUnlock = { pin ->
                             if (pin == MANAGER_VIEW_PIN) {
-                                selectedView = AppView.Manager
+                                selectedView = pendingProtectedView
                                 showManagerPinSheet = false
                                 scope.launch {
                                     snackbarHostState.showSnackbar("Staff dashboard unlocked.")
@@ -968,16 +982,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                             }
                         },
                         onRenew = {
-                            selectedStudent?.let { activeStudent ->
-                                val result = viewModel.renewStudent(activeStudent)
-                                if (result.success) {
-                                    showDetailSheet = false
-                                    selectedStudent = null
-                                }
-                                scope.launch {
-                                    snackbarHostState.showSnackbar(result.message)
-                                }
-                            }
+                            renewalStudent = selectedStudent
                         },
                         onToggleStatus = {
                             selectedStudent?.let { activeStudent ->
@@ -1003,6 +1008,22 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                             val loaded = viewModel.attendanceHistory(selectedStudent!!.id)
                             attendanceHistoryCache = attendanceHistoryCache + (selectedStudent!!.id to loaded)
                             loaded
+                        },
+                    )
+                }
+
+                if (renewalStudent != null) {
+                    RenewalPaymentDialog(
+                        student = renewalStudent!!,
+                        onDismiss = { renewalStudent = null },
+                        onSubmit = { plan, months, amount, comment ->
+                            val result = viewModel.recordRenewalPayment(renewalStudent!!, plan, months, amount, comment)
+                            if (result.success) {
+                                renewalStudent = null
+                                showDetailSheet = false
+                                selectedStudent = null
+                            }
+                            scope.launch { snackbarHostState.showSnackbar(result.message) }
                         },
                     )
                 }
@@ -1313,6 +1334,7 @@ private fun AppBottomBar(
                 AppView.Admission -> Icons.Outlined.Description
                 AppView.Player -> Icons.Outlined.Person
                 AppView.Manager -> Icons.Outlined.Lock
+                AppView.Finance -> Icons.Outlined.Add
             }
             NavigationBarItem(
                 selected = selectedView == view,
@@ -1320,6 +1342,117 @@ private fun AppBottomBar(
                 icon = { Icon(icon, contentDescription = view.label) },
                 label = { Text(view.label) },
             )
+        }
+    }
+}
+
+@Composable
+private fun FinanceComingSoonPanel() {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("Finance setup added", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+            Text(
+                "Run the finance SQL migration first. Then this view can show fee totals, expenses, and add-expense controls in the next pass.",
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RenewalPaymentDialog(
+    student: Student,
+    onDismiss: () -> Unit,
+    onSubmit: suspend (String, Int, Double, String) -> Unit,
+) {
+    var plan by rememberSaveable(student.id) { mutableStateOf("monthly") }
+    var amount by rememberSaveable(student.id) { mutableStateOf("3500") }
+    var comment by rememberSaveable(student.id) { mutableStateOf("") }
+    var isSaving by rememberSaveable(student.id) { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val planInfo = when (plan) {
+        "quarterly" -> Triple("3 months", 3, 9000.0)
+        "halfyearly" -> Triple("6 months", 6, 20000.0)
+        "special" -> Triple("Special training", 1, 10000.0)
+        "custom" -> Triple("Custom amount", 1, amount.toDoubleOrNull() ?: 0.0)
+        else -> Triple("Monthly", 1, 3500.0)
+    }
+
+    FormDialog(onDismiss = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text("Record renewal payment", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+            Text(
+                "${student.name} cycle starts ${displayDate(student.nextRenewalCycleDate())}. Late payment will not change the usual fee date.",
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+            )
+            AdmissionDropdownField(
+                label = "Plan",
+                value = planInfo.first,
+                options = listOf("Monthly", "3 months", "6 months", "Special training", "Custom amount"),
+                onSelect = { selected ->
+                    plan = when (selected) {
+                        "3 months" -> "quarterly"
+                        "6 months" -> "halfyearly"
+                        "Special training" -> "special"
+                        "Custom amount" -> "custom"
+                        else -> "monthly"
+                    }
+                    amount = when (plan) {
+                        "quarterly" -> "9000"
+                        "halfyearly" -> "20000"
+                        "special" -> "10000"
+                        "custom" -> ""
+                        else -> "3500"
+                    }
+                },
+            )
+            AdmissionTextField(
+                value = amount,
+                onValueChange = { amount = it.filter { char -> char.isDigit() || char == '.' } },
+                label = "Amount paid",
+                singleLine = true,
+            )
+            AdmissionTextField(
+                value = comment,
+                onValueChange = { comment = it },
+                label = "Comment",
+                singleLine = true,
+            )
+            Button(
+                enabled = !isSaving,
+                onClick = {
+                    scope.launch {
+                        isSaving = true
+                        onSubmit(plan, planInfo.second, amount.toDoubleOrNull() ?: 0.0, comment)
+                        isSaving = false
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+            ) {
+                if (isSaving) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(modifier = Modifier.size(8.dp))
+                }
+                Text("Save renewal payment")
+            }
         }
     }
 }

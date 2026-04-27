@@ -468,6 +468,38 @@ class SupabaseRepository(
         }
     }
 
+    suspend fun recordRenewalPayment(
+        student: Student,
+        managerEmail: String,
+        session: ManagerSession,
+        planType: String,
+        monthsCovered: Int,
+        amount: Double,
+        comment: String,
+    ) {
+        withContext(Dispatchers.IO) {
+            val cycleDate = student.nextRenewalCycleDate()
+            renewStudent(student, managerEmail, session)
+            val body = JSONObject()
+                .put("student_id", student.id)
+                .put("payment_type", "renewal")
+                .put("plan_type", planType)
+                .put("cycle_start_date", cycleDate)
+                .put("months_covered", monthsCovered)
+                .put("amount", amount)
+                .put("paid_on", todayIsoDate())
+                .put("comment", comment)
+                .put("recorded_by", managerEmail)
+
+            executeWriteRequest(
+                url = "$baseUrl/rest/v1/student_payments",
+                session = session,
+                method = "POST",
+                body = body,
+            )
+        }
+    }
+
     suspend fun toggleStudentStatus(student: Student, managerEmail: String, session: ManagerSession) {
         withContext(Dispatchers.IO) {
             val body = JSONObject()
