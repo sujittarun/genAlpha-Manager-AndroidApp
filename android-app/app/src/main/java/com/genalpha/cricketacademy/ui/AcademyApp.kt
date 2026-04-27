@@ -44,6 +44,7 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -81,6 +82,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
@@ -89,6 +91,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -127,6 +131,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -494,6 +499,16 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     val activePlayers = remember(uiState.kids) { uiState.kids.filter { it.isActive() } }
 
     var selectedView by rememberSaveable { mutableStateOf(AppView.Admission) }
+    val mainListState = rememberLazyListState()
+    val financePullRefreshState = rememberPullToRefreshState(
+        positionalThreshold = 150.dp,
+        enabled = {
+            selectedView == AppView.Finance &&
+                mainListState.firstVisibleItemIndex == 0 &&
+                mainListState.firstVisibleItemScrollOffset == 0 &&
+                !uiState.isFinanceLoading
+        },
+    )
     var pendingProtectedView by rememberSaveable { mutableStateOf(AppView.Manager) }
     var showManagerPinSheet by rememberSaveable { mutableStateOf(false) }
     var showLoginSheet by rememberSaveable { mutableStateOf(false) }
@@ -603,6 +618,13 @@ fun AcademyApp(viewModel: AcademyViewModel) {
         }
     }
 
+    LaunchedEffect(financePullRefreshState.isRefreshing) {
+        if (financePullRefreshState.isRefreshing) {
+            viewModel.loadFinance()
+            financePullRefreshState.endRefresh()
+        }
+    }
+
     LaunchedEffect(showDetailSheet, selectedStudent?.id) {
         val studentId = selectedStudent?.id
         if (showDetailSheet && studentId != null && studentId !in attendanceHistoryCache && attendanceHistoryLoadingId != studentId) {
@@ -676,9 +698,11 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                     .background(MaterialTheme.colorScheme.background)
             ) {
                 LazyColumn(
+                    state = mainListState,
                     modifier = Modifier
                         .fillMaxSize()
-                        .statusBarsPadding(),
+                        .statusBarsPadding()
+                        .nestedScroll(financePullRefreshState.nestedScrollConnection),
                     contentPadding = PaddingValues(
                         start = 16.dp,
                         end = 16.dp,
@@ -793,9 +817,6 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         item {
                             FinancePanel(
                                 uiState = uiState,
-                                onRefresh = {
-                                    viewModel.loadFinance()
-                                },
                                 onAddExpense = viewModel::addExpense,
                             )
                         }
@@ -880,6 +901,14 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                             }
                         }
                     }
+                }
+                if (selectedView == AppView.Finance) {
+                    PullToRefreshContainer(
+                        state = financePullRefreshState,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .statusBarsPadding(),
+                    )
                 }
 
                 if (showLoginSheet) {
@@ -1382,7 +1411,6 @@ private fun AppBottomBar(
 @Composable
 private fun FinancePanel(
     uiState: AcademyUiState,
-    onRefresh: suspend () -> Unit,
     onAddExpense: suspend (String, String, String, String) -> OperationResult,
 ) {
     var searchQuery by rememberSaveable { mutableStateOf("") }
@@ -1445,12 +1473,9 @@ private fun FinancePanel(
         verticalArrangement = Arrangement.spacedBy(18.dp),
         modifier = Modifier.padding(horizontal = 16.dp)
     ) {
-        FinanceRefreshStrip(
-            isLoading = uiState.isFinanceLoading,
-            onRefresh = {
-                scope.launch { onRefresh() }
-            },
-        )
+        if (uiState.isFinanceLoading) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
 
         FinanceOverviewCard(
             monthFees = formatCurrency(monthFees),
@@ -1605,32 +1630,6 @@ private data class FinanceMonthSummary(
     val fees: Double,
     val expenses: Double,
 )
-
-@Composable
-private fun FinanceRefreshStrip(
-    isLoading: Boolean,
-    onRefresh: () -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        TextButton(
-            enabled = !isLoading,
-            onClick = onRefresh,
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-        ) {
-            if (isLoading) {
-                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-            } else {
-                Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-            }
-            Spacer(modifier = Modifier.size(6.dp))
-            Text(if (isLoading) "Refreshing" else "Refresh", fontSize = 12.sp)
-        }
-    }
-}
 
 @Composable
 private fun FinanceOverviewCard(
@@ -1791,10 +1790,8 @@ private fun FinanceMiniChart(
     months: List<FinanceMonthSummary>,
     formatCurrency: (Double) -> String,
 ) {
-    val maxValue = months.flatMap { listOf(it.fees, it.expenses) }.maxOrNull()?.coerceAtLeast(1.0) ?: 1.0
-
     Surface(
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(22.dp),
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
         modifier = Modifier.fillMaxWidth(),
@@ -1810,96 +1807,48 @@ private fun FinanceMiniChart(
             ) {
                 Column {
                     Text(
-                        "6 MONTH VIEW",
+                        "6 MONTH NET VIEW",
                         color = MaterialTheme.colorScheme.primary,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.ExtraBold,
                     )
-                    Text("Fees vs expenses", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    ChartLegend(label = "Fees", color = BrandBlue)
-                    ChartLegend(label = "Expenses", color = BrandRed)
+                    Text("Monthly profit/loss", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
                 }
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.Bottom,
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 months.forEach { month ->
                     val net = month.fees - month.expenses
-                    val feeHeight = ((month.fees / maxValue) * 62).coerceAtLeast(5.0).toFloat().dp
-                    val expenseHeight = ((month.expenses / maxValue) * 62).coerceAtLeast(5.0).toFloat().dp
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (net >= 0) BrandGreen.copy(alpha = 0.1f) else BrandRed.copy(alpha = 0.1f),
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
                         Row(
                             modifier = Modifier
-                                .height(68.dp)
                                 .fillMaxWidth()
-                                .background(
-                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f),
-                                    RoundedCornerShape(12.dp),
-                                )
-                                .padding(horizontal = 5.dp, vertical = 5.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.Bottom,
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .width(9.dp)
-                                    .height(feeHeight)
-                                    .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
-                                    .background(BrandBlue),
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Box(
-                                modifier = Modifier
-                                    .width(9.dp)
-                                    .height(expenseHeight)
-                                    .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
-                                    .background(BrandRed),
+                            Text(month.label, modifier = Modifier.width(42.dp), fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("Fees ${formatCurrency(month.fees)}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), maxLines = 1)
+                                Text("Expense ${formatCurrency(month.expenses)}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), maxLines = 1)
+                            }
+                            Text(
+                                formatCurrency(net),
+                                color = if (net >= 0) BrandGreen else BrandRed,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
-                        Text(
-                            month.label,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                        )
-                        Text(
-                            "Net ${formatCurrency(net)}",
-                            color = if (net >= 0) BrandGreen else BrandRed,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun ChartLegend(label: String, color: Color) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(color),
-        )
-        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f))
     }
 }
 
