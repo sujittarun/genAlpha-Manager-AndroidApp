@@ -247,7 +247,8 @@ private val AdmissionMonths = listOf(
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 )
 private val UiTimeSlots = listOf("6AM", "7:30AM", "4PM", "5:30PM", "7PM")
-private val JerseySizeOptions = listOf("22", "24", "26", "28", "30", "32", "34", "36", "38", "40", "42")
+private val JerseySizeOptions = listOf("22", "24", "26", "28", "30", "32", "34", "36", "40", "42", "38")
+private fun jerseySizeLabel(size: String): String = if (size == "38") "38 - Medium" else size
 
 private val AcademyLightScheme = lightColorScheme(
     primary = BrandBlue,
@@ -3873,6 +3874,7 @@ private fun PlayerEditorSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .then(rememberBringIntoViewOnFocusModifier()),
+                    displayText = ::jerseySizeLabel,
                     onSelect = { jerseySize = it },
                 )
                 OutlinedTextField(
@@ -4328,6 +4330,7 @@ private fun AdmissionFormSheet(
                         modifier = Modifier
                             .weight(1f)
                             .then(rememberBringIntoViewOnFocusModifier()),
+                        displayText = ::jerseySizeLabel,
                         onSelect = { jerseySize = it },
                     )
                     AdmissionTextField(
@@ -4884,6 +4887,7 @@ private fun AdmissionDropdownField(
     value: String,
     options: List<String>,
     modifier: Modifier = Modifier,
+    displayText: (String) -> String = { it },
     onSelect: (String) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -4909,7 +4913,7 @@ private fun AdmissionDropdownField(
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = value.ifBlank { "Select" },
+                    text = if (value.isBlank()) "Select" else displayText(value),
                     color = if (value.isBlank()) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -4924,7 +4928,7 @@ private fun AdmissionDropdownField(
         ) {
             options.forEach { option ->
                 DropdownMenuItem(
-                    text = { Text(option) },
+                    text = { Text(displayText(option)) },
                     onClick = {
                         onSelect(option)
                         expanded = false
