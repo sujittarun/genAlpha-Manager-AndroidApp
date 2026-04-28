@@ -5142,16 +5142,18 @@ private fun buildAndroidRenewalReceipt(
 private fun Context.createReceiptPdf(receipt: ReceiptPdfData): Uri? {
     val document = PdfDocument()
     return try {
-        val pageWidth = 595
-        val pageHeight = 842
+        val pageWidth = 794
+        val pageHeight = 1123
         val page = document.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create())
         val canvas = page.canvas
         val deepBlue = 0xFF0D2D66.toInt()
+        val accentBlue = 0xFF1F5FBF.toInt()
         val gold = 0xFFF4BE2E.toInt()
         val ink = 0xFF10264F.toInt()
         val muted = 0xFF66748C.toInt()
         val paleGold = 0xFFFFF7DC.toInt()
-        val border = 0xFFDCE6F4.toInt()
+        val border = 0xFFD8E1EE.toInt()
+        val rowBorder = 0xFFE2E9F5.toInt()
         val success = 0xFF178553.toInt()
 
         val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
@@ -5162,110 +5164,138 @@ private fun Context.createReceiptPdf(receipt: ReceiptPdfData): Uri? {
         }
         val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = ink
-            textSize = 25f
+            textSize = 31f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
         val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = muted
-            textSize = 9.5f
+            textSize = 11f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            letterSpacing = 0.08f
         }
         val valuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = ink
-            textSize = 13f
+            textSize = 18f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val playerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = ink
+            textSize = 24f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val rowValuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = ink
+            textSize = 15f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
         val smallPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = muted
-            textSize = 10.5f
+            textSize = 13f
         }
 
         canvas.drawColor(0xFFF3F6FB.toInt())
         fillPaint.color = 0xFFFFFFFF.toInt()
-        canvas.drawRoundRect(RectF(69f, 58f, 526f, 786f), 8f, 8f, fillPaint)
-        canvas.drawRoundRect(RectF(69f, 58f, 526f, 786f), 8f, 8f, strokePaint)
-        fillPaint.color = gold
-        canvas.drawRect(69f, 774f, 526f, 777f, fillPaint)
+        canvas.drawRoundRect(RectF(92f, 70f, 702f, 1050f), 8f, 8f, fillPaint)
+        canvas.drawRoundRect(RectF(92f, 70f, 702f, 1050f), 8f, 8f, strokePaint)
         fillPaint.color = deepBlue
-        canvas.drawRect(69f, 777f, 526f, 786f, fillPaint)
+        canvas.drawRect(92f, 70f, 702f, 82f, fillPaint)
+        fillPaint.color = gold
+        canvas.drawRect(92f, 82f, 702f, 86f, fillPaint)
 
         BitmapFactory.decodeResource(resources, R.drawable.gen_alpha_badge_transparent)?.let { logo ->
-            canvas.drawBitmap(logo, null, RectF(91f, 680f, 145f, 756f), null)
+            canvas.drawBitmap(logo, null, RectF(120f, 112f, 196f, 224f), null)
         }
-        labelPaint.color = 0xFF1F5FBF.toInt()
-        canvas.drawText("GEN ALPHA CRICKET ACADEMY", 160f, 740f, labelPaint)
+        labelPaint.color = accentBlue
+        canvas.drawText("GEN ALPHA CRICKET ACADEMY", 218f, 142f, labelPaint)
         titlePaint.color = ink
-        canvas.drawText("Fee Receipt", 160f, 716f, titlePaint)
+        canvas.drawText("Fee Receipt", 218f, 176f, titlePaint)
         smallPaint.color = muted
-        canvas.drawText("Official payment confirmation", 160f, 696f, smallPaint)
+        canvas.drawText("Official payment confirmation", 218f, 202f, smallPaint)
 
         val stampPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = 0xFFFFFFFF.toInt()
-            textSize = 14f
+            textSize = 13f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            style = Paint.Style.FILL
+            textAlign = Paint.Align.CENTER
         }
         fillPaint.color = success
-        canvas.drawRoundRect(RectF(440f, 728f, 496f, 754f), 13f, 13f, fillPaint)
-        canvas.drawText(receipt.status, 453f, 745f, stampPaint)
+        canvas.drawRoundRect(RectF(584f, 126f, 662f, 160f), 17f, 17f, fillPaint)
+        canvas.drawText(receipt.status, 623f, 148f, stampPaint)
 
         strokePaint.color = border
-        canvas.drawLine(91f, 663f, 504f, 663f, strokePaint)
+        strokePaint.strokeWidth = 2f
+        canvas.drawLine(122f, 258f, 672f, 258f, strokePaint)
+        strokePaint.strokeWidth = 1.5f
 
         labelPaint.color = muted
-        canvas.drawText("RECEIPT NO", 91f, 626f, labelPaint)
+        canvas.drawText("RECEIPT NO", 122f, 310f, labelPaint)
         valuePaint.color = ink
-        drawSingleLine(canvas, receipt.receiptNo, 91f, 604f, valuePaint, 190f)
-        canvas.drawText("DATE", 356f, 626f, labelPaint)
-        drawSingleLine(canvas, displayDate(LocalDate.now().toString()), 356f, 604f, valuePaint, 110f)
+        valuePaint.textAlign = Paint.Align.LEFT
+        drawSingleLine(canvas, receipt.receiptNo, 122f, 339f, valuePaint, 250f)
+        canvas.drawText("DATE", 474f, 310f, labelPaint)
+        drawSingleLine(canvas, displayDate(LocalDate.now().toString()), 474f, 339f, valuePaint, 150f)
 
         fillPaint.color = 0xFFF8FBFF.toInt()
-        canvas.drawRoundRect(RectF(91f, 542f, 504f, 604f), 6f, 6f, fillPaint)
-        canvas.drawRoundRect(RectF(91f, 542f, 504f, 604f), 6f, 6f, strokePaint)
-        canvas.drawText("RECEIVED FROM", 109f, 580f, labelPaint)
-        titlePaint.color = ink
-        drawSingleLine(canvas, receipt.playerName, 109f, 558f, titlePaint, 250f)
-        canvas.drawText("REG NO", 396f, 580f, labelPaint)
-        valuePaint.color = deepBlue
-        drawSingleLine(canvas, receipt.regNo, 396f, 558f, valuePaint, 80f)
+        strokePaint.color = rowBorder
+        canvas.drawRoundRect(RectF(122f, 386f, 672f, 470f), 6f, 6f, fillPaint)
+        canvas.drawRoundRect(RectF(122f, 386f, 672f, 470f), 6f, 6f, strokePaint)
+        canvas.drawText("RECEIVED FROM", 146f, 419f, labelPaint)
+        drawSingleLine(canvas, receipt.playerName, 146f, 450f, playerPaint, 280f)
+        canvas.drawText("REG NO", 528f, 419f, labelPaint)
+        val regPaint = Paint(valuePaint).apply {
+            textSize = 20f
+            color = ink
+            textAlign = Paint.Align.LEFT
+        }
+        drawSingleLine(canvas, receipt.regNo, 528f, 450f, regPaint, 100f)
 
         labelPaint.color = deepBlue
-        canvas.drawText("PAYMENT DETAILS", 91f, 499f, labelPaint)
+        canvas.drawText("PAYMENT DETAILS", 122f, 534f, labelPaint)
         labelPaint.color = muted
         val priorityLabels = if (receipt.receiptType.startsWith("Joining")) {
-            listOf("Join Date", "Time Slot", "Jersey", "Paid On")
+            listOf("Time Slot", "Jersey")
         } else {
-            listOf("Plan", "Covered", "Paid On", "Time Slot")
+            listOf("Plan", "Covered")
         }
         val selectedRows = priorityLabels.mapNotNull { label ->
             receipt.rows.firstOrNull { it.label == label }
         }
         val paymentRows = listOf(ReceiptPdfRow("Payment Type", receipt.receiptType.removeSuffix(" Receipt"))) + selectedRows
-        var y = 450f
-        paymentRows.take(4).forEachIndexed { index, row ->
+        var y = 560f
+        paymentRows.take(3).forEachIndexed { index, row ->
             val fill = if (index % 2 == 0) 0xFFFFFFFF.toInt() else 0xFFF8FBFF.toInt()
-            drawReceiptLine(canvas, row, 91f, y, 413f, labelPaint, valuePaint, fillPaint, strokePaint, fill)
-            y -= 41f
+            drawReceiptLine(canvas, row, 122f, y, 550f, labelPaint, rowValuePaint, fillPaint, strokePaint, fill)
+            y += 54f
         }
 
         fillPaint.color = paleGold
-        canvas.drawRoundRect(RectF(91f, 251f, 504f, 308f), 6f, 6f, fillPaint)
-        canvas.drawRoundRect(RectF(91f, 251f, 504f, 308f), 6f, 6f, strokePaint)
+        strokePaint.color = 0xFFF0DF9B.toInt()
+        canvas.drawRoundRect(RectF(122f, 756f, 672f, 834f), 6f, 6f, fillPaint)
+        canvas.drawRoundRect(RectF(122f, 756f, 672f, 834f), 6f, 6f, strokePaint)
         labelPaint.color = muted
-        canvas.drawText("AMOUNT PAID", 109f, 282f, labelPaint)
+        canvas.drawText("AMOUNT PAID", 146f, 791f, labelPaint)
         val amountPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = deepBlue
-            textSize = 28f
+            textSize = 34f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.RIGHT
         }
-        canvas.drawText(receipt.amountText, 376f, 270f, amountPaint)
+        canvas.drawText(receipt.amountText, 650f, 808f, amountPaint)
 
-        canvas.drawLine(91f, 197f, 504f, 197f, strokePaint)
+        strokePaint.color = border
+        strokePaint.strokeWidth = 2f
+        canvas.drawLine(122f, 905f, 672f, 905f, strokePaint)
+        strokePaint.strokeWidth = 1.5f
         smallPaint.color = muted
-        canvas.drawText("Fees once paid are recorded against the player profile.", 91f, 164f, smallPaint)
-        canvas.drawText("Please keep this receipt for academy reference.", 91f, 146f, smallPaint)
-        valuePaint.color = ink
-        canvas.drawText("Thank you", 431f, 142f, valuePaint)
+        canvas.drawText("Fees once paid are recorded against the player profile.", 122f, 947f, smallPaint)
+        canvas.drawText("Please keep this receipt for academy reference.", 122f, 971f, smallPaint)
+        val thanksPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = ink
+            textSize = 20f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.RIGHT
+        }
+        canvas.drawText("Thank you", 672f, 971f, thanksPaint)
 
         document.finishPage(page)
         val safeReceiptNo = receipt.receiptNo.replace(Regex("""[^A-Za-z0-9_-]"""), "-")
@@ -5311,10 +5341,13 @@ private fun drawReceiptLine(
     fillColor: Int,
 ) {
     fillPaint.color = fillColor
-    canvas.drawRoundRect(RectF(x, y, x + width, y + 34f), 10f, 10f, fillPaint)
-    canvas.drawRoundRect(RectF(x, y, x + width, y + 34f), 10f, 10f, strokePaint)
-    canvas.drawText(row.label.uppercase(Locale.getDefault()), x + 14f, y + 21f, labelPaint)
-    drawSingleLine(canvas, row.value.ifBlank { "-" }, x + 178f, y + 21f, valuePaint, width - 194f)
+    canvas.drawRect(RectF(x, y, x + width, y + 54f), fillPaint)
+    canvas.drawRect(RectF(x, y, x + width, y + 54f), strokePaint)
+    canvas.drawText(row.label, x + 24f, y + 33f, labelPaint)
+    val originalAlign = valuePaint.textAlign
+    valuePaint.textAlign = Paint.Align.RIGHT
+    drawSingleLine(canvas, row.value.ifBlank { "-" }, x + width - 22f, y + 33f, valuePaint, width - 220f)
+    valuePaint.textAlign = originalAlign
 }
 
 private fun drawSingleLine(
