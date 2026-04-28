@@ -837,6 +837,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                             FinancePanel(
                                 uiState = uiState,
                                 onAddExpense = viewModel::addExpense,
+                                onDeleteExpense = viewModel::deleteExpense,
                             )
                         }
                     } else if (selectedView == AppView.Admission) {
@@ -1456,6 +1457,7 @@ private fun AppBottomBar(
 private fun FinancePanel(
     uiState: AcademyUiState,
     onAddExpense: suspend (String, String, String, String) -> OperationResult,
+    onDeleteExpense: suspend (String) -> OperationResult,
 ) {
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var sortKey by rememberSaveable { mutableStateOf("date") }
@@ -1467,6 +1469,7 @@ private fun FinancePanel(
     var expenseComment by rememberSaveable { mutableStateOf("") }
     var expenseMessage by remember { mutableStateOf<String?>(null) }
     var isAddingExpense by rememberSaveable { mutableStateOf(false) }
+    var deletingExpenseId by rememberSaveable { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -1599,6 +1602,16 @@ private fun FinancePanel(
             },
         )
 
+        if (!showExpenseForm && !expenseMessage.isNullOrBlank()) {
+            Text(
+                expenseMessage.orEmpty(),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                fontSize = 12.sp,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.End,
+            )
+        }
+
         // Search
         OutlinedTextField(
             value = searchQuery,
@@ -1685,6 +1698,26 @@ private fun FinancePanel(
                                 )
                                 if (!expense.comment.isNullOrBlank()) {
                                     Text(expense.comment.orEmpty(), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f))
+                                }
+                                TextButton(
+                                    enabled = deletingExpenseId != expense.id,
+                                    onClick = {
+                                        scope.launch {
+                                            deletingExpenseId = expense.id
+                                            val result = onDeleteExpense(expense.id)
+                                            expenseMessage = result.message
+                                            deletingExpenseId = null
+                                        }
+                                    },
+                                    modifier = Modifier.align(Alignment.End),
+                                ) {
+                                    if (deletingExpenseId == expense.id) {
+                                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Deleting", fontSize = 12.sp)
+                                    } else {
+                                        Text("Delete expense", color = BrandRed, fontSize = 12.sp)
+                                    }
                                 }
                             }
                         }
@@ -2937,6 +2970,25 @@ private fun PlayerDetailSheet(
                     } else {
                         Text("Parent contact not saved", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f))
                     }
+                    if (student.schoolCollege.isNotBlank() || student.grade.isNotBlank()) {
+                        val schoolLine = listOfNotNull(
+                            student.schoolCollege.takeIf { it.isNotBlank() },
+                            student.grade.takeIf { it.isNotBlank() }?.let { "Grade $it" },
+                        ).joinToString(" • ")
+                        Text(
+                            schoolLine,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                            fontSize = 13.sp,
+                        )
+                    }
+                    if (student.address.isNotBlank()) {
+                        Text(
+                            student.address,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                        )
+                    }
                 }
             }
 
@@ -3752,6 +3804,12 @@ private fun PlayerEditorSheet(
     var amountPaid by rememberSaveable(editingStudent?.id) { mutableStateOf(if (editingStudent == null) "0" else editingStudent.toDraft().amountPaid) }
     var jerseySize by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.jerseySize.orEmpty()) }
     var jerseyPairs by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.jerseyPairs?.toString() ?: "0") }
+    var fatherGuardianName by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.fatherGuardianName.orEmpty()) }
+    var parentContactNo by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.parentContactNo.orEmpty()) }
+    var alternateContactNo by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.alternateContactNo.orEmpty()) }
+    var schoolCollege by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.schoolCollege.orEmpty()) }
+    var grade by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.grade.orEmpty()) }
+    var address by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.address.orEmpty()) }
     var inlineMessage by rememberSaveable { mutableStateOf("") }
     var isSaving by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -3888,6 +3946,64 @@ private fun PlayerEditorSheet(
                 )
             }
 
+            AdmissionSectionCard(title = "Parent and school details") {
+                OutlinedTextField(
+                    value = fatherGuardianName,
+                    onValueChange = { fatherGuardianName = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(rememberBringIntoViewOnFocusModifier()),
+                    label = { Text("Father / guardian name") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = parentContactNo,
+                    onValueChange = { parentContactNo = it.filter(Char::isDigit).take(10) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(rememberBringIntoViewOnFocusModifier()),
+                    label = { Text("Mobile number") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = alternateContactNo,
+                    onValueChange = { alternateContactNo = it.filter(Char::isDigit).take(10) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(rememberBringIntoViewOnFocusModifier()),
+                    label = { Text("Alternate mobile") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = schoolCollege,
+                    onValueChange = { schoolCollege = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(rememberBringIntoViewOnFocusModifier()),
+                    label = { Text("School") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = grade,
+                    onValueChange = { grade = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(rememberBringIntoViewOnFocusModifier()),
+                    label = { Text("Grade") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = address,
+                    onValueChange = { address = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 86.dp)
+                        .then(rememberBringIntoViewOnFocusModifier()),
+                    label = { Text("Address") },
+                    minLines = 2,
+                )
+            }
+
             if (inlineMessage.isNotBlank()) {
                 Text(inlineMessage, color = BrandRed, fontSize = 13.sp, lineHeight = 18.sp)
             }
@@ -3912,6 +4028,12 @@ private fun PlayerEditorSheet(
                                     paymentUpiId = editingStudent?.paymentUpiId.orEmpty(),
                                     paymentReference = editingStudent?.paymentReference.orEmpty(),
                                     comments = editingStudent?.comments.orEmpty(),
+                                    fatherGuardianName = fatherGuardianName,
+                                    parentContactNo = parentContactNo,
+                                    alternateContactNo = alternateContactNo,
+                                    schoolCollege = schoolCollege,
+                                    grade = grade,
+                                    address = address,
                                 )
                             )
                             if (!result.success) {

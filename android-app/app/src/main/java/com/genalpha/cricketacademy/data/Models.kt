@@ -25,6 +25,9 @@ data class Student(
     val fatherGuardianName: String,
     val parentContactNo: String,
     val alternateContactNo: String,
+    val schoolCollege: String,
+    val grade: String,
+    val address: String,
     val renewals: List<String>,
     val addedBy: String,
     val updatedBy: String,
@@ -45,6 +48,12 @@ data class StudentDraft(
     val paymentUpiId: String = "",
     val paymentReference: String = "",
     val comments: String = "",
+    val fatherGuardianName: String = "",
+    val parentContactNo: String = "",
+    val alternateContactNo: String = "",
+    val schoolCollege: String = "",
+    val grade: String = "",
+    val address: String = "",
 )
 
 data class AdmissionDraft(
@@ -184,6 +193,9 @@ data class StudentDto(
     @Json(name = "father_guardian_name") val fatherGuardianName: String? = "",
     @Json(name = "parent_contact_no") val parentContactNo: String? = "",
     @Json(name = "alternate_contact_no") val alternateContactNo: String? = "",
+    @Json(name = "school_college") val schoolCollege: String? = "",
+    val grade: String? = "",
+    val address: String? = "",
     val renewals: List<String>? = emptyList(),
     @Json(name = "added_by") val addedBy: String? = "Unknown",
     @Json(name = "updated_by") val updatedBy: String? = "Unknown",
@@ -209,6 +221,9 @@ fun StudentDto.toDomain(): Student = Student(
     fatherGuardianName = fatherGuardianName.orEmpty(),
     parentContactNo = parentContactNo.orEmpty(),
     alternateContactNo = alternateContactNo.orEmpty(),
+    schoolCollege = schoolCollege.orEmpty(),
+    grade = grade.orEmpty(),
+    address = address.orEmpty(),
     renewals = renewals.orEmpty().filter { it.isNotBlank() },
     addedBy = addedBy ?: "Unknown",
     updatedBy = updatedBy ?: addedBy ?: "Unknown",
@@ -229,6 +244,12 @@ fun Student.toDraft(): StudentDraft = StudentDraft(
     paymentUpiId = paymentUpiId,
     paymentReference = paymentReference,
     comments = comments,
+    fatherGuardianName = fatherGuardianName,
+    parentContactNo = parentContactNo,
+    alternateContactNo = alternateContactNo,
+    schoolCollege = schoolCollege,
+    grade = grade,
+    address = address,
 )
 
 fun Student.referenceDate(): String = renewals.lastOrNull() ?: joinDate

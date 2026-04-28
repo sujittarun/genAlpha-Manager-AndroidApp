@@ -135,6 +135,17 @@ class SupabaseRepository(
             ?: throw SupabaseException(200, "Expense saved, but the saved record could not be read.")
     }
 
+    suspend fun deleteExpense(expenseId: String, session: ManagerSession) {
+        withContext(Dispatchers.IO) {
+            executeWriteRequest(
+                url = "$baseUrl/rest/v1/academy_expenses?id=eq.$expenseId",
+                session = session,
+                method = "DELETE",
+                body = null,
+            )
+        }
+    }
+
     suspend fun signIn(email: String, password: String): ManagerSession = withContext(Dispatchers.IO) {
         val body = JSONObject()
             .put("email", email)
@@ -692,6 +703,12 @@ class SupabaseRepository(
             .put("amount_paid", draft.amountPaid.toDoubleOrNull() ?: 0.0)
             .put("jersey_size", if (draft.jerseySize.isBlank()) JSONObject.NULL else draft.jerseySize)
             .put("jersey_pairs", draft.jerseyPairs.toIntOrNull() ?: 0)
+            .put("father_guardian_name", draft.fatherGuardianName.trim())
+            .put("parent_contact_no", draft.parentContactNo.filter(Char::isDigit).take(10))
+            .put("alternate_contact_no", draft.alternateContactNo.filter(Char::isDigit).take(10))
+            .put("school_college", draft.schoolCollege.trim())
+            .put("grade", draft.grade.trim())
+            .put("address", draft.address.trim())
             .put("renewals", JSONArray(renewals))
             .put("added_by", addedBy)
             .put("updated_by", updatedBy)
@@ -960,6 +977,9 @@ class SupabaseRepository(
             fatherGuardianName = optSafeString("father_guardian_name"),
             parentContactNo = optSafeString("parent_contact_no"),
             alternateContactNo = optSafeString("alternate_contact_no"),
+            schoolCollege = optSafeString("school_college"),
+            grade = optSafeString("grade"),
+            address = optSafeString("address"),
             discontinued = optBoolean("discontinued", false),
             discontinuedAt = if (has("discontinued_at") && !isNull("discontinued_at")) {
                 optString("discontinued_at", "").takeIf { it.isNotBlank() }

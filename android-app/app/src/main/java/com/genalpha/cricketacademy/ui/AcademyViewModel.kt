@@ -330,6 +330,22 @@ class AcademyViewModel(
         }
     }
 
+    suspend fun deleteExpense(expenseId: String): OperationResult {
+        if (expenseId.isBlank()) return OperationResult(false, "Expense record not found.")
+
+        return try {
+            withFreshSession { session ->
+                repository.deleteExpense(expenseId, session)
+            }
+            _uiState.update { state ->
+                state.copy(expenses = state.expenses.filterNot { it.id == expenseId })
+            }
+            OperationResult(true, "Expense deleted.")
+        } catch (error: Exception) {
+            OperationResult(false, error.message ?: "Unable to delete expense.")
+        }
+    }
+
     suspend fun loadAttendanceCounts() {
         try {
             val attendanceCounts = repository.fetchAttendanceCounts()
@@ -436,6 +452,12 @@ class AcademyViewModel(
                         amountPaid = draft.amountPaid.toDoubleOrNull() ?: 0.0,
                         jerseySize = draft.jerseySize,
                         jerseyPairs = draft.jerseyPairs.toIntOrNull() ?: 0,
+                        fatherGuardianName = draft.fatherGuardianName.trim(),
+                        parentContactNo = draft.parentContactNo.filter(Char::isDigit).take(10),
+                        alternateContactNo = draft.alternateContactNo.filter(Char::isDigit).take(10),
+                        schoolCollege = draft.schoolCollege.trim(),
+                        grade = draft.grade.trim(),
+                        address = draft.address.trim(),
                         updatedBy = session.email,
                         discontinuedAt = editingStudent.discontinuedAt,
                     )
@@ -790,6 +812,14 @@ class AcademyViewModel(
         }
         if (isFutureDate(draft.joinDate)) {
             return "Join date cannot be in the future."
+        }
+        val parentDigits = draft.parentContactNo.filter(Char::isDigit)
+        val alternateDigits = draft.alternateContactNo.filter(Char::isDigit)
+        if (parentDigits.isNotBlank() && parentDigits.length != 10) {
+            return "Mobile number should be 10 digits."
+        }
+        if (alternateDigits.isNotBlank() && alternateDigits.length != 10) {
+            return "Alternate mobile number should be 10 digits."
         }
         if (!draft.feesPaid) {
             if (draft.jerseyPairs.toIntOrNull()?.let { it < 0 } == true) {
