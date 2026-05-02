@@ -19,6 +19,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -59,6 +60,7 @@ import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DarkMode
@@ -1467,7 +1469,7 @@ private fun AppBottomBar(
 @Composable
 private fun FinancePanel(
     uiState: AcademyUiState,
-    onAddExpense: suspend (String, String, String, String) -> OperationResult,
+    onAddExpense: suspend (String, String, String, String, String) -> OperationResult,
     onDeleteExpense: suspend (String) -> OperationResult,
 ) {
     var searchQuery by rememberSaveable { mutableStateOf("") }
@@ -1478,6 +1480,7 @@ private fun FinancePanel(
     var expenseAmount by rememberSaveable { mutableStateOf("") }
     var expensePaidBy by rememberSaveable { mutableStateOf("Sandeep") }
     var expenseComment by rememberSaveable { mutableStateOf("") }
+    var expenseDate by rememberSaveable { mutableStateOf(todayIsoDate()) }
     var expenseMessage by remember { mutableStateOf<String?>(null) }
     var isAddingExpense by rememberSaveable { mutableStateOf(false) }
     var deletingExpenseId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -1555,29 +1558,30 @@ private fun FinancePanel(
             formatCurrency = { value -> formatCurrency(value) },
         )
 
-        OutlinedButton(
-            onClick = {
-                context.sharePlainText(
-                    title = "Share monthly finance backup",
-                    text = buildAndroidMonthlyFinanceBackup(
-                        monthLabel = nowCalendar.getDisplayName(java.util.Calendar.MONTH, java.util.Calendar.LONG, Locale.US).orEmpty() +
-                            " ${nowCalendar.get(java.util.Calendar.YEAR)}",
-                        activeStudents = uiState.kids.count { it.isActive() },
-                        discontinuedStudents = uiState.kids.count { !it.isActive() },
-                        fees = monthFees,
-                        expenses = monthExpenses,
-                        net = monthNet,
-                        expenseRows = uiState.expenses.filter { it.expenseDate.startsWith(monthKey) },
-                    ),
-                )
-            },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp),
-        ) {
-            Icon(Icons.Outlined.Description, contentDescription = null)
-            Spacer(modifier = Modifier.size(8.dp))
-            Text("Share monthly backup")
-        }
+        // Export academy record option hidden for now
+        // OutlinedButton(
+        //     onClick = {
+        //         context.sharePlainText(
+        //             title = "Share monthly finance backup",
+        //             text = buildAndroidMonthlyFinanceBackup(
+        //                 monthLabel = nowCalendar.getDisplayName(java.util.Calendar.MONTH, java.util.Calendar.LONG, Locale.US).orEmpty() +
+        //                     " ${nowCalendar.get(java.util.Calendar.YEAR)}",
+        //                 activeStudents = uiState.kids.count { it.isActive() },
+        //                 discontinuedStudents = uiState.kids.count { !it.isActive() },
+        //                 fees = monthFees,
+        //                 expenses = monthExpenses,
+        //                 net = monthNet,
+        //                 expenseRows = uiState.expenses.filter { it.expenseDate.startsWith(monthKey) },
+        //             ),
+        //         )
+        //     },
+        //     modifier = Modifier.fillMaxWidth(),
+        //     shape = RoundedCornerShape(18.dp),
+        // ) {
+        //     Icon(Icons.Outlined.Description, contentDescription = null)
+        //     Spacer(modifier = Modifier.size(8.dp))
+        //     Text("Share monthly backup")
+        // }
 
         FinanceAddExpenseCard(
             expanded = showExpenseForm,
@@ -1585,6 +1589,7 @@ private fun FinancePanel(
             amount = expenseAmount,
             paidBy = expensePaidBy,
             comment = expenseComment,
+            expenseDate = expenseDate,
             isSaving = isAddingExpense,
             message = expenseMessage,
             onToggle = {
@@ -1595,15 +1600,17 @@ private fun FinancePanel(
             onAmountChange = { expenseAmount = it },
             onPaidByChange = { expensePaidBy = it },
             onCommentChange = { expenseComment = it },
+            onDateChange = { expenseDate = it },
             onSubmit = {
                 scope.launch {
                     isAddingExpense = true
-                    val result = onAddExpense(expenseType, expenseAmount, expensePaidBy, expenseComment)
+                    val result = onAddExpense(expenseType, expenseAmount, expensePaidBy, expenseComment, expenseDate)
                     isAddingExpense = false
                     expenseMessage = result.message
                     if (result.success) {
                         expenseAmount = ""
                         expenseComment = ""
+                        expenseDate = todayIsoDate()
                         showExpenseForm = false
                     }
                 }
@@ -1837,7 +1844,7 @@ private fun FinanceOverviewCard(
         darkModeEnabled -> Color(0xFFFFC9C9)
         else -> Color(0xFFB42318)
     }
-    val metricColor = if (darkModeEnabled) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.72f)
+    val metricColor = if (darkModeEnabled) Color.White.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.72f)
     Surface(
         shape = RoundedCornerShape(26.dp),
         color = containerColor,
@@ -1874,8 +1881,8 @@ private fun FinanceGlassMetric(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(label.uppercase(Locale.getDefault()), color = contentColor.copy(alpha = 0.68f), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
-            Text(value, color = contentColor, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(label.uppercase(Locale.getDefault()), color = Color.White.copy(alpha = 0.78f), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+            Text(value, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -1887,6 +1894,7 @@ private fun FinanceAddExpenseCard(
     amount: String,
     paidBy: String,
     comment: String,
+    expenseDate: String,
     isSaving: Boolean,
     message: String?,
     onToggle: () -> Unit,
@@ -1894,8 +1902,31 @@ private fun FinanceAddExpenseCard(
     onAmountChange: (String) -> Unit,
     onPaidByChange: (String) -> Unit,
     onCommentChange: (String) -> Unit,
+    onDateChange: (String) -> Unit,
     onSubmit: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val openDatePicker = rememberUpdatedState(newValue = {
+        val (year, month, day) = currentDatePickerValues(expenseDate.ifBlank { null })
+        DatePickerDialog(
+            context,
+            { _, selectedYear, selectedMonth, selectedDay ->
+                onDateChange(
+                    String.format(
+                        Locale.US,
+                        "%04d-%02d-%02d",
+                        selectedYear,
+                        selectedMonth + 1,
+                        selectedDay
+                    )
+                )
+            },
+            year,
+            month,
+            day,
+        ).show()
+    })
+
     Surface(
         shape = RoundedCornerShape(22.dp),
         color = MaterialTheme.colorScheme.surface,
@@ -1918,6 +1949,30 @@ private fun FinanceAddExpenseCard(
                     value = expenseType,
                     options = listOf("Coach Fees", "Purchased accessories", "Transport", "Maid expense", "Ground maintenance", "Other"),
                     onSelect = onTypeChange,
+                )
+                OutlinedTextField(
+                    value = displayDate(expenseDate),
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Expense date") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { openDatePicker.value() },
+                    trailingIcon = {
+                        IconButton(onClick = { openDatePicker.value() }) {
+                            Icon(Icons.Default.DateRange, contentDescription = "Pick date")
+                        }
+                    },
+                    interactionSource = remember { MutableInteractionSource() }
+                        .also { interactionSource ->
+                            LaunchedEffect(interactionSource) {
+                                interactionSource.interactions.collect { interaction ->
+                                    if (interaction is androidx.compose.foundation.interaction.PressInteraction.Release) {
+                                        openDatePicker.value()
+                                    }
+                                }
+                            }
+                        },
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(

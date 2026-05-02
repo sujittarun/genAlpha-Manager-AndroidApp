@@ -314,6 +314,7 @@ class AcademyViewModel(
         amountText: String,
         paidBy: String,
         comment: String,
+        expenseDate: String = "",
     ): OperationResult {
         val amount = amountText.toDoubleOrNull() ?: 0.0
         if (expenseType.isBlank()) return OperationResult(false, "Choose an expense type.")
@@ -321,7 +322,7 @@ class AcademyViewModel(
 
         return try {
             val created = withFreshSession { session ->
-                repository.addExpense(session, expenseType, amount, paidBy, comment.trim())
+                repository.addExpense(session, expenseType, amount, paidBy, comment.trim(), expenseDate)
             }
             upsertLocalExpense(created)
             OperationResult(true, "Expense added.")

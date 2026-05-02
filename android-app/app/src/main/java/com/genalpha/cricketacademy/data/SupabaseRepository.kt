@@ -117,6 +117,7 @@ class SupabaseRepository(
         amount: Double,
         paidBy: String,
         comment: String,
+        expenseDate: String = "",
     ): AcademyExpense = withContext(Dispatchers.IO) {
         val body = JSONObject()
             .put("expense_type", expenseType)
@@ -124,6 +125,9 @@ class SupabaseRepository(
             .put("paid_by", paidBy)
             .put("comment", comment)
             .put("created_by", session.email)
+
+        val dateToUse = expenseDate.ifBlank { todayIsoDate() }
+        body.put("expense_date", dateToUse)
 
         val responseBody = executeWriteRequestReturningBody(
             url = "$baseUrl/rest/v1/academy_expenses",
