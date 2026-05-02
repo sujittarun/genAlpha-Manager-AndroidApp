@@ -151,6 +151,10 @@ data class StudentPayment(
     @Json(name = "student_id") val studentId: String,
     val amount: Double,
     @Json(name = "paid_on") val paidOn: String,
+    @Json(name = "payment_type") val paymentType: String? = "renewal",
+    @Json(name = "plan_type") val planType: String? = "monthly",
+    @Json(name = "cycle_start_date") val cycleStartDate: String? = "",
+    @Json(name = "months_covered") val monthsCovered: Int? = 1,
 )
 
 data class AuthPayload(
@@ -254,14 +258,38 @@ fun Student.toDraft(): StudentDraft = StudentDraft(
 
 fun Student.referenceDate(): String = renewals.lastOrNull() ?: joinDate
 
-fun Student.daysSinceReference(): Int = daysSince(referenceDate())
+fun Student.nextRenewalCycleDate(payments: List<StudentPayment>): String = paidThroughDate(payments)
 
-fun Student.nextRenewalCycleDate(): String {
-    var cycleDate = referenceDate()
-    while (daysSince(cycleDate) >= 30) {
-        cycleDate = addDays(cycleDate, 30)
+fun Student.paidThroughDate(payments: List<StudentPayment>): String {
+    var paidUntil = if (feesPaid) {
+        addMonths(joinDate, initialMonthsCovered())
+    } else {
+        joinDate
     }
-    return cycleDate
+
+    renewals.forEach { renewalDate ->
+        paidUntil = maxIsoDate(paidUntil, addMonths(renewalDate, 1))
+    }
+
+    payments
+        .filter { it.studentId == id }
+        .forEach { payment ->
+            val cycleStart = payment.cycleStartDate?.takeIf { it.isNotBlank() } ?: payment.paidOn
+            val months = (payment.monthsCovered ?: 1).coerceAtLeast(1)
+            paidUntil = maxIsoDate(paidUntil, addMonths(cycleStart, months))
+        }
+
+    return paidUntil
+}
+
+fun Student.isRenewalPending(payments: List<StudentPayment>): Boolean {
+    return isActive() && feesPaid && daysSince(paidThroughDate(payments)) >= 0
+}
+
+fun Student.renewalStatus(payments: List<StudentPayment>): String = when {
+    discontinued -> "Tracking paused"
+    !feesPaid -> "Join fee pending"
+    else -> renewalLabelForDueDate(paidThroughDate(payments))
 }
 
 fun Student.trainingDurationLabel(): String {
@@ -289,20 +317,12 @@ fun Student.isActive(): Boolean = !discontinued
 
 fun Student.isFeesPending(): Boolean = isActive() && !feesPaid
 
-fun Student.isRenewalPending(): Boolean = isActive() && daysSinceReference() >= 30
-
 fun Student.latestRenewal(): String? = renewals.lastOrNull()
 
 fun Student.cardTimelineLabel(): String? = when {
     discontinued -> discontinuedAt?.let { "Discontinued ${displayDate(it)}" } ?: "Discontinued"
     renewals.isNotEmpty() -> latestRenewal()?.let { "Renewed ${displayDate(it)}" }
     else -> null
-}
-
-fun Student.renewalStatus(): String = when {
-    discontinued -> "Tracking paused"
-    isRenewalPending() -> overdueRenewalLabel()
-    else -> remainingRenewalLabel()
 }
 
 fun Student.trackingCaption(): String = if (discontinued) {
@@ -415,32 +435,46 @@ fun calculateAgeFromDate(dateOfBirth: String): Int? {
     }
 }
 
-private fun Student.remainingRenewalLabel(): String {
-    val daysLeft = (30 - daysSinceReference()).coerceAtLeast(0)
-    return when (daysLeft) {
-        0 -> "Due today"
-        1 -> "1 day left"
-        else -> "$daysLeft days left"
+private fun Student.initialMonthsCovered(): Int {
+    if (!feesPaid || amountPaid <= 0.0) return 0
+    val withoutAdmissionFee = (amountPaid - 500.0).coerceAtLeast(0.0)
+    val roundedAmount = kotlin.math.round(amountPaid).toInt()
+    return when {
+        withoutAdmissionFee >= 20000.0 || roundedAmount == 20000 -> 6
+        (withoutAdmissionFee >= 9000.0 && withoutAdmissionFee < 10000.0) || roundedAmount == 9000 -> 3
+        else -> 1
     }
 }
 
-private fun addDays(value: String, days: Int): String {
+private fun renewalLabelForDueDate(dueDate: String): String {
+    val daysPastDue = daysSince(dueDate)
+    return when {
+        daysPastDue > 1 -> "$daysPastDue days overdue"
+        daysPastDue == 1 -> "1 day overdue"
+        daysPastDue == 0 -> "Due today"
+        daysPastDue == -1 -> "1 day left"
+        else -> "${-daysPastDue} days left"
+    }
+}
+
+private fun maxIsoDate(first: String, second: String): String {
+    return try {
+        val firstDate = ISO_DATE_FORMAT.parse(first)
+        val secondDate = ISO_DATE_FORMAT.parse(second)
+        if (firstDate != null && secondDate != null && secondDate.after(firstDate)) second else first
+    } catch (_: Exception) {
+        first
+    }
+}
+
+private fun addMonths(value: String, months: Int): String {
     return try {
         val parsed = ISO_DATE_FORMAT.parse(value) ?: return value
         val calendar = Calendar.getInstance().apply { time = parsed }
-        calendar.add(Calendar.DAY_OF_MONTH, days)
+        calendar.add(Calendar.MONTH, months)
         ISO_DATE_FORMAT.format(calendar.time)
     } catch (_: Exception) {
         value
-    }
-}
-
-private fun Student.overdueRenewalLabel(): String {
-    val overdueDays = (daysSinceReference() - 30).coerceAtLeast(0)
-    return when (overdueDays) {
-        0 -> "Due today"
-        1 -> "1 day overdue"
-        else -> "$overdueDays days overdue"
     }
 }
 

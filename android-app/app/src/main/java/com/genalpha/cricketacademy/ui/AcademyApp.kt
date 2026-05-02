@@ -156,6 +156,7 @@ import com.genalpha.cricketacademy.data.ManagerSession
 import com.genalpha.cricketacademy.data.OperationResult
 import com.genalpha.cricketacademy.data.Student
 import com.genalpha.cricketacademy.data.StudentDraft
+import com.genalpha.cricketacademy.data.StudentPayment
 import com.genalpha.cricketacademy.data.StudentTimelineItem
 import com.genalpha.cricketacademy.data.calculateAgeFromDate
 import com.genalpha.cricketacademy.data.cardTimelineLabel
@@ -751,6 +752,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                     item {
                         AlertSection(
                             alertKids = alertKids,
+                            payments = uiState.payments,
                         )
                     }
 
@@ -817,6 +819,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                             items(section.students, key = { it.id }) { student ->
                                 RosterRow(
                                     student = student,
+                                    payments = uiState.payments,
                                     isManager = viewModel.canEdit(),
                                     onOpen = {
                                         selectedStudent = student
@@ -1046,6 +1049,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                 if (showDetailSheet && selectedStudent != null) {
                     PlayerDetailSheet(
                         student = selectedStudent!!,
+                        payments = uiState.payments,
                         attendanceCount = uiState.attendanceCounts[selectedStudent!!.id] ?: 0,
                         timeline = timelineCache[selectedStudent!!.id].orEmpty(),
                         isTimelineLoading = timelineLoadingId == selectedStudent!!.id,
@@ -1107,6 +1111,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                 if (renewalStudent != null) {
                     RenewalPaymentDialog(
                         student = renewalStudent!!,
+                        payments = uiState.payments,
                         onDismiss = { renewalStudent = null },
                         onSubmit = { plan, months, amount, comment ->
                             val studentForReceipt = renewalStudent!!
@@ -1282,9 +1287,10 @@ private fun HeaderSection(
 @Composable
 private fun AlertSection(
     alertKids: List<Student>,
+    payments: List<StudentPayment>,
 ) {
     val feesPendingKids = alertKids.filter { it.isFeesPending() }
-    val renewalPendingKids = alertKids.filter { it.isRenewalPending() }
+    val renewalPendingKids = alertKids.filter { it.isRenewalPending(payments) }
     val alertCount = alertKids.size
     Card(
         shape = RoundedCornerShape(24.dp),
@@ -1488,7 +1494,7 @@ private fun FinancePanel(
 
     val initialFees = uiState.kids
         .filter { it.feesPaid }
-        .map { com.genalpha.cricketacademy.data.StudentPayment(id = "", studentId = it.id, amount = it.amountPaid, paidOn = it.joinDate) }
+        .map { StudentPayment(id = "", studentId = it.id, amount = it.amountPaid, paidOn = it.joinDate) }
 
     val allFees = initialFees + uiState.payments
 
@@ -2012,6 +2018,7 @@ private fun FinanceMiniChart(
 @Composable
 private fun RenewalPaymentDialog(
     student: Student,
+    payments: List<StudentPayment>,
     onDismiss: () -> Unit,
     onSubmit: suspend (String, Int, Double, String) -> Unit,
 ) {
@@ -2037,7 +2044,7 @@ private fun RenewalPaymentDialog(
         ) {
             Text("Record renewal payment", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
             Text(
-                "${student.name} cycle starts ${displayDate(student.nextRenewalCycleDate())}. Late payment will not change the usual fee date.",
+                "${student.name} cycle starts ${displayDate(student.nextRenewalCycleDate(payments))}. Late payment will not change the usual fee date.",
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
@@ -2835,11 +2842,12 @@ private fun RosterSectionHeader(
 @Composable
 private fun RosterRow(
     student: Student,
+    payments: List<StudentPayment>,
     isManager: Boolean,
     onOpen: () -> Unit,
     onEdit: () -> Unit,
 ) {
-    val needsAttention = student.isFeesPending() || student.isRenewalPending()
+    val needsAttention = student.isFeesPending() || student.isRenewalPending(payments)
     val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val slotTone = themedBadgeTone(Color(0xFFEAF2FF), BrandBlueDeep, DarkInfoContainer, DarkInfoText)
     val activeTone = themedBadgeTone(Color(0xFFEAF8F2), BrandGreen, DarkSuccessContainer, DarkSuccessText)
@@ -2929,15 +2937,15 @@ private fun RosterRow(
                     color = if (student.feesPaid) feePaidTone.text else feePendingTone.text,
                 )
                 Badge(
-                    label = student.renewalStatus(),
+                    label = student.renewalStatus(payments),
                     container = when {
                         student.discontinued -> discontinuedTone.container
-                        student.isRenewalPending() -> renewalPendingTone.container
+                        student.isRenewalPending(payments) -> renewalPendingTone.container
                         else -> renewalOkTone.container
                     },
                     color = when {
                         student.discontinued -> discontinuedTone.text
-                        student.isRenewalPending() -> renewalPendingTone.text
+                        student.isRenewalPending(payments) -> renewalPendingTone.text
                         else -> renewalOkTone.text
                     },
                 )
@@ -2961,6 +2969,7 @@ private fun RosterRow(
 @Composable
 private fun PlayerDetailSheet(
     student: Student,
+    payments: List<StudentPayment>,
     attendanceCount: Int,
     timeline: List<StudentTimelineItem>,
     isTimelineLoading: Boolean,
@@ -3060,7 +3069,7 @@ private fun PlayerDetailSheet(
                 DataTileContent(
                     modifier = Modifier.weight(1f),
                     label = "Next Fee Due",
-                    value = if (student.discontinued) "Paused" else displayDate(student.nextRenewalCycleDate()),
+                    value = if (student.discontinued) "Paused" else displayDate(student.nextRenewalCycleDate(payments)),
                     accent = MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -3156,15 +3165,15 @@ private fun PlayerDetailSheet(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Badge(
-                        label = student.renewalStatus(),
+                        label = student.renewalStatus(payments),
                         container = when {
                             student.discontinued -> discontinuedTone.container
-                            student.isRenewalPending() -> renewalPendingTone.container
+                            student.isRenewalPending(payments) -> renewalPendingTone.container
                             else -> renewalOkTone.container
                         },
                         color = when {
                             student.discontinued -> discontinuedTone.text
-                            student.isRenewalPending() -> renewalPendingTone.text
+                            student.isRenewalPending(payments) -> renewalPendingTone.text
                             else -> renewalOkTone.text
                         },
                     )
@@ -3242,7 +3251,7 @@ private fun PlayerDetailSheet(
                         }
                         Text(if (student.discontinued) "Mark active" else "Discontinue")
                     }
-                    if (student.isRenewalPending() && student.isActive()) {
+                    if (student.isRenewalPending(payments) && student.isActive()) {
                         ElevatedButton(
                             enabled = actionInProgress == null,
                             onClick = {

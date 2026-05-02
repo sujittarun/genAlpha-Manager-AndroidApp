@@ -494,18 +494,20 @@ class AcademyViewModel(
     }
 
     suspend fun renewStudent(student: Student): OperationResult {
-        if (!student.isRenewalPending()) {
+        val payments = _uiState.value.payments
+        val cycleDate = student.nextRenewalCycleDate(payments)
+        if (!student.isRenewalPending(payments)) {
             return OperationResult(false, "This player is not due for renewal yet.")
         }
 
         return try {
             val session = withFreshSession { session ->
-                repository.renewStudent(student, session.email, session)
+                repository.renewStudent(student, session.email, session, cycleDate)
                 session
             }
             upsertLocalStudent(
                 student.copy(
-                    renewals = student.renewals + student.nextRenewalCycleDate(),
+                    renewals = student.renewals + cycleDate,
                     updatedBy = session.email,
                 )
             )
@@ -523,7 +525,9 @@ class AcademyViewModel(
         amount: Double,
         comment: String,
     ): OperationResult {
-        if (!student.isRenewalPending()) {
+        val payments = _uiState.value.payments
+        val cycleDate = student.nextRenewalCycleDate(payments)
+        if (!student.isRenewalPending(payments)) {
             return OperationResult(false, "This player is not due for renewal yet.")
         }
         if (amount <= 0.0) {
@@ -532,12 +536,12 @@ class AcademyViewModel(
 
         return try {
             val session = withFreshSession { session ->
-                repository.recordRenewalPayment(student, session.email, session, planType, monthsCovered, amount, comment)
+                repository.recordRenewalPayment(student, session.email, session, planType, monthsCovered, amount, comment, cycleDate)
                 session
             }
             upsertLocalStudent(
                 student.copy(
-                    renewals = student.renewals + student.nextRenewalCycleDate(),
+                    renewals = student.renewals + cycleDate,
                     updatedBy = session.email,
                 )
             )
@@ -634,7 +638,10 @@ class AcademyViewModel(
         selected = _uiState.value.selectedSlotFilter,
     )
 
-    fun alertKids(): List<Student> = _uiState.value.kids.filter { it.isFeesPending() || it.isRenewalPending() }
+    fun alertKids(): List<Student> {
+        val state = _uiState.value
+        return state.kids.filter { it.isFeesPending() || it.isRenewalPending(state.payments) }
+    }
 
     fun emptyStateMessage(): String {
         val state = _uiState.value

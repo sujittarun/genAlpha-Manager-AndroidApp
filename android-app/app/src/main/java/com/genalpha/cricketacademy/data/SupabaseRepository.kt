@@ -557,9 +557,14 @@ class SupabaseRepository(
         }
     }
 
-    suspend fun renewStudent(student: Student, managerEmail: String, session: ManagerSession) {
+    suspend fun renewStudent(
+        student: Student,
+        managerEmail: String,
+        session: ManagerSession,
+        cycleDate: String,
+    ) {
         withContext(Dispatchers.IO) {
-            val renewals = JSONArray(student.renewals + student.nextRenewalCycleDate())
+            val renewals = JSONArray(student.renewals + cycleDate)
             val body = JSONObject()
                 .put("renewals", renewals)
                 .put("updated_by", managerEmail)
@@ -581,10 +586,10 @@ class SupabaseRepository(
         monthsCovered: Int,
         amount: Double,
         comment: String,
+        cycleDate: String,
     ) {
         withContext(Dispatchers.IO) {
-            val cycleDate = student.nextRenewalCycleDate()
-            renewStudent(student, managerEmail, session)
+            renewStudent(student, managerEmail, session, cycleDate)
             val body = JSONObject()
                 .put("student_id", student.id)
                 .put("payment_type", "renewal")
@@ -1045,6 +1050,10 @@ class SupabaseRepository(
             studentId = optSafeString("student_id"),
             amount = optDoubleValue("amount"),
             paidOn = optSafeString("paid_on"),
+            paymentType = optSafeString("payment_type"),
+            planType = optSafeString("plan_type"),
+            cycleStartDate = optSafeString("cycle_start_date"),
+            monthsCovered = optIntValue("months_covered").takeIf { it > 0 } ?: 1,
         )
     }
 
