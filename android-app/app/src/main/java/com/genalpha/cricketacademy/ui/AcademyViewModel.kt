@@ -431,8 +431,9 @@ class AcademyViewModel(
         }
 
         return try {
+            var profileFieldsSaved = true
             val session = withFreshSession { session ->
-                if (editingStudent == null) {
+                profileFieldsSaved = if (editingStudent == null) {
                     repository.createStudent(draft, session.email, session)
                 } else {
                     repository.updateStudent(editingStudent, draft, session.email, session)
@@ -452,12 +453,12 @@ class AcademyViewModel(
                         amountPaid = draft.amountPaid.toDoubleOrNull() ?: 0.0,
                         jerseySize = draft.jerseySize,
                         jerseyPairs = draft.jerseyPairs.toIntOrNull() ?: 0,
-                        fatherGuardianName = draft.fatherGuardianName.trim(),
-                        parentContactNo = draft.parentContactNo.filter(Char::isDigit).take(10),
-                        alternateContactNo = draft.alternateContactNo.filter(Char::isDigit).take(10),
-                        schoolCollege = draft.schoolCollege.trim(),
-                        grade = draft.grade.trim(),
-                        address = draft.address.trim(),
+                        fatherGuardianName = if (profileFieldsSaved) draft.fatherGuardianName.trim() else editingStudent.fatherGuardianName,
+                        parentContactNo = if (profileFieldsSaved) draft.parentContactNo.filter(Char::isDigit).take(10) else editingStudent.parentContactNo,
+                        alternateContactNo = if (profileFieldsSaved) draft.alternateContactNo.filter(Char::isDigit).take(10) else editingStudent.alternateContactNo,
+                        schoolCollege = if (profileFieldsSaved) draft.schoolCollege.trim() else editingStudent.schoolCollege,
+                        grade = if (profileFieldsSaved) draft.grade.trim() else editingStudent.grade,
+                        address = if (profileFieldsSaved) draft.address.trim() else editingStudent.address,
                         updatedBy = session.email,
                         discontinuedAt = editingStudent.discontinuedAt,
                     )
@@ -466,7 +467,13 @@ class AcademyViewModel(
             }
             OperationResult(
                 true,
-                if (editingStudent == null) "Player added successfully." else "Player updated successfully."
+                if (!profileFieldsSaved) {
+                    "Player saved, but parent/school fields need the latest Supabase SQL migration."
+                } else if (editingStudent == null) {
+                    "Player added successfully."
+                } else {
+                    "Player updated successfully."
+                }
             )
         } catch (error: Exception) {
             OperationResult(false, error.message ?: "Unable to save player.")

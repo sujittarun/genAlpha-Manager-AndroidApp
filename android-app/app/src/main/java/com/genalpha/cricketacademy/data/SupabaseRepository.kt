@@ -173,8 +173,8 @@ class SupabaseRepository(
         executeAuthRequest(request)
     }
 
-    suspend fun createStudent(draft: StudentDraft, managerEmail: String, session: ManagerSession) {
-        withContext(Dispatchers.IO) {
+    suspend fun createStudent(draft: StudentDraft, managerEmail: String, session: ManagerSession): Boolean {
+        return withContext(Dispatchers.IO) {
             val body = studentPayload(
                 draft = draft,
                 renewals = emptyList(),
@@ -184,12 +184,28 @@ class SupabaseRepository(
                 discontinuedAt = null,
             )
 
-            executeWriteRequest(
-                url = "$baseUrl/rest/v1/students",
-                session = session,
-                method = "POST",
-                body = body,
-            )
+            val url = "$baseUrl/rest/v1/students"
+            try {
+                executeWriteRequest(url = url, session = session, method = "POST", body = body)
+                true
+            } catch (error: SupabaseException) {
+                if (!error.isMissingStudentProfileColumnError()) throw error
+                executeWriteRequest(
+                    url = url,
+                    session = session,
+                    method = "POST",
+                    body = studentPayload(
+                        draft = draft,
+                        renewals = emptyList(),
+                        addedBy = managerEmail,
+                        updatedBy = managerEmail,
+                        discontinued = false,
+                        discontinuedAt = null,
+                        includeProfileFields = false,
+                    ),
+                )
+                false
+            }
         }
     }
 
@@ -494,8 +510,8 @@ class SupabaseRepository(
         draft: StudentDraft,
         managerEmail: String,
         session: ManagerSession,
-    ) {
-        withContext(Dispatchers.IO) {
+    ): Boolean {
+        return withContext(Dispatchers.IO) {
             val body = studentPayload(
                 draft = draft,
                 renewals = current.renewals,
@@ -505,12 +521,28 @@ class SupabaseRepository(
                 discontinuedAt = current.discontinuedAt,
             )
 
-            executeWriteRequest(
-                url = "$baseUrl/rest/v1/students?id=eq.${current.id}",
-                session = session,
-                method = "PATCH",
-                body = body,
-            )
+            val url = "$baseUrl/rest/v1/students?id=eq.${current.id}"
+            try {
+                executeWriteRequest(url = url, session = session, method = "PATCH", body = body)
+                true
+            } catch (error: SupabaseException) {
+                if (!error.isMissingStudentProfileColumnError()) throw error
+                executeWriteRequest(
+                    url = url,
+                    session = session,
+                    method = "PATCH",
+                    body = studentPayload(
+                        draft = draft,
+                        renewals = current.renewals,
+                        addedBy = current.addedBy,
+                        updatedBy = managerEmail,
+                        discontinued = current.discontinued,
+                        discontinuedAt = current.discontinuedAt,
+                        includeProfileFields = false,
+                    ),
+                )
+                false
+            }
         }
     }
 
@@ -693,8 +725,9 @@ class SupabaseRepository(
         updatedBy: String,
         discontinued: Boolean,
         discontinuedAt: String?,
+        includeProfileFields: Boolean = true,
     ): JSONObject {
-        return JSONObject()
+        val body = JSONObject()
             .put("name", draft.name.trim())
             .put("age", draft.age.toInt())
             .put("time_slot", draft.timeSlot)
@@ -703,17 +736,23 @@ class SupabaseRepository(
             .put("amount_paid", draft.amountPaid.toDoubleOrNull() ?: 0.0)
             .put("jersey_size", if (draft.jerseySize.isBlank()) JSONObject.NULL else draft.jerseySize)
             .put("jersey_pairs", draft.jerseyPairs.toIntOrNull() ?: 0)
-            .put("father_guardian_name", draft.fatherGuardianName.trim())
-            .put("parent_contact_no", draft.parentContactNo.filter(Char::isDigit).take(10))
-            .put("alternate_contact_no", draft.alternateContactNo.filter(Char::isDigit).take(10))
-            .put("school_college", draft.schoolCollege.trim())
-            .put("grade", draft.grade.trim())
-            .put("address", draft.address.trim())
             .put("renewals", JSONArray(renewals))
             .put("added_by", addedBy)
             .put("updated_by", updatedBy)
             .put("discontinued", discontinued)
             .put("discontinued_at", discontinuedAt ?: JSONObject.NULL)
+
+        if (includeProfileFields) {
+            body
+                .put("father_guardian_name", draft.fatherGuardianName.trim())
+                .put("parent_contact_no", draft.parentContactNo.filter(Char::isDigit).take(10))
+                .put("alternate_contact_no", draft.alternateContactNo.filter(Char::isDigit).take(10))
+                .put("school_college", draft.schoolCollege.trim())
+                .put("grade", draft.grade.trim())
+                .put("address", draft.address.trim())
+        }
+
+        return body
     }
 
     private fun baseRequest(url: String): Request.Builder {
@@ -1080,3 +1119,16 @@ class SupabaseException(
     val statusCode: Int,
     override val message: String,
 ) : Exception(message)
+
+private fun SupabaseException.isMissingStudentProfileColumnError(): Boolean {
+    val lowerMessage = message.lowercase()
+    return lowerMessage.contains("schema cache") &&
+        listOf(
+            "father_guardian_name",
+            "parent_contact_no",
+            "alternate_contact_no",
+            "school_college",
+            "grade",
+            "address",
+        ).any { lowerMessage.contains(it) }
+}
