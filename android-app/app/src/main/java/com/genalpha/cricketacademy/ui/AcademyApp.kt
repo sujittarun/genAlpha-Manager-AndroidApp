@@ -1486,13 +1486,10 @@ private fun FinancePanel(
     var deletingExpenseId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedFinanceRange by rememberSaveable { mutableStateOf("month") }
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
-
     fun calendarMonthKey(calendar: java.util.Calendar): String =
         String.format(Locale.US, "%04d-%02d", calendar.get(java.util.Calendar.YEAR), calendar.get(java.util.Calendar.MONTH) + 1)
 
     val nowCalendar = remember { java.util.Calendar.getInstance() }
-    val monthKey = calendarMonthKey(nowCalendar)
     val selectedRange = remember(selectedFinanceRange) { buildFinanceRangeSelection(selectedFinanceRange) }
 
     val initialFees = uiState.kids
@@ -1514,9 +1511,6 @@ private fun FinancePanel(
     val selectedExpenses = uiState.expenses
         .filter { isDateInFinanceRange(it.expenseDate, selectedRange) }
         .sumOf { it.amount }
-    val monthExpenses = sumExpenses(monthKey)
-    val monthFees = sumFees(monthKey)
-    val monthNet = monthFees - monthExpenses
     val selectedNet = selectedFees - selectedExpenses
     val monthBuckets = (5 downTo 0).map { offset ->
         val month = (nowCalendar.clone() as java.util.Calendar).apply {
@@ -1777,6 +1771,11 @@ private fun FinanceRangeSelector(
     selected: String,
     onSelected: (String) -> Unit,
 ) {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val selectedContainer = if (isDark) Color(0xFF2D6CB8) else BrandBlue
+    val selectedLabel = Color.White
+    val unselectedContainer = if (isDark) Color(0xFF10243D) else Color(0xFFF2F6FC)
+    val unselectedLabel = if (isDark) Color(0xFFDCEBFF) else BrandBlueDeep
     Surface(
         shape = RoundedCornerShape(22.dp),
         color = MaterialTheme.colorScheme.surface,
@@ -1786,7 +1785,12 @@ private fun FinanceRangeSelector(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("Finance range", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = BrandBlue)
+            Text(
+                "Finance range",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = if (isDark) Color(0xFFDCEBFF) else BrandBlue,
+            )
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -1796,6 +1800,18 @@ private fun FinanceRangeSelector(
                         selected = selected == option.key,
                         onClick = { onSelected(option.key) },
                         label = { Text(option.label, fontSize = 12.sp, maxLines = 1) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = selectedContainer,
+                            selectedLabelColor = selectedLabel,
+                            containerColor = unselectedContainer,
+                            labelColor = unselectedLabel,
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = selected == option.key,
+                            borderColor = if (isDark) Color(0xFF25476D) else Color(0xFFD9E4F2),
+                            selectedBorderColor = Color.Transparent,
+                        ),
                     )
                 }
             }
@@ -1881,8 +1897,8 @@ private fun FinanceGlassMetric(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(label.uppercase(Locale.getDefault()), color = Color.White.copy(alpha = 0.78f), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
-            Text(value, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(label.uppercase(Locale.getDefault()), color = contentColor.copy(alpha = 0.78f), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+            Text(value, color = contentColor, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
