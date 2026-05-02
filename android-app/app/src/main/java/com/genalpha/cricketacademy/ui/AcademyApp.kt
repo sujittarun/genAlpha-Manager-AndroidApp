@@ -508,7 +508,14 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
-    val filteredKids = remember(uiState.kids, uiState.selectedSlotFilter, uiState.searchQuery) { viewModel.filteredKids() }
+    val filteredKids = remember(
+        uiState.kids,
+        uiState.selectedSlotFilter,
+        uiState.searchQuery,
+        uiState.rosterSortKey,
+        uiState.rosterSortAscending,
+        uiState.payments,
+    ) { viewModel.filteredKids() }
     val stats = remember(uiState.kids) { viewModel.stats() }
     val slotSummary = remember(uiState.kids, uiState.selectedSlotFilter) { viewModel.slotSummary() }
     val alertKids = remember(uiState.kids) { viewModel.alertKids() }
@@ -793,10 +800,13 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                     item {
                         RosterToolbar(
                             searchQuery = uiState.searchQuery,
+                            sortKey = uiState.rosterSortKey,
+                            sortAscending = uiState.rosterSortAscending,
                             visibleCount = filteredKids.size,
                             totalCount = uiState.kids.size,
                             isRefreshing = uiState.isRefreshing,
                             onSearchChange = viewModel::setSearchQuery,
+                            onSortChange = viewModel::setRosterSort,
                             onRefresh = {
                                 scope.launch {
                                     viewModel.loadKids()
@@ -1535,6 +1545,7 @@ private fun FinancePanel(
 
         FinanceRangeSelector(
             selected = selectedFinanceRange,
+            period = selectedRange.period,
             onSelected = { selectedFinanceRange = it },
         )
 
@@ -1743,25 +1754,79 @@ private data class FinanceMonthSummary(
     val expenses: Double,
 )
 
+private data class PlayerPaymentLine(
+    val date: String,
+    val title: String,
+    val plan: String,
+    val months: Int,
+    val amount: Double,
+)
+
+private fun initialCoverageMonthsForAmount(amount: Double, feesPaid: Boolean): Int {
+    if (!feesPaid || amount <= 0.0) return 0
+    val withoutAdmissionFee = (amount - 500.0).coerceAtLeast(0.0)
+    val roundedAmount = kotlin.math.round(amount).toInt()
+    return when {
+        withoutAdmissionFee >= 20000.0 || roundedAmount == 20000 -> 6
+        (withoutAdmissionFee >= 9000.0 && withoutAdmissionFee < 10000.0) || roundedAmount == 9000 -> 3
+        else -> 1
+    }
+}
+
+private fun paymentPlanLabel(planType: String?, months: Int): String = when (planType) {
+    "quarterly" -> "3 months"
+    "halfyearly" -> "6 months"
+    "special" -> "Special training"
+    "custom" -> "Custom amount"
+    else -> if (months > 1) "$months months" else "Monthly"
+}
+
+private fun buildPlayerPaymentRows(student: Student, payments: List<StudentPayment>): List<PlayerPaymentLine> {
+    val rows = mutableListOf<PlayerPaymentLine>()
+    if (student.feesPaid && student.amountPaid > 0.0) {
+        val months = initialCoverageMonthsForAmount(student.amountPaid, student.feesPaid)
+        rows += PlayerPaymentLine(
+            date = student.joinDate,
+            title = "Joining payment",
+            plan = if (months > 1) "$months months + admission" else "Monthly + admission",
+            months = months,
+            amount = student.amountPaid,
+        )
+    }
+    payments.filter { it.studentId == student.id }.forEach { payment ->
+        val months = (payment.monthsCovered ?: 1).coerceAtLeast(1)
+        rows += PlayerPaymentLine(
+            date = payment.paidOn,
+            title = if (payment.paymentType == "joining") "Joining payment" else "Renewal payment",
+            plan = paymentPlanLabel(payment.planType, months),
+            months = months,
+            amount = payment.amount,
+        )
+    }
+    return rows.sortedByDescending { it.date }
+}
+
 private data class FinanceRangeOption(
     val key: String,
     val label: String,
-    val days: Long?,
+    val months: Long?,
+    val type: String = "months",
 )
 
 private data class FinanceRangeSelection(
     val label: String,
+    val period: String,
     val start: LocalDate?,
     val end: LocalDate?,
 )
 
 private val FinanceRangeOptions = listOf(
-    FinanceRangeOption("week", "1 week", 7),
-    FinanceRangeOption("month", "1 month", 30),
-    FinanceRangeOption("2months", "2 months", 60),
-    FinanceRangeOption("3months", "3 months", 90),
-    FinanceRangeOption("6months", "6 months", 180),
-    FinanceRangeOption("year", "1 year", 365),
+    FinanceRangeOption("week", "1 week", 0L, "week"),
+    FinanceRangeOption("month", "1 month", 1L),
+    FinanceRangeOption("2months", "2 months", 2L),
+    FinanceRangeOption("3months", "3 months", 3L),
+    FinanceRangeOption("6months", "6 months", 6L),
+    FinanceRangeOption("year", "1 year", 0L, "year"),
     FinanceRangeOption("overall", "Overall", null),
 )
 
@@ -1769,6 +1834,7 @@ private val FinanceRangeOptions = listOf(
 @Composable
 private fun FinanceRangeSelector(
     selected: String,
+    period: String,
     onSelected: (String) -> Unit,
 ) {
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
@@ -1790,6 +1856,12 @@ private fun FinanceRangeSelector(
                 fontSize = 12.sp,
                 fontWeight = FontWeight.ExtraBold,
                 color = if (isDark) Color(0xFFDCEBFF) else BrandBlue,
+            )
+            Text(
+                period,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
             )
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1821,12 +1893,29 @@ private fun FinanceRangeSelector(
 
 private fun buildFinanceRangeSelection(key: String): FinanceRangeSelection {
     val option = FinanceRangeOptions.firstOrNull { it.key == key } ?: FinanceRangeOptions[1]
-    if (option.days == null) {
-        return FinanceRangeSelection(option.label, null, null)
+    if (option.months == null) {
+        return FinanceRangeSelection(option.label, "All recorded finance data", null, null)
     }
-    val end = LocalDate.now()
-    val start = end.minusDays(option.days - 1)
-    return FinanceRangeSelection("Last ${option.label}", start, end)
+    val today = LocalDate.now()
+    val start: LocalDate
+    val end: LocalDate
+    when (option.type) {
+        "week" -> {
+            start = today.minusDays((today.dayOfWeek.value - 1).toLong())
+            end = start.plusDays(6)
+        }
+        "year" -> {
+            start = LocalDate.of(today.year, 1, 1)
+            end = LocalDate.of(today.year, 12, 31)
+        }
+        else -> {
+            val endMonth = YearMonth.from(today)
+            val startMonth = endMonth.minusMonths((option.months - 1).coerceAtLeast(0))
+            start = startMonth.atDay(1)
+            end = endMonth.atEndOfMonth()
+        }
+    }
+    return FinanceRangeSelection(option.label, "${displayDate(start.toString())} to ${displayDate(end.toString())}", start, end)
 }
 
 private fun isDateInFinanceRange(value: String, range: FinanceRangeSelection): Boolean {
@@ -2501,13 +2590,17 @@ private fun SectionHeader(title: String, subtitle: String) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RosterToolbar(
     searchQuery: String,
+    sortKey: String,
+    sortAscending: Boolean,
     visibleCount: Int,
     totalCount: Int,
     isRefreshing: Boolean,
     onSearchChange: (String) -> Unit,
+    onSortChange: (String) -> Unit,
     onRefresh: () -> Unit,
 ) {
     Card(
@@ -2584,6 +2677,30 @@ private fun RosterToolbar(
                     ),
                 ) {
                     Icon(Icons.Outlined.Refresh, contentDescription = null)
+                }
+            }
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                listOf(
+                    "name" to "Name",
+                    "joinDate" to "Join",
+                    "nextDue" to "Due",
+                    "amount" to "Amount",
+                    "slot" to "Slot",
+                ).forEach { (key, label) ->
+                    FilterChip(
+                        selected = sortKey == key,
+                        onClick = { onSortChange(key) },
+                        label = {
+                            Text(
+                                if (sortKey == key) "$label ${if (sortAscending) "up" else "down"}" else label,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                            )
+                        },
+                    )
                 }
             }
             Text(
@@ -3063,6 +3180,9 @@ private fun PlayerDetailSheet(
     val renewalOkTone = themedBadgeTone(Color(0xFFEAF8F2), BrandGreen, DarkSuccessContainer, DarkSuccessText)
     val renewalPendingTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
     val feesPaidAccent = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) DarkInfoText else BrandBlue
+    val paymentRows = remember(student, payments) { buildPlayerPaymentRows(student, payments) }
+    val totalPaid = paymentRows.sumOf { it.amount }
+    val totalMonthsPaid = paymentRows.sumOf { it.months }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -3185,6 +3305,55 @@ private fun PlayerDetailSheet(
                 value = if (student.feesPaid) "Paid" else "Not paid",
                 accent = if (student.feesPaid) feesPaidAccent else BrandRed,
             )
+
+            Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.background.copy(alpha = 0.84f)) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text("Payment details", fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        DataTileContent(
+                            modifier = Modifier.weight(1f),
+                            label = "Total Paid",
+                            value = "Rs ${String.format(Locale.US, "%,.0f", totalPaid)}",
+                            accent = BrandGreen,
+                        )
+                        DataTileContent(
+                            modifier = Modifier.weight(1f),
+                            label = "Months Paid",
+                            value = totalMonthsPaid.toString(),
+                            accent = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                    if (paymentRows.isEmpty()) {
+                        Text("No paid fee records yet.", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), fontSize = 13.sp)
+                    } else {
+                        paymentRows.forEach { row ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(row.title, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
+                                    Text(
+                                        "${displayDate(row.date)} • ${row.plan} • ${row.months} month${if (row.months == 1) "" else "s"}",
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                                        fontSize = 12.sp,
+                                    )
+                                }
+                                Text(
+                                    "Rs ${String.format(Locale.US, "%,.0f", row.amount)}",
+                                    color = BrandGreen,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
 
             Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.background.copy(alpha = 0.84f)) {
                 Column(
@@ -3745,7 +3914,6 @@ private fun buildRosterSections(students: List<Student>): List<RosterSection> {
     slotOrder.forEach { slot ->
         val matches = students
             .filter { it.isActive() && it.timeSlot == slot }
-            .sortedBy { it.name.lowercase(Locale.getDefault()) }
         if (matches.isNotEmpty()) {
             sections += RosterSection(slot, "$slot Batch", matches)
         }
@@ -3753,21 +3921,18 @@ private fun buildRosterSections(students: List<Student>): List<RosterSection> {
 
     val unassigned = students
         .filter { it.isActive() && it.timeSlot.isBlank() }
-        .sortedBy { it.name.lowercase(Locale.getDefault()) }
     if (unassigned.isNotEmpty()) {
         sections += RosterSection("not-set", "Time Slot Not Set", unassigned)
     }
 
     val discontinued = students
         .filter { it.discontinued }
-        .sortedBy { it.name.lowercase(Locale.getDefault()) }
     if (discontinued.isNotEmpty()) {
         sections += RosterSection("discontinued", "Discontinued", discontinued)
     }
 
     val ungrouped = students
         .filter { it.isActive() && it.timeSlot.isNotBlank() && it.timeSlot !in slotOrder }
-        .sortedBy { it.name.lowercase(Locale.getDefault()) }
     if (ungrouped.isNotEmpty()) {
         sections += RosterSection("other", "Other Slots", ungrouped)
     }

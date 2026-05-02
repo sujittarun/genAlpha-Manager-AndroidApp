@@ -50,6 +50,8 @@ data class AcademyUiState(
     val isFinanceLoading: Boolean = false,
     val selectedSlotFilter: String = "",
     val searchQuery: String = "",
+    val rosterSortKey: String = "joinDate",
+    val rosterSortAscending: Boolean = false,
     val darkModeEnabled: Boolean = false,
     val session: ManagerSession? = null,
     val lastEmail: String = "",
@@ -165,6 +167,19 @@ class AcademyViewModel(
 
     fun setSearchQuery(query: String) {
         _uiState.update { it.copy(searchQuery = query) }
+    }
+
+    fun setRosterSort(key: String) {
+        _uiState.update { state ->
+            if (state.rosterSortKey == key) {
+                state.copy(rosterSortAscending = !state.rosterSortAscending)
+            } else {
+                state.copy(
+                    rosterSortKey = key,
+                    rosterSortAscending = key in setOf("name", "slot", "status"),
+                )
+            }
+        }
     }
 
     fun toggleDarkMode() {
@@ -621,14 +636,16 @@ class AcademyViewModel(
             filter == "not-set" -> _uiState.value.kids.filter { it.isActive() && it.timeSlot.isBlank() }
             else -> _uiState.value.kids.filter { it.isActive() && it.timeSlot == filter }
         }
-        if (search.isBlank()) {
-            return slotFiltered
-        }
-        return slotFiltered.filter { student ->
+        val searched = if (search.isBlank()) {
+            slotFiltered
+        } else {
+            slotFiltered.filter { student ->
             student.name.lowercase().contains(search) ||
                 student.timeSlot.lowercase().contains(search) ||
                 student.updatedBy.lowercase().contains(search)
+            }
         }
+        return sortRosterStudents(searched)
     }
 
     fun stats(): DashboardStats = buildStats(_uiState.value.kids)
@@ -912,6 +929,24 @@ class AcademyViewModel(
             compareByDescending<Student> { it.joinDate }
                 .thenBy { it.name.lowercase() }
         )
+    }
+
+    private fun sortRosterStudents(students: List<Student>): List<Student> {
+        val state = _uiState.value
+        val comparator = Comparator<Student> { first, second ->
+            val result = when (state.rosterSortKey) {
+                "name" -> first.name.compareTo(second.name, ignoreCase = true)
+                "age" -> first.age.compareTo(second.age)
+                "slot" -> first.timeSlot.ifBlank { "Not set" }.compareTo(second.timeSlot.ifBlank { "Not set" }, ignoreCase = true)
+                "status" -> (if (first.discontinued) "Discontinued" else "Active")
+                    .compareTo(if (second.discontinued) "Discontinued" else "Active", ignoreCase = true)
+                "amount" -> first.amountPaid.compareTo(second.amountPaid)
+                "nextDue" -> first.nextRenewalCycleDate(state.payments).compareTo(second.nextRenewalCycleDate(state.payments))
+                else -> first.joinDate.compareTo(second.joinDate)
+            }
+            if (result != 0) result else first.name.compareTo(second.name, ignoreCase = true)
+        }
+        return if (state.rosterSortAscending) students.sortedWith(comparator) else students.sortedWith(comparator.reversed())
     }
 
     private fun upsertLocalStudent(student: Student) {
