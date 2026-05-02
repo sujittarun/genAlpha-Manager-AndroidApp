@@ -160,7 +160,6 @@ import com.genalpha.cricketacademy.data.StudentTimelineItem
 import com.genalpha.cricketacademy.data.calculateAgeFromDate
 import com.genalpha.cricketacademy.data.cardTimelineLabel
 import com.genalpha.cricketacademy.data.currentDatePickerValues
-import com.genalpha.cricketacademy.data.daysSince
 import com.genalpha.cricketacademy.data.displayDate
 import com.genalpha.cricketacademy.data.isActive
 import com.genalpha.cricketacademy.data.isFeesPending
@@ -169,6 +168,7 @@ import com.genalpha.cricketacademy.data.latestRenewal
 import com.genalpha.cricketacademy.data.nextRenewalCycleDate
 import com.genalpha.cricketacademy.data.renewalStatus
 import com.genalpha.cricketacademy.data.studentType
+import com.genalpha.cricketacademy.data.tenureBadgeLabel
 import com.genalpha.cricketacademy.data.todayIsoDate
 import com.genalpha.cricketacademy.data.toDraft
 import com.genalpha.cricketacademy.data.trackingCaption
@@ -179,6 +179,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.time.LocalDate
+import java.time.YearMonth
 import java.util.Calendar
 import java.util.Locale
 
@@ -760,6 +761,10 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                             paid = stats.paidCount,
                             returning = stats.returningCount,
                         )
+                    }
+
+                    item {
+                        StudentMovementSection(students = uiState.kids)
                     }
 
                     item {
@@ -1499,11 +1504,6 @@ private fun FinancePanel(
         .sumOf { it.amount }
     val monthExpenses = sumExpenses(monthKey)
     val monthNet = monthFees - monthExpenses
-    val activeStudents = uiState.kids.count { it.isActive() }
-    val discontinuedStudents = uiState.kids.count { !it.isActive() }
-    val oneMonthDropouts = uiState.kids.count { !it.isActive() && it.renewals.isEmpty() }
-    val sixMonthActiveStudents = uiState.kids.count { it.isActive() && daysSince(it.joinDate) >= 180 }
-    val churnRate = if (uiState.kids.isEmpty()) 0 else ((discontinuedStudents.toDouble() / uiState.kids.size) * 100).toInt()
     val monthBuckets = (5 downTo 0).map { offset ->
         val month = (nowCalendar.clone() as java.util.Calendar).apply {
             add(java.util.Calendar.MONTH, -offset)
@@ -1536,10 +1536,6 @@ private fun FinancePanel(
             yearFees = formatCurrency(yearFees),
             totalFees = formatCurrency(totalFees),
             totalExpenses = formatCurrency(totalExpenses),
-            studentMix = "$activeStudents active / $discontinuedStudents left",
-            churnRate = "$churnRate%",
-            oneMonthDropouts = oneMonthDropouts.toString(),
-            sixMonthActive = sixMonthActiveStudents.toString(),
         )
 
         FinanceMiniChart(
@@ -1554,8 +1550,8 @@ private fun FinancePanel(
                     text = buildAndroidMonthlyFinanceBackup(
                         monthLabel = nowCalendar.getDisplayName(java.util.Calendar.MONTH, java.util.Calendar.LONG, Locale.US).orEmpty() +
                             " ${nowCalendar.get(java.util.Calendar.YEAR)}",
-                        activeStudents = activeStudents,
-                        discontinuedStudents = discontinuedStudents,
+                        activeStudents = uiState.kids.count { it.isActive() },
+                        discontinuedStudents = uiState.kids.count { !it.isActive() },
                         fees = monthFees,
                         expenses = monthExpenses,
                         net = monthNet,
@@ -1803,10 +1799,6 @@ private fun FinanceSignalStrip(
     yearFees: String,
     totalFees: String,
     totalExpenses: String,
-    studentMix: String,
-    churnRate: String,
-    oneMonthDropouts: String,
-    sixMonthActive: String,
 ) {
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1815,10 +1807,6 @@ private fun FinanceSignalStrip(
         FinanceSignal("Year", yearFees)
         FinanceSignal("Overall", totalFees)
         FinanceSignal("Expenses", totalExpenses, BrandRed)
-        FinanceSignal("Students", studentMix)
-        FinanceSignal("Churn", churnRate, BrandRed)
-        FinanceSignal("1M Left", oneMonthDropouts, BrandRed)
-        FinanceSignal("6M+", sixMonthActive, BrandGreen)
     }
 }
 
@@ -2247,6 +2235,128 @@ private fun CompactStatCard(
             )
         }
     }
+}
+
+private data class StudentMovementMonth(
+    val label: String,
+    val joined: Int,
+    val continuing: Int,
+    val discontinued: Int,
+)
+
+@Composable
+private fun StudentMovementSection(students: List<Student>) {
+    val movement = remember(students) { buildStudentMovement(students) }
+    val maxValue = movement.flatMap { listOf(it.joined, it.continuing, it.discontinued) }.maxOrNull()?.coerceAtLeast(1) ?: 1
+
+    Card(
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Student Movement", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
+                Text(
+                    "Joined, continuing from previous month, and discontinued.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                )
+            }
+            LazyRowLikeMovement(months = movement, maxValue = maxValue)
+        }
+    }
+}
+
+@Composable
+private fun LazyRowLikeMovement(months: List<StudentMovementMonth>, maxValue: Int) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        months.forEach { month ->
+            StudentMovementCard(month = month, maxValue = maxValue)
+        }
+    }
+}
+
+@Composable
+private fun StudentMovementCard(month: StudentMovementMonth, maxValue: Int) {
+    Surface(
+        modifier = Modifier.width(148.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(month.label, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
+            Row(
+                modifier = Modifier
+                    .height(76.dp)
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                MovementBar(month.continuing, maxValue, BrandBlue)
+                MovementBar(month.joined, maxValue, BrandGreen)
+                MovementBar(month.discontinued, maxValue, BrandRed)
+            }
+            MovementLegendLine("Continuing", month.continuing, BrandBlue)
+            MovementLegendLine("Joined", month.joined, BrandGreen)
+            MovementLegendLine("Left", month.discontinued, BrandRed)
+        }
+    }
+}
+
+@Composable
+private fun MovementBar(value: Int, maxValue: Int, color: Color) {
+    Box(
+        modifier = Modifier
+            .width(18.dp)
+            .height(((value.toFloat() / maxValue.toFloat()) * 68f).coerceAtLeast(8f).dp)
+            .background(color, RoundedCornerShape(topStart = 99.dp, topEnd = 99.dp, bottomStart = 5.dp, bottomEnd = 5.dp))
+    )
+}
+
+@Composable
+private fun MovementLegendLine(label: String, value: Int, color: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(modifier = Modifier.size(7.dp).background(color, CircleShape))
+        Text("$value $label", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f), maxLines = 1)
+    }
+}
+
+private fun buildStudentMovement(students: List<Student>): List<StudentMovementMonth> {
+    val currentMonth = YearMonth.now()
+    return (5 downTo 0).map { offset ->
+        val month = currentMonth.minusMonths(offset.toLong())
+        val monthStart = month.atDay(1)
+        val monthEnd = month.atEndOfMonth()
+        val previousMonthEnd = monthStart.minusDays(1)
+        StudentMovementMonth(
+            label = month.month.name.take(3).lowercase(Locale.US).replaceFirstChar { it.titlecase(Locale.US) } + " '${month.year.toString().takeLast(2)}",
+            joined = students.count { parseStudentDate(it.joinDate)?.let { date -> !date.isBefore(monthStart) && !date.isAfter(monthEnd) } == true },
+            continuing = students.count {
+                val joined = parseStudentDate(it.joinDate)
+                val discontinued = parseStudentDate(it.discontinuedAt)
+                joined != null && !joined.isAfter(previousMonthEnd) && (discontinued == null || !discontinued.isBefore(monthStart))
+            },
+            discontinued = students.count { parseStudentDate(it.discontinuedAt)?.let { date -> !date.isBefore(monthStart) && !date.isAfter(monthEnd) } == true },
+        )
+    }
+}
+
+private fun parseStudentDate(value: String?): LocalDate? = try {
+    if (value.isNullOrBlank()) null else LocalDate.parse(value)
+} catch (_: Exception) {
+    null
 }
 
 @Composable
@@ -2720,9 +2830,11 @@ private fun RosterRow(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "Age ${student.age}  •  Joined ${displayDate(student.joinDate)}",
+                    text = "Age ${student.age}  •  ${student.tenureBadgeLabel()} with academy  •  Joined ${displayDate(student.joinDate)}",
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
                     fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = if (student.jerseySize.isBlank() && student.jerseyPairs <= 0) {

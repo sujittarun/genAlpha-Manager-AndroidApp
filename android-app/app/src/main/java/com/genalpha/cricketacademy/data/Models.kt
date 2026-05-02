@@ -275,6 +275,12 @@ fun Student.trainingDurationLabel(): String {
     }
 }
 
+fun Student.tenureBadgeLabel(): String {
+    val days = daysSince(joinDate).coerceAtLeast(0)
+    val months = days / 30
+    return if (months <= 0) "${days}d" else "${months}m"
+}
+
 fun Student.studentType(): String = if (renewals.isNotEmpty()) "Returning" else "New"
 
 fun Student.regNoLabel(): String? = regNo?.let { "Reg #$it" }
