@@ -1475,6 +1475,7 @@ private fun FinancePanel(
     var expenseMessage by remember { mutableStateOf<String?>(null) }
     var isAddingExpense by rememberSaveable { mutableStateOf(false) }
     var deletingExpenseId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedFinanceRange by rememberSaveable { mutableStateOf("month") }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -1483,7 +1484,7 @@ private fun FinancePanel(
 
     val nowCalendar = remember { java.util.Calendar.getInstance() }
     val monthKey = calendarMonthKey(nowCalendar)
-    val yearKey = nowCalendar.get(java.util.Calendar.YEAR).toString()
+    val selectedRange = remember(selectedFinanceRange) { buildFinanceRangeSelection(selectedFinanceRange) }
 
     val initialFees = uiState.kids
         .filter { it.feesPaid }
@@ -1495,15 +1496,19 @@ private fun FinancePanel(
         .filter { dateKey.isEmpty() || it.paidOn.startsWith(dateKey) }
         .sumOf { it.amount }
 
-    val monthFees = sumFees(monthKey)
-    val yearFees = sumFees(yearKey)
-    val totalFees = sumFees()
-    val totalExpenses = uiState.expenses.sumOf { it.amount }
+    val selectedFees = allFees
+        .filter { isDateInFinanceRange(it.paidOn, selectedRange) }
+        .sumOf { it.amount }
     fun sumExpenses(dateKey: String = ""): Double = uiState.expenses
         .filter { dateKey.isEmpty() || it.expenseDate.startsWith(dateKey) }
         .sumOf { it.amount }
+    val selectedExpenses = uiState.expenses
+        .filter { isDateInFinanceRange(it.expenseDate, selectedRange) }
+        .sumOf { it.amount }
     val monthExpenses = sumExpenses(monthKey)
+    val monthFees = sumFees(monthKey)
     val monthNet = monthFees - monthExpenses
+    val selectedNet = selectedFees - selectedExpenses
     val monthBuckets = (5 downTo 0).map { offset ->
         val month = (nowCalendar.clone() as java.util.Calendar).apply {
             add(java.util.Calendar.MONTH, -offset)
@@ -1525,17 +1530,18 @@ private fun FinancePanel(
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
 
-        FinanceOverviewCard(
-            monthFees = formatCurrency(monthFees),
-            monthExpenses = formatCurrency(monthExpenses),
-            monthNet = formatCurrency(monthNet),
-            isNetPositive = monthNet >= 0,
-            darkModeEnabled = uiState.darkModeEnabled,
+        FinanceRangeSelector(
+            selected = selectedFinanceRange,
+            onSelected = { selectedFinanceRange = it },
         )
-        FinanceSignalStrip(
-            yearFees = formatCurrency(yearFees),
-            totalFees = formatCurrency(totalFees),
-            totalExpenses = formatCurrency(totalExpenses),
+
+        FinanceOverviewCard(
+            rangeLabel = selectedRange.label,
+            fees = formatCurrency(selectedFees),
+            expenses = formatCurrency(selectedExpenses),
+            net = formatCurrency(selectedNet),
+            isNetPositive = selectedNet >= 0,
+            darkModeEnabled = uiState.darkModeEnabled,
         )
 
         FinanceMiniChart(
@@ -1730,11 +1736,86 @@ private data class FinanceMonthSummary(
     val expenses: Double,
 )
 
+private data class FinanceRangeOption(
+    val key: String,
+    val label: String,
+    val days: Long?,
+)
+
+private data class FinanceRangeSelection(
+    val label: String,
+    val start: LocalDate?,
+    val end: LocalDate?,
+)
+
+private val FinanceRangeOptions = listOf(
+    FinanceRangeOption("week", "1 week", 7),
+    FinanceRangeOption("month", "1 month", 30),
+    FinanceRangeOption("2months", "2 months", 60),
+    FinanceRangeOption("3months", "3 months", 90),
+    FinanceRangeOption("6months", "6 months", 180),
+    FinanceRangeOption("year", "1 year", 365),
+    FinanceRangeOption("overall", "Overall", null),
+)
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FinanceRangeSelector(
+    selected: String,
+    onSelected: (String) -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("Finance range", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = BrandBlue)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FinanceRangeOptions.forEach { option ->
+                    FilterChip(
+                        selected = selected == option.key,
+                        onClick = { onSelected(option.key) },
+                        label = { Text(option.label, fontSize = 12.sp, maxLines = 1) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun buildFinanceRangeSelection(key: String): FinanceRangeSelection {
+    val option = FinanceRangeOptions.firstOrNull { it.key == key } ?: FinanceRangeOptions[1]
+    if (option.days == null) {
+        return FinanceRangeSelection(option.label, null, null)
+    }
+    val end = LocalDate.now()
+    val start = end.minusDays(option.days - 1)
+    return FinanceRangeSelection("Last ${option.label}", start, end)
+}
+
+private fun isDateInFinanceRange(value: String, range: FinanceRangeSelection): Boolean {
+    if (range.start == null || range.end == null) return true
+    val date = try {
+        LocalDate.parse(value.take(10))
+    } catch (_: Exception) {
+        return false
+    }
+    return !date.isBefore(range.start) && !date.isAfter(range.end)
+}
+
 @Composable
 private fun FinanceOverviewCard(
-    monthFees: String,
-    monthExpenses: String,
-    monthNet: String,
+    rangeLabel: String,
+    fees: String,
+    expenses: String,
+    net: String,
     isNetPositive: Boolean,
     darkModeEnabled: Boolean,
 ) {
@@ -1760,11 +1841,11 @@ private fun FinanceOverviewCard(
             modifier = Modifier.padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("This month net", color = contentColor.copy(alpha = 0.74f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            Text(monthNet, color = contentColor, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("$rangeLabel net", color = contentColor.copy(alpha = 0.74f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text(net, color = contentColor, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                FinanceGlassMetric("Fees", monthFees, contentColor, metricColor, Modifier.weight(1f))
-                FinanceGlassMetric("Expense", monthExpenses, contentColor, metricColor, Modifier.weight(1f))
+                FinanceGlassMetric("Fees", fees, contentColor, metricColor, Modifier.weight(1f))
+                FinanceGlassMetric("Expense", expenses, contentColor, metricColor, Modifier.weight(1f))
             }
         }
     }
@@ -1789,41 +1870,6 @@ private fun FinanceGlassMetric(
         ) {
             Text(label.uppercase(Locale.getDefault()), color = contentColor.copy(alpha = 0.68f), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
             Text(value, color = contentColor, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun FinanceSignalStrip(
-    yearFees: String,
-    totalFees: String,
-    totalExpenses: String,
-) {
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        FinanceSignal("Year", yearFees)
-        FinanceSignal("Overall", totalFees)
-        FinanceSignal("Expenses", totalExpenses, BrandRed)
-    }
-}
-
-@Composable
-private fun FinanceSignal(label: String, value: String, accent: Color = BrandBlueDeep) {
-    Surface(
-        shape = RoundedCornerShape(999.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(label, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.54f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            Text(value, color = accent, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
         }
     }
 }
