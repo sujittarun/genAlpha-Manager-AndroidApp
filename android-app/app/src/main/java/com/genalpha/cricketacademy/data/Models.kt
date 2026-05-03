@@ -275,11 +275,27 @@ fun Student.paidThroughDate(payments: List<StudentPayment>): String {
         .filter { it.studentId == id }
         .forEach { payment ->
             val cycleStart = payment.cycleStartDate?.takeIf { it.isNotBlank() } ?: payment.paidOn
-            val months = (payment.monthsCovered ?: 1).coerceAtLeast(1)
+            val months = payment.monthsCoveredForDueDate()
             paidUntil = maxIsoDate(paidUntil, addMonths(cycleStart, months))
         }
 
     return paidUntil
+}
+
+private fun StudentPayment.monthsCoveredForDueDate(): Int {
+    val explicitMonths = (monthsCovered ?: 1).coerceAtLeast(1)
+    val planMonths = when (planType) {
+        "quarterly" -> 3
+        "halfyearly" -> 6
+        else -> 1
+    }
+    val roundedAmount = kotlin.math.round(amount).toInt()
+    val amountMonths = when (roundedAmount) {
+        20000, 20500 -> 6
+        9000, 9500, 10500, 11000 -> 3
+        else -> 1
+    }
+    return maxOf(explicitMonths, planMonths, amountMonths)
 }
 
 fun Student.isRenewalPending(payments: List<StudentPayment>): Boolean {
@@ -440,8 +456,9 @@ private fun Student.initialMonthsCovered(): Int {
     val withoutAdmissionFee = (amountPaid - 500.0).coerceAtLeast(0.0)
     val roundedAmount = kotlin.math.round(amountPaid).toInt()
     return when {
-        withoutAdmissionFee >= 20000.0 || roundedAmount == 20000 -> 6
-        (withoutAdmissionFee >= 9000.0 && withoutAdmissionFee < 10000.0) || roundedAmount == 9000 -> 3
+        withoutAdmissionFee >= 20000.0 || roundedAmount in setOf(20000, 20500) -> 6
+        roundedAmount in setOf(9000, 9500, 10500, 11000) ||
+            withoutAdmissionFee in 9000.0..10500.0 -> 3
         else -> 1
     }
 }

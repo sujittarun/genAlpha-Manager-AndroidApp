@@ -585,9 +585,9 @@ class AcademyViewModel(
         }
 
         return try {
-            val session = withFreshSession { session ->
-                repository.recordRenewalPayment(student, session.email, session, planType, monthsCovered, amount, comment, cycleDate)
-                session
+            val (session, insertedPayment) = withFreshSession { session ->
+                val payment = repository.recordRenewalPayment(student, session.email, session, planType, monthsCovered, amount, comment, cycleDate)
+                session to payment
             }
             upsertLocalStudent(
                 student.copy(
@@ -595,6 +595,7 @@ class AcademyViewModel(
                     updatedBy = session.email,
                 )
             )
+            upsertLocalPayment(insertedPayment)
             refreshFinanceInBackground()
             refreshInBackground()
             OperationResult(true, "${student.name} renewal payment recorded.")

@@ -591,9 +591,8 @@ class SupabaseRepository(
         amount: Double,
         comment: String,
         cycleDate: String,
-    ) {
-        withContext(Dispatchers.IO) {
-            renewStudent(student, managerEmail, session, cycleDate)
+    ): StudentPayment {
+        return withContext(Dispatchers.IO) {
             val body = JSONObject()
                 .put("student_id", student.id)
                 .put("payment_type", "renewal")
@@ -605,12 +604,17 @@ class SupabaseRepository(
                 .put("comment", comment)
                 .put("recorded_by", managerEmail)
 
-            executeWriteRequest(
-                url = "$baseUrl/rest/v1/student_payments",
+            val responseBody = executeWriteRequestReturningBody(
+                url = "$baseUrl/rest/v1/student_payments?select=*",
                 session = session,
                 method = "POST",
                 body = body,
             )
+            val insertedPayment = paymentListAdapter.fromJson(responseBody).orEmpty().firstOrNull()
+                ?: throw SupabaseException(200, "Renewal payment was saved, but the payment row was not returned.")
+
+            renewStudent(student, managerEmail, session, cycleDate)
+            insertedPayment
         }
     }
 

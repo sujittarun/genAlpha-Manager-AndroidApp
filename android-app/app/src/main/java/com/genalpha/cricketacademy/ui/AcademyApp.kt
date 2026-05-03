@@ -1797,10 +1797,27 @@ private fun initialCoverageMonthsForAmount(amount: Double, feesPaid: Boolean): I
     val withoutAdmissionFee = (amount - 500.0).coerceAtLeast(0.0)
     val roundedAmount = kotlin.math.round(amount).toInt()
     return when {
-        withoutAdmissionFee >= 20000.0 || roundedAmount == 20000 -> 6
-        (withoutAdmissionFee >= 9000.0 && withoutAdmissionFee < 10000.0) || roundedAmount == 9000 -> 3
+        withoutAdmissionFee >= 20000.0 || roundedAmount in setOf(20000, 20500) -> 6
+        roundedAmount in setOf(9000, 9500, 10500, 11000) ||
+            withoutAdmissionFee in 9000.0..10500.0 -> 3
         else -> 1
     }
+}
+
+private fun paymentMonthsCovered(payment: StudentPayment): Int {
+    val explicitMonths = (payment.monthsCovered ?: 1).coerceAtLeast(1)
+    val planMonths = when (payment.planType) {
+        "quarterly" -> 3
+        "halfyearly" -> 6
+        else -> 1
+    }
+    val amount = kotlin.math.round(payment.amount).toInt()
+    val amountMonths = when (amount) {
+        20000, 20500 -> 6
+        9000, 9500, 10500, 11000 -> 3
+        else -> 1
+    }
+    return maxOf(explicitMonths, planMonths, amountMonths)
 }
 
 private fun paymentPlanLabel(planType: String?, months: Int): String = when (planType) {
@@ -1824,7 +1841,7 @@ private fun buildPlayerPaymentRows(student: Student, payments: List<StudentPayme
         )
     }
     payments.filter { it.studentId == student.id }.forEach { payment ->
-        val months = (payment.monthsCovered ?: 1).coerceAtLeast(1)
+        val months = paymentMonthsCovered(payment)
         rows += PlayerPaymentLine(
             date = payment.paidOn,
             title = if (payment.paymentType == "joining") "Joining payment" else "Renewal payment",
@@ -3644,30 +3661,48 @@ private fun PlayerDetailSheet(
                 fontSize = 12.sp,
             )
 
-            Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.background.copy(alpha = 0.84f)) {
+            Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.background.copy(alpha = 0.58f)) {
                 Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
-                    Text("Timeline", fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
+                    Text(
+                        "Timeline",
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                        fontSize = 12.sp,
+                        letterSpacing = 0.08.em,
+                    )
                     when {
-                        isTimelineLoading -> Text("Loading timeline...", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f))
+                        isTimelineLoading -> Text("Loading timeline...", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), fontSize = 12.sp)
                         timeline.isEmpty() -> Text(
                             "No timeline records yet. Run the player profile timeline SQL migration to start capturing changes.",
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-                            fontSize = 13.sp,
-                            lineHeight = 18.sp,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
                         )
                         else -> timeline.take(8).forEach { item ->
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(item.title, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                                Text(
+                                    item.title,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
+                                    fontSize = 12.sp,
+                                    lineHeight = 15.sp,
+                                )
                                 Text(
                                     "${displayDate(item.eventDate)} • ${item.changedBy.orEmpty().ifBlank { "System" }}",
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
-                                    fontSize = 12.sp,
+                                    fontSize = 10.sp,
+                                    lineHeight = 13.sp,
                                 )
                                 if (!item.details.isNullOrBlank()) {
-                                    Text(item.details, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f), fontSize = 12.sp)
+                                    Text(
+                                        item.details,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
+                                        fontSize = 10.sp,
+                                        lineHeight = 13.sp,
+                                    )
                                 }
                             }
                         }
