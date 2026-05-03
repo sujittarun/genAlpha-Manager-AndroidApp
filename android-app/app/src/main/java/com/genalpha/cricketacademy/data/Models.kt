@@ -291,7 +291,7 @@ private fun StudentPayment.monthsCoveredForDueDate(): Int {
     }
     val roundedAmount = kotlin.math.round(amount).toInt()
     val amountMonths = when (roundedAmount) {
-        20000, 20500 -> 6
+        20000, 20500, 21000 -> 6
         9000, 9500, 10500, 11000 -> 3
         else -> 1
     }
@@ -456,7 +456,7 @@ private fun Student.initialMonthsCovered(): Int {
     val withoutAdmissionFee = (amountPaid - 500.0).coerceAtLeast(0.0)
     val roundedAmount = kotlin.math.round(amountPaid).toInt()
     return when {
-        withoutAdmissionFee >= 20000.0 || roundedAmount in setOf(20000, 20500) -> 6
+        withoutAdmissionFee >= 20000.0 || roundedAmount in setOf(20000, 20500, 21000) -> 6
         roundedAmount in setOf(9000, 9500, 10500, 11000) ||
             withoutAdmissionFee in 9000.0..10500.0 -> 3
         else -> 1

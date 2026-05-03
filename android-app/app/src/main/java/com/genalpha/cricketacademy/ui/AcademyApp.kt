@@ -229,8 +229,8 @@ private val AdmissionFeePlanOptions = listOf(
 )
 
 private fun admissionPlanBase(plan: String): Double = when (plan) {
-    "quarterly" -> 9000.0
-    "halfyearly" -> 20000.0
+    "quarterly" -> 10000.0
+    "halfyearly" -> 20500.0
     "special" -> 10000.0
     "custom" -> 0.0
     else -> 3500.0
@@ -767,6 +767,10 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         AlertSection(
                             alertKids = alertKids,
                             payments = uiState.payments,
+                            onStudentClick = { student ->
+                                selectedStudent = student
+                                showDetailSheet = true
+                            },
                         )
                     }
 
@@ -1315,6 +1319,7 @@ private fun HeaderSection(
 private fun AlertSection(
     alertKids: List<Student>,
     payments: List<StudentPayment>,
+    onStudentClick: (Student) -> Unit,
 ) {
     val feesPendingKids = alertKids.filter { it.isFeesPending() }
     val renewalPendingKids = alertKids.filter { it.isRenewalPending(payments) }
@@ -1356,12 +1361,14 @@ private fun AlertSection(
                     AlertNameSection(
                         title = "Fees to collect",
                         students = feesPendingKids,
+                        onStudentClick = onStudentClick,
                     )
                 }
                 if (renewalPendingKids.isNotEmpty()) {
                     AlertNameSection(
                         title = "Renewal follow-up",
                         students = renewalPendingKids,
+                        onStudentClick = onStudentClick,
                     )
                 }
             }
@@ -1373,6 +1380,7 @@ private fun AlertSection(
 private fun AlertNameSection(
     title: String,
     students: List<Student>,
+    onStudentClick: (Student) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
@@ -1383,6 +1391,7 @@ private fun AlertNameSection(
         )
         students.forEach { student ->
             Row(
+                modifier = Modifier.clickable { onStudentClick(student) },
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.Top,
             ) {
@@ -1797,7 +1806,7 @@ private fun initialCoverageMonthsForAmount(amount: Double, feesPaid: Boolean): I
     val withoutAdmissionFee = (amount - 500.0).coerceAtLeast(0.0)
     val roundedAmount = kotlin.math.round(amount).toInt()
     return when {
-        withoutAdmissionFee >= 20000.0 || roundedAmount in setOf(20000, 20500) -> 6
+        withoutAdmissionFee >= 20000.0 || roundedAmount in setOf(20000, 20500, 21000) -> 6
         roundedAmount in setOf(9000, 9500, 10500, 11000) ||
             withoutAdmissionFee in 9000.0..10500.0 -> 3
         else -> 1
@@ -1813,7 +1822,7 @@ private fun paymentMonthsCovered(payment: StudentPayment): Int {
     }
     val amount = kotlin.math.round(payment.amount).toInt()
     val amountMonths = when (amount) {
-        20000, 20500 -> 6
+        20000, 20500, 21000 -> 6
         9000, 9500, 10500, 11000 -> 3
         else -> 1
     }
@@ -2280,8 +2289,8 @@ private fun RenewalPaymentDialog(
     var isSaving by rememberSaveable(student.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val planInfo = when (plan) {
-        "quarterly" -> Triple("3 months", 3, 9000.0)
-        "halfyearly" -> Triple("6 months", 6, 20000.0)
+        "quarterly" -> Triple("3 months", 3, 10500.0)
+        "halfyearly" -> Triple("6 months", 6, 21000.0)
         "special" -> Triple("Special training", 1, 10000.0)
         "custom" -> Triple("Custom amount", 1, amount.toDoubleOrNull() ?: 0.0)
         else -> Triple("Monthly", 1, 3500.0)
@@ -2314,8 +2323,8 @@ private fun RenewalPaymentDialog(
                         else -> "monthly"
                     }
                     amount = when (plan) {
-                        "quarterly" -> "9000"
-                        "halfyearly" -> "20000"
+                        "quarterly" -> "10500"
+                        "halfyearly" -> "21000"
                         "special" -> "10000"
                         "custom" -> ""
                         else -> "3500"
