@@ -508,7 +508,9 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
-    val filteredKids = remember(
+    var rosterMovementMonthKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var rosterMovementType by rememberSaveable { mutableStateOf<String?>(null) }
+    val baseFilteredKids = remember(
         uiState.kids,
         uiState.selectedSlotFilter,
         uiState.searchQuery,
@@ -521,6 +523,18 @@ fun AcademyApp(viewModel: AcademyViewModel) {
         uiState.rosterFeePaidFilter,
         uiState.rosterFeeDueFilter,
     ) { viewModel.filteredKids() }
+    val filteredKids = remember(baseFilteredKids, rosterMovementMonthKey, rosterMovementType) {
+        if (rosterMovementMonthKey.isNullOrBlank() || rosterMovementType.isNullOrBlank()) {
+            baseFilteredKids
+        } else {
+            baseFilteredKids.filter { student ->
+                studentMatchesMovementFilter(student, rosterMovementMonthKey.orEmpty(), rosterMovementType.orEmpty())
+            }
+        }
+    }
+    val rosterMovementLabel = remember(rosterMovementMonthKey, rosterMovementType) {
+        movementFilterDisplayLabel(rosterMovementMonthKey, rosterMovementType)
+    }
     val stats = remember(uiState.kids) { viewModel.stats() }
     val slotSummary = remember(uiState.kids, uiState.selectedSlotFilter) { viewModel.slotSummary() }
     val alertKids = remember(uiState.kids, uiState.payments) { viewModel.alertKids() }
@@ -620,7 +634,11 @@ fun AcademyApp(viewModel: AcademyViewModel) {
 
     val playerFiltered = remember(activePlayers, playerSearchQuery, playerSlotFilter) {
         activePlayers.filter { student ->
-            val slotMatch = playerSlotFilter.isBlank() || student.timeSlot == playerSlotFilter
+            val slotMatch = when {
+                playerSlotFilter.isBlank() -> true
+                playerSlotFilter == "not-set" -> student.timeSlot.isBlank()
+                else -> student.timeSlot == playerSlotFilter
+            }
             val search = playerSearchQuery.trim().lowercase()
             val searchMatch = search.isBlank() ||
                 student.name.lowercase().contains(search) ||
@@ -784,7 +802,20 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                     }
 
                     item {
-                        StudentMovementSection(students = uiState.kids)
+                        StudentMovementSection(
+                            students = uiState.kids,
+                            onMovementClick = { month, type ->
+                                viewModel.setSearchQuery("")
+                                viewModel.setSlotFilter("all")
+                                viewModel.setRosterStatusFilter("all")
+                                viewModel.setRosterJerseyFilter("all")
+                                viewModel.setRosterTypeFilter("all")
+                                viewModel.setRosterFeePaidFilter("all")
+                                viewModel.setRosterFeeDueFilter("all")
+                                rosterMovementMonthKey = month.key
+                                rosterMovementType = type
+                            },
+                        )
                     }
 
                     item {
@@ -832,6 +863,18 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                 }
                             },
                         )
+                    }
+
+                    if (rosterMovementLabel != null) {
+                        item {
+                            MovementRosterFilterBanner(
+                                label = rosterMovementLabel,
+                                onClear = {
+                                    rosterMovementMonthKey = null
+                                    rosterMovementType = null
+                                },
+                            )
+                        }
                     }
 
                     if (uiState.isLoading) {
@@ -921,7 +964,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                 onSearchChange = { playerSearchQuery = it },
                                 selectedSlot = playerSlotFilter,
                                 onSlotSelected = { selected ->
-                                    playerSlotFilter = if (playerSlotFilter == selected) "" else selected
+                                    playerSlotFilter = if (selected == "all" || playerSlotFilter == selected) "" else selected
                                 },
                                 activePlayers = activePlayers,
                             )
@@ -1552,7 +1595,7 @@ private fun FinancePanel(
         .filter { isDateInFinanceRange(it.expenseDate, selectedRange) }
         .sumOf { it.amount }
     val selectedNet = selectedFees - selectedExpenses
-    val monthBuckets = (5 downTo 0).map { offset ->
+    val monthBuckets = (0..5).map { offset ->
         val month = (nowCalendar.clone() as java.util.Calendar).apply {
             add(java.util.Calendar.MONTH, -offset)
         }
@@ -2722,6 +2765,7 @@ private fun CompactStatCard(
 }
 
 private data class StudentMovementMonth(
+    val key: String,
     val label: String,
     val joined: Int,
     val continuing: Int,
@@ -2729,7 +2773,10 @@ private data class StudentMovementMonth(
 )
 
 @Composable
-private fun StudentMovementSection(students: List<Student>) {
+private fun StudentMovementSection(
+    students: List<Student>,
+    onMovementClick: (StudentMovementMonth, String) -> Unit,
+) {
     val movement = remember(students) { buildStudentMovement(students) }
     val maxValue = movement.flatMap { listOf(it.joined, it.continuing, it.discontinued) }.maxOrNull()?.coerceAtLeast(1) ?: 1
 
@@ -2749,13 +2796,17 @@ private fun StudentMovementSection(students: List<Student>) {
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
                 )
             }
-            LazyRowLikeMovement(months = movement, maxValue = maxValue)
+            LazyRowLikeMovement(months = movement, maxValue = maxValue, onMovementClick = onMovementClick)
         }
     }
 }
 
 @Composable
-private fun LazyRowLikeMovement(months: List<StudentMovementMonth>, maxValue: Int) {
+private fun LazyRowLikeMovement(
+    months: List<StudentMovementMonth>,
+    maxValue: Int,
+    onMovementClick: (StudentMovementMonth, String) -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -2763,13 +2814,17 @@ private fun LazyRowLikeMovement(months: List<StudentMovementMonth>, maxValue: In
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         months.forEach { month ->
-            StudentMovementCard(month = month, maxValue = maxValue)
+            StudentMovementCard(month = month, maxValue = maxValue, onMovementClick = onMovementClick)
         }
     }
 }
 
 @Composable
-private fun StudentMovementCard(month: StudentMovementMonth, maxValue: Int) {
+private fun StudentMovementCard(
+    month: StudentMovementMonth,
+    maxValue: Int,
+    onMovementClick: (StudentMovementMonth, String) -> Unit,
+) {
     Surface(
         modifier = Modifier.width(148.dp),
         shape = RoundedCornerShape(18.dp),
@@ -2792,9 +2847,9 @@ private fun StudentMovementCard(month: StudentMovementMonth, maxValue: Int) {
                 MovementBar(month.joined, maxValue, BrandGreen)
                 MovementBar(month.discontinued, maxValue, BrandRed)
             }
-            MovementLegendLine("Continuing", month.continuing, BrandBlue)
-            MovementLegendLine("Joined", month.joined, BrandGreen)
-            MovementLegendLine("Left", month.discontinued, BrandRed)
+            MovementLegendLine("Continuing", month.continuing, BrandBlue) { onMovementClick(month, "continuing") }
+            MovementLegendLine("Joined", month.joined, BrandGreen) { onMovementClick(month, "joined") }
+            MovementLegendLine("Left", month.discontinued, BrandRed) { onMovementClick(month, "left") }
         }
     }
 }
@@ -2810,8 +2865,15 @@ private fun MovementBar(value: Int, maxValue: Int, color: Color) {
 }
 
 @Composable
-private fun MovementLegendLine(label: String, value: Int, color: Color) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun MovementLegendLine(label: String, value: Int, color: Color, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .clickable(enabled = value > 0, onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
         Box(modifier = Modifier.size(7.dp).background(color, CircleShape))
         Text("$value $label", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f), maxLines = 1)
     }
@@ -2819,12 +2881,13 @@ private fun MovementLegendLine(label: String, value: Int, color: Color) {
 
 private fun buildStudentMovement(students: List<Student>): List<StudentMovementMonth> {
     val currentMonth = YearMonth.now()
-    return (5 downTo 0).map { offset ->
+    return (0..5).map { offset ->
         val month = currentMonth.minusMonths(offset.toLong())
         val monthStart = month.atDay(1)
         val monthEnd = month.atEndOfMonth()
         val previousMonthEnd = monthStart.minusDays(1)
         StudentMovementMonth(
+            key = "${month.year}-${month.monthValue.toString().padStart(2, '0')}",
             label = month.month.name.take(3).lowercase(Locale.US).replaceFirstChar { it.titlecase(Locale.US) } + " '${month.year.toString().takeLast(2)}",
             joined = students.count { parseStudentDate(it.joinDate)?.let { date -> !date.isBefore(monthStart) && !date.isAfter(monthEnd) } == true },
             continuing = students.count {
@@ -2841,6 +2904,69 @@ private fun parseStudentDate(value: String?): LocalDate? = try {
     if (value.isNullOrBlank()) null else LocalDate.parse(value)
 } catch (_: Exception) {
     null
+}
+
+private fun movementYearMonth(monthKey: String?): YearMonth? = try {
+    if (monthKey.isNullOrBlank()) null else YearMonth.parse(monthKey)
+} catch (_: Exception) {
+    null
+}
+
+private fun studentMatchesMovementFilter(student: Student, monthKey: String, type: String): Boolean {
+    val month = movementYearMonth(monthKey) ?: return true
+    val monthStart = month.atDay(1)
+    val monthEnd = month.atEndOfMonth()
+    val previousMonthEnd = monthStart.minusDays(1)
+    val joinDate = parseStudentDate(student.joinDate)
+    val discontinuedAt = parseStudentDate(student.discontinuedAt)
+    return when (type) {
+        "joined" -> joinDate != null && !joinDate.isBefore(monthStart) && !joinDate.isAfter(monthEnd)
+        "left" -> discontinuedAt != null && !discontinuedAt.isBefore(monthStart) && !discontinuedAt.isAfter(monthEnd)
+        else -> joinDate != null && !joinDate.isAfter(previousMonthEnd) && (discontinuedAt == null || !discontinuedAt.isBefore(monthStart))
+    }
+}
+
+private fun movementFilterDisplayLabel(monthKey: String?, type: String?): String? {
+    val month = movementYearMonth(monthKey) ?: return null
+    val typeLabel = when (type) {
+        "joined" -> "Joined"
+        "left" -> "Left"
+        "continuing" -> "Continuing"
+        else -> return null
+    }
+    val monthLabel = month.month.name.take(3).lowercase(Locale.US).replaceFirstChar { it.titlecase(Locale.US) } +
+        " ${month.year}"
+    return "$typeLabel · $monthLabel"
+}
+
+@Composable
+private fun MovementRosterFilterBanner(label: String, onClear: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = BrandBlue.copy(alpha = 0.08f),
+        border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.16f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = "Roster filtered by $label",
+                modifier = Modifier.weight(1f),
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            TextButton(onClick = onClear) {
+                Text("Clear", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+            }
+        }
+    }
 }
 
 @Composable
@@ -3182,12 +3308,33 @@ private fun PlayerAttendanceToolbar(
                 }
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = selectedSlot.isBlank(),
+                    onClick = { onSlotSelected("all") },
+                    label = { Text("All (${activePlayers.size})") },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = BrandBlue,
+                        selectedLabelColor = Color.White,
+                    ),
+                )
                 UiTimeSlots.forEach { slot ->
                     val count = activePlayers.count { it.timeSlot == slot }
                     FilterChip(
                         selected = selectedSlot == slot,
                         onClick = { onSlotSelected(slot) },
                         label = { Text("$slot ($count)") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = BrandBlue,
+                            selectedLabelColor = Color.White,
+                        ),
+                    )
+                }
+                val notSetCount = activePlayers.count { it.timeSlot.isBlank() }
+                if (notSetCount > 0) {
+                    FilterChip(
+                        selected = selectedSlot == "not-set",
+                        onClick = { onSlotSelected("not-set") },
+                        label = { Text("Not set ($notSetCount)") },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = BrandBlue,
                             selectedLabelColor = Color.White,
