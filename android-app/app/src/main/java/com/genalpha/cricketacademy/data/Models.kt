@@ -96,6 +96,13 @@ data class OperationResult(
     val message: String,
 )
 
+data class ReminderSettings(
+    val whatsappRemindersEnabled: Boolean = false,
+    val paymentLinksEnabled: Boolean = false,
+    val dryRunMode: Boolean = true,
+    val managerPhone: String = "9059962499",
+)
+
 data class AdmissionInsertResult(
     @Json(name = "id") val id: String,
     @Json(name = "reg_no") val regNo: Long,

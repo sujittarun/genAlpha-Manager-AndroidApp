@@ -183,6 +183,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.time.LocalDate
 import java.time.YearMonth
+import java.time.temporal.ChronoUnit
 import java.util.Calendar
 import java.util.Locale
 
@@ -1153,6 +1154,16 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         },
                         onRenew = {
                             renewalStudent = selectedStudent
+                        },
+                        onSendReminder = {
+                            selectedStudent?.let { activeStudent ->
+                                val result = viewModel.sendRenewalReminder(activeStudent)
+                                if (result.success) {
+                                    val refreshed = runCatching { viewModel.studentTimeline(activeStudent.id) }.getOrDefault(emptyList())
+                                    timelineCache = timelineCache + (activeStudent.id to refreshed)
+                                }
+                                scope.launch { snackbarHostState.showSnackbar(result.message) }
+                            }
                         },
                         onToggleStatus = {
                             selectedStudent?.let { activeStudent ->
@@ -2926,6 +2937,17 @@ private fun studentMatchesMovementFilter(student: Student, monthKey: String, typ
     }
 }
 
+private fun reminderOverdueDays(student: Student, payments: List<StudentPayment>): Int {
+    val dueDate = when {
+        student.isFeesPending() -> student.joinDate
+        student.isRenewalPending(payments) -> student.nextRenewalCycleDate(payments)
+        else -> return 0
+    }
+    return runCatching {
+        ChronoUnit.DAYS.between(LocalDate.parse(dueDate), LocalDate.now()).toInt().coerceAtLeast(0)
+    }.getOrDefault(0)
+}
+
 private fun movementFilterDisplayLabel(monthKey: String?, type: String?): String? {
     val month = movementYearMonth(monthKey) ?: return null
     val typeLabel = when (type) {
@@ -3722,6 +3744,7 @@ private fun PlayerDetailSheet(
     onEdit: () -> Unit,
     onDelete: suspend () -> Unit,
     onRenew: suspend () -> Unit,
+    onSendReminder: suspend () -> Unit,
     onToggleStatus: suspend () -> Unit,
 ) {
     var actionInProgress by rememberSaveable(student.id) { mutableStateOf<String?>(null) }
@@ -3738,6 +3761,8 @@ private fun PlayerDetailSheet(
     val paymentRows = remember(student, payments) { buildPlayerPaymentRows(student, payments) }
     val totalPaid = paymentRows.sumOf { it.amount }
     val totalMonthsPaid = paymentRows.sumOf { it.months }
+    val reminderDue = student.isFeesPending() || student.isRenewalPending(payments)
+    val reminderOverdueDays = remember(student, payments) { reminderOverdueDays(student, payments) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -3981,6 +4006,22 @@ private fun PlayerDetailSheet(
                 }
             }
 
+            if (reminderOverdueDays > 10) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = BrandRed.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, BrandRed.copy(alpha = 0.22f)),
+                ) {
+                    Text(
+                        text = "Overdue for $reminderOverdueDays days. Follow up with parent today.",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        color = BrandRed,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                    )
+                }
+            }
+
             Text(
                 text = "Last updated by ${student.updatedBy}",
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
@@ -4086,6 +4127,26 @@ private fun PlayerDetailSheet(
                             }
                             Spacer(modifier = Modifier.size(6.dp))
                             Text("Renew")
+                        }
+                    }
+                    if (reminderDue && student.isActive()) {
+                        OutlinedButton(
+                            enabled = actionInProgress == null,
+                            onClick = {
+                                scope.launch {
+                                    actionInProgress = "reminder"
+                                    onSendReminder()
+                                    actionInProgress = null
+                                }
+                            },
+                        ) {
+                            if (actionInProgress == "reminder") {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Outlined.Refresh, contentDescription = null)
+                            }
+                            Spacer(modifier = Modifier.size(6.dp))
+                            Text("Dry-run reminder")
                         }
                     }
                     TextButton(

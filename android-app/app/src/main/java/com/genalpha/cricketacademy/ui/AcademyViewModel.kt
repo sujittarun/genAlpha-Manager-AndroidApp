@@ -7,6 +7,7 @@ import com.genalpha.cricketacademy.data.DashboardStats
 import com.genalpha.cricketacademy.data.AdmissionDraft
 import com.genalpha.cricketacademy.data.ManagerSession
 import com.genalpha.cricketacademy.data.OperationResult
+import com.genalpha.cricketacademy.data.ReminderSettings
 import com.genalpha.cricketacademy.data.SessionPrefs
 import com.genalpha.cricketacademy.data.SlotSummary
 import com.genalpha.cricketacademy.data.Student
@@ -35,6 +36,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 
 private val TIME_SLOTS = listOf("6AM", "7:30AM", "4PM", "5:30PM", "7PM")
 
@@ -604,6 +606,37 @@ class AcademyViewModel(
         }
     }
 
+    suspend fun sendRenewalReminder(student: Student): OperationResult {
+        val payments = _uiState.value.payments
+        val isJoiningFee = student.isFeesPending()
+        val isRenewalDue = student.isRenewalPending(payments)
+        if (!isJoiningFee && !isRenewalDue) {
+            return OperationResult(false, "${student.name} is not due for a fee reminder.")
+        }
+
+        return try {
+            val (settings, dueDate) = withFreshSession { session ->
+                val reminderSettings = repository.fetchReminderSettings(session)
+                val nextDue = if (isJoiningFee) student.joinDate else student.nextRenewalCycleDate(payments)
+                val overdueDays = maxOf(0, ChronoUnit.DAYS.between(LocalDate.parse(nextDue), LocalDate.now()).toInt())
+                repository.logRenewalReminder(
+                    session = session,
+                    student = student,
+                    reminderType = if (isJoiningFee) "joining_fee" else "renewal",
+                    dueDate = nextDue,
+                    overdueDays = overdueDays,
+                    messagePreview = buildReminderPreview(student, nextDue, reminderSettings.managerPhone, isJoiningFee),
+                    settings = reminderSettings,
+                )
+                reminderSettings to nextDue
+            }
+            val mode = if (settings.dryRunMode || !settings.whatsappRemindersEnabled) "Dry-run" else "WhatsApp"
+            OperationResult(true, "$mode reminder logged for ${student.name} (${dueDate}).")
+        } catch (error: Exception) {
+            OperationResult(false, error.message ?: "Unable to log reminder.")
+        }
+    }
+
     suspend fun toggleStatus(student: Student): OperationResult {
         return try {
             val session = withFreshSession { session ->
@@ -1063,3 +1096,13 @@ data class AdmissionExtractionResult(
     val message: String,
     val draft: AdmissionDraft?,
 )
+
+private fun buildReminderPreview(
+    student: Student,
+    dueDate: String,
+    managerPhone: String,
+    isJoiningFee: Boolean,
+): String {
+    val dueText = if (isJoiningFee) "joining fee from $dueDate" else "renewal due $dueDate"
+    return "Gen Alpha Cricket Academy reminder for ${student.name}: $dueText. Parent can choose 1 Month / 3 Months / 6 Months / Need Help. Manager help: $managerPhone."
+}

@@ -111,6 +111,86 @@ class SupabaseRepository(
         }
     }
 
+    suspend fun fetchReminderSettings(session: ManagerSession): ReminderSettings = withContext(Dispatchers.IO) {
+        val keys = "whatsapp_reminders_enabled,payment_links_enabled,dry_run_mode,academy_manager_phone"
+        val request = baseRequest("$baseUrl/rest/v1/system_settings?select=setting_key,setting_value&setting_key=in.($keys)")
+            .header("Authorization", "Bearer ${session.accessToken}")
+            .get()
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                return@withContext ReminderSettings()
+            }
+            val rows = JSONArray(body)
+            val values = mutableMapOf<String, Any?>()
+            repeat(rows.length()) { index ->
+                val row = rows.getJSONObject(index)
+                values[row.optString("setting_key")] = row.opt("setting_value")
+            }
+            ReminderSettings(
+                whatsappRemindersEnabled = values["whatsapp_reminders_enabled"].asBoolean(false),
+                paymentLinksEnabled = values["payment_links_enabled"].asBoolean(false),
+                dryRunMode = values["dry_run_mode"].asBoolean(true),
+                managerPhone = values["academy_manager_phone"].asText("9059962499"),
+            )
+        }
+    }
+
+    suspend fun logRenewalReminder(
+        session: ManagerSession,
+        student: Student,
+        reminderType: String,
+        dueDate: String,
+        overdueDays: Int,
+        messagePreview: String,
+        settings: ReminderSettings,
+    ) = withContext(Dispatchers.IO) {
+        val dryRun = settings.dryRunMode || !settings.whatsappRemindersEnabled
+        val eventBody = JSONObject()
+            .put("student_id", student.id)
+            .put("reminder_type", reminderType)
+            .put("channel", "whatsapp")
+            .put("status", if (dryRun) "dry_run" else "queued")
+            .put("dry_run", dryRun)
+            .put("due_date", dueDate)
+            .put("overdue_days", overdueDays)
+            .put("plan_options", JSONArray(listOf("monthly", "quarterly", "halfyearly", "need_help")))
+            .put("parent_phone", student.parentContactNo)
+            .put("manager_phone", settings.managerPhone)
+            .put("message_preview", messagePreview)
+            .put("created_by", session.email)
+
+        val eventResponse = executeWriteRequestReturningBody(
+            url = "$baseUrl/rest/v1/reminder_events?select=id",
+            session = session,
+            method = "POST",
+            body = eventBody,
+        )
+        val reminderId = JSONArray(eventResponse).optJSONObject(0)?.optString("id").orEmpty()
+
+        val linkBody = JSONObject()
+            .put("reminder_event_id", if (reminderId.isBlank()) JSONObject.NULL else reminderId)
+            .put("student_id", student.id)
+            .put("payment_type", if (reminderType == "joining_fee") "joining" else "renewal")
+            .put("plan_type", "awaiting_parent_choice")
+            .put("months_covered", 0)
+            .put("amount", 0)
+            .put("cycle_start_date", dueDate)
+            .put("provider", "razorpay")
+            .put("status", if (settings.paymentLinksEnabled && !dryRun) "awaiting_parent_choice" else "dry_run")
+            .put("dry_run", dryRun || !settings.paymentLinksEnabled)
+            .put("created_by", session.email)
+
+        executeWriteRequest(
+            url = "$baseUrl/rest/v1/payment_link_requests",
+            session = session,
+            method = "POST",
+            body = linkBody,
+        )
+    }
+
     suspend fun addExpense(
         session: ManagerSession,
         expenseType: String,
@@ -1112,6 +1192,17 @@ class SupabaseRepository(
         return listOf("6AM", "7:30AM", "4PM", "5:30PM", "7PM")
             .firstOrNull { it.uppercase().replace("\\s+".toRegex(), "") == compact }
             .orEmpty()
+    }
+
+    private fun Any?.asBoolean(default: Boolean): Boolean = when (this) {
+        is Boolean -> this
+        is String -> equals("true", ignoreCase = true)
+        else -> default
+    }
+
+    private fun Any?.asText(default: String): String = when (this) {
+        is String -> this
+        else -> default
     }
 
     companion object {
