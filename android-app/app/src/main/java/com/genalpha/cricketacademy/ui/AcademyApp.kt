@@ -515,6 +515,11 @@ fun AcademyApp(viewModel: AcademyViewModel) {
         uiState.rosterSortKey,
         uiState.rosterSortAscending,
         uiState.payments,
+        uiState.rosterStatusFilter,
+        uiState.rosterJerseyFilter,
+        uiState.rosterTypeFilter,
+        uiState.rosterFeePaidFilter,
+        uiState.rosterFeeDueFilter,
     ) { viewModel.filteredKids() }
     val stats = remember(uiState.kids) { viewModel.stats() }
     val slotSummary = remember(uiState.kids, uiState.selectedSlotFilter) { viewModel.slotSummary() }
@@ -802,11 +807,21 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                             searchQuery = uiState.searchQuery,
                             sortKey = uiState.rosterSortKey,
                             sortAscending = uiState.rosterSortAscending,
+                            statusFilter = uiState.rosterStatusFilter,
+                            jerseyFilter = uiState.rosterJerseyFilter,
+                            typeFilter = uiState.rosterTypeFilter,
+                            feePaidFilter = uiState.rosterFeePaidFilter,
+                            feeDueFilter = uiState.rosterFeeDueFilter,
                             visibleCount = filteredKids.size,
                             totalCount = uiState.kids.size,
                             isRefreshing = uiState.isRefreshing,
                             onSearchChange = viewModel::setSearchQuery,
                             onSortChange = viewModel::setRosterSort,
+                            onStatusFilterChange = viewModel::setRosterStatusFilter,
+                            onJerseyFilterChange = viewModel::setRosterJerseyFilter,
+                            onTypeFilterChange = viewModel::setRosterTypeFilter,
+                            onFeePaidFilterChange = viewModel::setRosterFeePaidFilter,
+                            onFeeDueFilterChange = viewModel::setRosterFeeDueFilter,
                             onRefresh = {
                                 scope.launch {
                                     viewModel.loadKids()
@@ -2656,11 +2671,21 @@ private fun RosterToolbar(
     searchQuery: String,
     sortKey: String,
     sortAscending: Boolean,
+    statusFilter: String,
+    jerseyFilter: String,
+    typeFilter: String,
+    feePaidFilter: String,
+    feeDueFilter: String,
     visibleCount: Int,
     totalCount: Int,
     isRefreshing: Boolean,
     onSearchChange: (String) -> Unit,
     onSortChange: (String) -> Unit,
+    onStatusFilterChange: (String) -> Unit,
+    onJerseyFilterChange: (String) -> Unit,
+    onTypeFilterChange: (String) -> Unit,
+    onFeePaidFilterChange: (String) -> Unit,
+    onFeeDueFilterChange: (String) -> Unit,
     onRefresh: () -> Unit,
 ) {
     Card(
@@ -2763,6 +2788,41 @@ private fun RosterToolbar(
                     )
                 }
             }
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                CompactRosterFilter(
+                    label = "Status",
+                    selectedValue = statusFilter,
+                    options = RosterStatusFilterOptions,
+                    onSelected = onStatusFilterChange,
+                )
+                CompactRosterFilter(
+                    label = "Jersey",
+                    selectedValue = jerseyFilter,
+                    options = RosterJerseyFilterOptions,
+                    onSelected = onJerseyFilterChange,
+                )
+                CompactRosterFilter(
+                    label = "Type",
+                    selectedValue = typeFilter,
+                    options = RosterTypeFilterOptions,
+                    onSelected = onTypeFilterChange,
+                )
+                CompactRosterFilter(
+                    label = "Fee",
+                    selectedValue = feePaidFilter,
+                    options = RosterFeePaidFilterOptions,
+                    onSelected = onFeePaidFilterChange,
+                )
+                CompactRosterFilter(
+                    label = "Due",
+                    selectedValue = feeDueFilter,
+                    options = RosterFeeDueFilterOptions,
+                    onSelected = onFeeDueFilterChange,
+                )
+            }
             Text(
                 text = if (searchQuery.isBlank()) {
                     "Showing $visibleCount of $totalCount registered players."
@@ -2772,6 +2832,98 @@ private fun RosterToolbar(
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
                 fontSize = 13.sp,
             )
+        }
+    }
+}
+
+private val RosterStatusFilterOptions = listOf(
+    "all" to "All",
+    "active" to "Active",
+    "discontinued" to "Discontinued",
+)
+
+private val RosterJerseyFilterOptions = listOf(
+    "all" to "All",
+    "not-set" to "Not set",
+    "22" to "22",
+    "24" to "24",
+    "26" to "26",
+    "28" to "28",
+    "30" to "30",
+    "32" to "32",
+    "34" to "34",
+    "36" to "36",
+    "38" to "38",
+)
+
+private val RosterTypeFilterOptions = listOf(
+    "all" to "All",
+    "new" to "New",
+    "returning" to "Returning",
+)
+
+private val RosterFeePaidFilterOptions = listOf(
+    "all" to "All",
+    "paid" to "Paid",
+    "not-paid" to "Not paid",
+)
+
+private val RosterFeeDueFilterOptions = listOf(
+    "all" to "All",
+    "joining-pending" to "Joining pending",
+    "overdue" to "Overdue",
+)
+
+@Composable
+private fun CompactRosterFilter(
+    label: String,
+    selectedValue: String,
+    options: List<Pair<String, String>>,
+    onSelected: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = options.firstOrNull { it.first == selectedValue }?.second ?: "All"
+
+    Box {
+        OutlinedButton(
+            onClick = { expanded = true },
+            shape = RoundedCornerShape(999.dp),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.28f)),
+        ) {
+            Text(
+                text = "$label: $selectedLabel",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Icon(
+                Icons.Filled.KeyboardArrowDown,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            options.forEach { (value, optionLabel) ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = optionLabel,
+                            fontSize = 13.sp,
+                            fontWeight = if (value == selectedValue) FontWeight.Bold else FontWeight.Medium,
+                        )
+                    },
+                    onClick = {
+                        expanded = false
+                        onSelected(value)
+                    },
+                )
+            }
         }
     }
 }

@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 private val TIME_SLOTS = listOf("6AM", "7:30AM", "4PM", "5:30PM", "7PM")
 
@@ -52,6 +53,11 @@ data class AcademyUiState(
     val searchQuery: String = "",
     val rosterSortKey: String = "joinDate",
     val rosterSortAscending: Boolean = false,
+    val rosterStatusFilter: String = "all",
+    val rosterJerseyFilter: String = "all",
+    val rosterTypeFilter: String = "all",
+    val rosterFeePaidFilter: String = "all",
+    val rosterFeeDueFilter: String = "all",
     val darkModeEnabled: Boolean = false,
     val session: ManagerSession? = null,
     val lastEmail: String = "",
@@ -169,6 +175,26 @@ class AcademyViewModel(
         _uiState.update { it.copy(searchQuery = query) }
     }
 
+    fun setRosterStatusFilter(filter: String) {
+        _uiState.update { it.copy(rosterStatusFilter = filter.ifBlank { "all" }) }
+    }
+
+    fun setRosterJerseyFilter(filter: String) {
+        _uiState.update { it.copy(rosterJerseyFilter = filter.ifBlank { "all" }) }
+    }
+
+    fun setRosterTypeFilter(filter: String) {
+        _uiState.update { it.copy(rosterTypeFilter = filter.ifBlank { "all" }) }
+    }
+
+    fun setRosterFeePaidFilter(filter: String) {
+        _uiState.update { it.copy(rosterFeePaidFilter = filter.ifBlank { "all" }) }
+    }
+
+    fun setRosterFeeDueFilter(filter: String) {
+        _uiState.update { it.copy(rosterFeeDueFilter = filter.ifBlank { "all" }) }
+    }
+
     fun setRosterSort(key: String) {
         _uiState.update { state ->
             if (state.rosterSortKey == key) {
@@ -190,6 +216,14 @@ class AcademyViewModel(
 
     fun clearError() {
         _uiState.update { it.copy(errorMessage = null) }
+    }
+
+    private fun AcademyUiState.hasRosterDetailFilters(): Boolean {
+        return rosterStatusFilter != "all" ||
+            rosterJerseyFilter != "all" ||
+            rosterTypeFilter != "all" ||
+            rosterFeePaidFilter != "all" ||
+            rosterFeeDueFilter != "all"
     }
 
     fun onAppForegrounded() {
@@ -629,12 +663,13 @@ class AcademyViewModel(
     }
 
     fun filteredKids(): List<Student> {
-        val filter = _uiState.value.selectedSlotFilter
-        val search = _uiState.value.searchQuery.trim().lowercase()
+        val state = _uiState.value
+        val filter = state.selectedSlotFilter
+        val search = state.searchQuery.trim().lowercase()
         val slotFiltered = when {
-            filter.isBlank() -> _uiState.value.kids
-            filter == "not-set" -> _uiState.value.kids.filter { it.isActive() && it.timeSlot.isBlank() }
-            else -> _uiState.value.kids.filter { it.isActive() && it.timeSlot == filter }
+            filter.isBlank() -> state.kids
+            filter == "not-set" -> state.kids.filter { it.isActive() && it.timeSlot.isBlank() }
+            else -> state.kids.filter { it.isActive() && it.timeSlot == filter }
         }
         val searched = if (search.isBlank()) {
             slotFiltered
@@ -645,7 +680,17 @@ class AcademyViewModel(
                 student.updatedBy.lowercase().contains(search)
             }
         }
-        return sortRosterStudents(searched)
+        val filtered = searched.filter { student ->
+            student.matchesRosterFilters(
+                payments = state.payments,
+                statusFilter = state.rosterStatusFilter,
+                jerseyFilter = state.rosterJerseyFilter,
+                typeFilter = state.rosterTypeFilter,
+                feePaidFilter = state.rosterFeePaidFilter,
+                feeDueFilter = state.rosterFeeDueFilter,
+            )
+        }
+        return sortRosterStudents(filtered)
     }
 
     fun stats(): DashboardStats = buildStats(_uiState.value.kids)
@@ -673,6 +718,10 @@ class AcademyViewModel(
 
         if (state.searchQuery.isNotBlank()) {
             return "No players match \"${state.searchQuery}\" in the current view."
+        }
+
+        if (state.hasRosterDetailFilters()) {
+            return "No registered players match the selected filters."
         }
 
         return when (state.selectedSlotFilter) {
@@ -922,6 +971,33 @@ class AcademyViewModel(
         }
 
         return null
+    }
+
+    private fun Student.matchesRosterFilters(
+        payments: List<StudentPayment>,
+        statusFilter: String,
+        jerseyFilter: String,
+        typeFilter: String,
+        feePaidFilter: String,
+        feeDueFilter: String,
+    ): Boolean {
+        val size = jerseySize.trim()
+        val overdue = feesPaid && isActive() && runCatching {
+            LocalDate.parse(nextRenewalCycleDate(payments)).isBefore(LocalDate.now())
+        }.getOrDefault(false)
+
+        if (statusFilter == "active" && !isActive()) return false
+        if (statusFilter == "discontinued" && isActive()) return false
+        if (jerseyFilter == "not-set" && size.isNotBlank()) return false
+        if (jerseyFilter !in setOf("all", "not-set") && size != jerseyFilter) return false
+        if (typeFilter == "new" && renewals.isNotEmpty()) return false
+        if (typeFilter == "returning" && renewals.isEmpty()) return false
+        if (feePaidFilter == "paid" && !feesPaid) return false
+        if (feePaidFilter == "not-paid" && feesPaid) return false
+        if (feeDueFilter == "joining-pending" && !isFeesPending()) return false
+        if (feeDueFilter == "overdue" && !overdue) return false
+
+        return true
     }
 
     private fun sortStudents(students: List<Student>): List<Student> {
