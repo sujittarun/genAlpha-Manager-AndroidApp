@@ -1521,6 +1521,7 @@ private fun FinancePanel(
     var selectedFinanceRange by rememberSaveable { mutableStateOf("month") }
     var customRangeStart by rememberSaveable { mutableStateOf(YearMonth.from(LocalDate.now()).atDay(1).toString()) }
     var customRangeEnd by rememberSaveable { mutableStateOf(YearMonth.from(LocalDate.now()).atEndOfMonth().toString()) }
+    var selectedMonthDetailKey by rememberSaveable { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     fun calendarMonthKey(calendar: java.util.Calendar): String =
@@ -1556,8 +1557,12 @@ private fun FinancePanel(
             add(java.util.Calendar.MONTH, -offset)
         }
         val key = calendarMonthKey(month)
+        val monthName = month.getDisplayName(java.util.Calendar.MONTH, java.util.Calendar.SHORT, Locale.US).orEmpty()
+        val fullMonthName = month.getDisplayName(java.util.Calendar.MONTH, java.util.Calendar.LONG, Locale.US).orEmpty()
         FinanceMonthSummary(
-            label = month.getDisplayName(java.util.Calendar.MONTH, java.util.Calendar.SHORT, Locale.US).orEmpty(),
+            key = key,
+            label = monthName,
+            fullLabel = "$fullMonthName ${month.get(java.util.Calendar.YEAR)}",
             fees = sumFees(key),
             expenses = sumExpenses(key),
         )
@@ -1600,6 +1605,7 @@ private fun FinancePanel(
         FinanceMiniChart(
             months = monthBuckets,
             formatCurrency = { value -> formatCurrency(value) },
+            onMonthClick = { selectedMonthDetailKey = it },
         )
 
         // Export academy record option hidden for now
@@ -1627,39 +1633,18 @@ private fun FinancePanel(
         //     Text("Share monthly backup")
         // }
 
-        FinanceAddExpenseCard(
-            expanded = showExpenseForm,
-            expenseType = expenseType,
-            amount = expenseAmount,
-            paidBy = expensePaidBy,
-            comment = expenseComment,
-            expenseDate = expenseDate,
-            isSaving = isAddingExpense,
-            message = expenseMessage,
-            onToggle = {
-                showExpenseForm = !showExpenseForm
+        OutlinedButton(
+            onClick = {
+                showExpenseForm = true
                 expenseMessage = null
             },
-            onTypeChange = { expenseType = it },
-            onAmountChange = { expenseAmount = it },
-            onPaidByChange = { expensePaidBy = it },
-            onCommentChange = { expenseComment = it },
-            onDateChange = { expenseDate = it },
-            onSubmit = {
-                scope.launch {
-                    isAddingExpense = true
-                    val result = onAddExpense(expenseType, expenseAmount, expensePaidBy, expenseComment, expenseDate)
-                    isAddingExpense = false
-                    expenseMessage = result.message
-                    if (result.success) {
-                        expenseAmount = ""
-                        expenseComment = ""
-                        expenseDate = todayIsoDate()
-                        showExpenseForm = false
-                    }
-                }
-            },
-        )
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+        ) {
+            Icon(Icons.Outlined.Add, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Add expense")
+        }
 
         if (!showExpenseForm && !expenseMessage.isNullOrBlank()) {
             Text(
@@ -1785,12 +1770,66 @@ private fun FinancePanel(
             }
         }
     }
+
+    if (showExpenseForm) {
+        Dialog(onDismissRequest = { if (!isAddingExpense) showExpenseForm = false }) {
+            FinanceAddExpenseCard(
+                expenseType = expenseType,
+                amount = expenseAmount,
+                paidBy = expensePaidBy,
+                comment = expenseComment,
+                expenseDate = expenseDate,
+                isSaving = isAddingExpense,
+                message = expenseMessage,
+                onDismiss = { if (!isAddingExpense) showExpenseForm = false },
+                onTypeChange = { expenseType = it },
+                onAmountChange = { expenseAmount = it },
+                onPaidByChange = { expensePaidBy = it },
+                onCommentChange = { expenseComment = it },
+                onDateChange = { expenseDate = it },
+                onSubmit = {
+                    scope.launch {
+                        isAddingExpense = true
+                        val result = onAddExpense(expenseType, expenseAmount, expensePaidBy, expenseComment, expenseDate)
+                        isAddingExpense = false
+                        expenseMessage = result.message
+                        if (result.success) {
+                            expenseAmount = ""
+                            expenseComment = ""
+                            expenseDate = todayIsoDate()
+                            showExpenseForm = false
+                        }
+                    }
+                },
+            )
+        }
+    }
+
+    selectedMonthDetailKey?.let { monthKey ->
+        FinanceMonthDetailDialog(
+            monthKey = monthKey,
+            students = uiState.kids,
+            payments = uiState.payments,
+            expenses = uiState.expenses,
+            formatCurrency = { value -> formatCurrency(value) },
+            onDismiss = { selectedMonthDetailKey = null },
+        )
+    }
 }
 
 private data class FinanceMonthSummary(
+    val key: String,
     val label: String,
+    val fullLabel: String,
     val fees: Double,
     val expenses: Double,
+)
+
+private data class FinanceRevenueLine(
+    val studentName: String,
+    val type: String,
+    val date: String,
+    val amount: Double,
 )
 
 private data class PlayerPaymentLine(
@@ -1883,7 +1922,6 @@ private val FinanceRangeOptions = listOf(
     FinanceRangeOption("3months", "3 months", 3L),
     FinanceRangeOption("6months", "6 months", 6L),
     FinanceRangeOption("year", "1 year", 0L, "year"),
-    FinanceRangeOption("custom", "Custom", 0L, "custom"),
     FinanceRangeOption("overall", "Overall", null),
 )
 
@@ -1961,25 +1999,25 @@ private fun FinanceRangeSelector(
                     )
                 }
             }
-            if (selected == "custom") {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
+                    onClick = onPickCustomStart,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                 ) {
-                    OutlinedButton(
-                        onClick = onPickCustomStart,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(16.dp),
-                    ) {
-                        Text("From ${displayDate(customStart)}", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    OutlinedButton(
-                        onClick = onPickCustomEnd,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(16.dp),
-                    ) {
-                        Text("To ${displayDate(customEnd)}", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
+                    Text("From ${displayDate(customStart)}", fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                OutlinedButton(
+                    onClick = onPickCustomEnd,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    Text("To ${displayDate(customEnd)}", fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
@@ -2095,7 +2133,6 @@ private fun FinanceGlassMetric(
 
 @Composable
 private fun FinanceAddExpenseCard(
-    expanded: Boolean,
     expenseType: String,
     amount: String,
     paidBy: String,
@@ -2103,7 +2140,7 @@ private fun FinanceAddExpenseCard(
     expenseDate: String,
     isSaving: Boolean,
     message: String?,
-    onToggle: () -> Unit,
+    onDismiss: () -> Unit,
     onTypeChange: (String) -> Unit,
     onAmountChange: (String) -> Unit,
     onPaidByChange: (String) -> Unit,
@@ -2142,67 +2179,65 @@ private fun FinanceAddExpenseCard(
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                 Column {
-                    Text("Expenses", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
-                    Text("Add costs from mobile", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f))
+                    Text("Add expense", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("Track academy costs", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f))
                 }
-                OutlinedButton(onClick = onToggle, shape = RoundedCornerShape(14.dp)) {
-                    Text(if (expanded) "Close" else "Add")
+                IconButton(onClick = onDismiss, enabled = !isSaving) {
+                    Icon(Icons.Outlined.Close, contentDescription = "Close")
                 }
             }
-            if (expanded) {
-                AdmissionDropdownField(
-                    label = "Type",
-                    value = expenseType,
-                    options = listOf("Coach Fees", "Purchased accessories", "Transport", "Maid expense", "Ground maintenance", "Other"),
-                    onSelect = onTypeChange,
-                )
-                OutlinedTextField(
-                    value = displayDate(expenseDate),
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Expense date") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { openDatePicker.value() },
-                    trailingIcon = {
-                        IconButton(onClick = { openDatePicker.value() }) {
-                            Icon(Icons.Default.DateRange, contentDescription = "Pick date")
-                        }
-                    },
-                    interactionSource = remember { MutableInteractionSource() }
-                        .also { interactionSource ->
-                            LaunchedEffect(interactionSource) {
-                                interactionSource.interactions.collect { interaction ->
-                                    if (interaction is androidx.compose.foundation.interaction.PressInteraction.Release) {
-                                        openDatePicker.value()
-                                    }
+            AdmissionDropdownField(
+                label = "Type",
+                value = expenseType,
+                options = listOf("Coach Fees", "Purchased accessories", "Transport", "Maid expense", "Ground maintenance", "Other"),
+                onSelect = onTypeChange,
+            )
+            OutlinedTextField(
+                value = displayDate(expenseDate),
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Expense date") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { openDatePicker.value() },
+                trailingIcon = {
+                    IconButton(onClick = { openDatePicker.value() }) {
+                        Icon(Icons.Default.DateRange, contentDescription = "Pick date")
+                    }
+                },
+                interactionSource = remember { MutableInteractionSource() }
+                    .also { interactionSource ->
+                        LaunchedEffect(interactionSource) {
+                            interactionSource.interactions.collect { interaction ->
+                                if (interaction is androidx.compose.foundation.interaction.PressInteraction.Release) {
+                                    openDatePicker.value()
                                 }
                             }
-                        },
+                        }
+                    },
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = onAmountChange,
+                    label = { Text("Amount") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
-                        value = amount,
-                        onValueChange = onAmountChange,
-                        label = { Text("Amount") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
+                Box(modifier = Modifier.weight(1f)) {
+                    AdmissionDropdownField(
+                        label = "Paid by",
+                        value = paidBy,
+                        options = listOf("Sandeep", "Srinivas", "Sujit"),
+                        onSelect = onPaidByChange,
                     )
-                    Box(modifier = Modifier.weight(1f)) {
-                        AdmissionDropdownField(
-                            label = "Paid by",
-                            value = paidBy,
-                            options = listOf("Sandeep", "Srinivas", "Sujit"),
-                            onSelect = onPaidByChange,
-                        )
-                    }
                 }
-                OutlinedTextField(value = comment, onValueChange = onCommentChange, label = { Text("Comment") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
-                Button(enabled = !isSaving, onClick = onSubmit, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                    if (isSaving) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
-                    else Text("Save expense")
-                }
+            }
+            OutlinedTextField(value = comment, onValueChange = onCommentChange, label = { Text("Comment") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+            Button(enabled = !isSaving, onClick = onSubmit, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                if (isSaving) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                else Text("Save expense")
             }
             if (!message.isNullOrBlank()) Text(message, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
         }
@@ -2213,6 +2248,7 @@ private fun FinanceAddExpenseCard(
 private fun FinanceMiniChart(
     months: List<FinanceMonthSummary>,
     formatCurrency: (Double) -> String,
+    onMonthClick: (String) -> Unit,
 ) {
     Surface(
         shape = RoundedCornerShape(22.dp),
@@ -2246,7 +2282,9 @@ private fun FinanceMiniChart(
                     Surface(
                         shape = RoundedCornerShape(16.dp),
                         color = if (net >= 0) BrandGreen.copy(alpha = 0.1f) else BrandRed.copy(alpha = 0.1f),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onMonthClick(month.key) },
                     ) {
                         Row(
                             modifier = Modifier
@@ -2270,6 +2308,138 @@ private fun FinanceMiniChart(
                             )
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+private fun buildFinanceRevenueLines(students: List<Student>, payments: List<StudentPayment>): List<FinanceRevenueLine> {
+    val joiningRows = students
+        .filter { it.feesPaid && it.amountPaid > 0.0 }
+        .map {
+            FinanceRevenueLine(
+                studentName = it.name,
+                type = "Joining",
+                date = it.joinDate,
+                amount = it.amountPaid,
+            )
+        }
+    val renewalRows = payments.map { payment ->
+        val student = students.firstOrNull { it.id == payment.studentId }
+        FinanceRevenueLine(
+            studentName = student?.name ?: "Unknown player",
+            type = if (payment.paymentType == "joining") "Joining" else "Renewal",
+            date = payment.paidOn,
+            amount = payment.amount,
+        )
+    }
+    return joiningRows + renewalRows
+}
+
+@Composable
+private fun FinanceMonthDetailDialog(
+    monthKey: String,
+    students: List<Student>,
+    payments: List<StudentPayment>,
+    expenses: List<AcademyExpense>,
+    formatCurrency: (Double) -> String,
+    onDismiss: () -> Unit,
+) {
+    val revenueRows = remember(monthKey, students, payments) {
+        buildFinanceRevenueLines(students, payments).filter { it.date.startsWith(monthKey) }
+    }
+    val expenseRows = remember(monthKey, expenses) {
+        expenses.filter { it.expenseDate.startsWith(monthKey) }
+    }
+    val revenueTotal = revenueRows.sumOf { it.amount }
+    val expenseTotal = expenseRows.sumOf { it.amount }
+    val net = revenueTotal - expenseTotal
+    val title = remember(monthKey) {
+        runCatching {
+            val ym = YearMonth.parse(monthKey)
+            "${ym.month.name.lowercase(Locale.US).replaceFirstChar { it.titlecase(Locale.US) }} ${ym.year}"
+        }.getOrElse { monthKey }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .heightIn(max = 620.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column {
+                        Text(title, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+                        Text(
+                            "Revenue ${formatCurrency(revenueTotal)} • Expense ${formatCurrency(expenseTotal)} • Net ${formatCurrency(net)}",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                        )
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Outlined.Close, contentDescription = "Close")
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    FinanceMonthDetailList(
+                        title = "Revenue",
+                        emptyText = "No revenue",
+                        rows = revenueRows.map {
+                            Triple(it.studentName, "${it.type} • ${displayDate(it.date)}", formatCurrency(it.amount))
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    FinanceMonthDetailList(
+                        title = "Expenses",
+                        emptyText = "No expenses",
+                        rows = expenseRows.map {
+                            Triple(it.expenseType, "${it.paidBy} • ${displayDate(it.expenseDate)}", formatCurrency(it.amount))
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FinanceMonthDetailList(
+    title: String,
+    emptyText: String,
+    rows: List<Triple<String, String, String>>,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+    ) {
+        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+            if (rows.isEmpty()) {
+                Text(emptyText, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f))
+            } else {
+                rows.forEach { (primary, secondary, amount) ->
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(primary, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(secondary, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.56f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(amount, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
                 }
             }
         }
