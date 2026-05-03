@@ -518,7 +518,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     ) { viewModel.filteredKids() }
     val stats = remember(uiState.kids) { viewModel.stats() }
     val slotSummary = remember(uiState.kids, uiState.selectedSlotFilter) { viewModel.slotSummary() }
-    val alertKids = remember(uiState.kids) { viewModel.alertKids() }
+    val alertKids = remember(uiState.kids, uiState.payments) { viewModel.alertKids() }
     val rosterSections = remember(filteredKids) { buildRosterSections(filteredKids) }
     val activePlayers = remember(uiState.kids) { uiState.kids.filter { it.isActive() } }
 
@@ -1495,12 +1495,17 @@ private fun FinancePanel(
     var isAddingExpense by rememberSaveable { mutableStateOf(false) }
     var deletingExpenseId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedFinanceRange by rememberSaveable { mutableStateOf("month") }
+    var customRangeStart by rememberSaveable { mutableStateOf(YearMonth.from(LocalDate.now()).atDay(1).toString()) }
+    var customRangeEnd by rememberSaveable { mutableStateOf(YearMonth.from(LocalDate.now()).atEndOfMonth().toString()) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     fun calendarMonthKey(calendar: java.util.Calendar): String =
         String.format(Locale.US, "%04d-%02d", calendar.get(java.util.Calendar.YEAR), calendar.get(java.util.Calendar.MONTH) + 1)
 
     val nowCalendar = remember { java.util.Calendar.getInstance() }
-    val selectedRange = remember(selectedFinanceRange) { buildFinanceRangeSelection(selectedFinanceRange) }
+    val selectedRange = remember(selectedFinanceRange, customRangeStart, customRangeEnd) {
+        buildFinanceRangeSelection(selectedFinanceRange, customRangeStart, customRangeEnd)
+    }
 
     val initialFees = uiState.kids
         .filter { it.feesPaid }
@@ -1547,6 +1552,16 @@ private fun FinancePanel(
             selected = selectedFinanceRange,
             period = selectedRange.period,
             onSelected = { selectedFinanceRange = it },
+            customStart = customRangeStart,
+            customEnd = customRangeEnd,
+            onPickCustomStart = {
+                selectedFinanceRange = "custom"
+                showLocalDatePicker(context, customRangeStart) { customRangeStart = it }
+            },
+            onPickCustomEnd = {
+                selectedFinanceRange = "custom"
+                showLocalDatePicker(context, customRangeEnd) { customRangeEnd = it }
+            },
         )
 
         FinanceOverviewCard(
@@ -1827,14 +1842,32 @@ private val FinanceRangeOptions = listOf(
     FinanceRangeOption("3months", "3 months", 3L),
     FinanceRangeOption("6months", "6 months", 6L),
     FinanceRangeOption("year", "1 year", 0L, "year"),
+    FinanceRangeOption("custom", "Custom", 0L, "custom"),
     FinanceRangeOption("overall", "Overall", null),
 )
+
+private fun showLocalDatePicker(context: Context, currentValue: String, onSelected: (String) -> Unit) {
+    val current = runCatching { LocalDate.parse(currentValue) }.getOrElse { LocalDate.now() }
+    DatePickerDialog(
+        context,
+        { _, year, month, day ->
+            onSelected(LocalDate.of(year, month + 1, day).toString())
+        },
+        current.year,
+        current.monthValue - 1,
+        current.dayOfMonth,
+    ).show()
+}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FinanceRangeSelector(
     selected: String,
     period: String,
+    customStart: String,
+    customEnd: String,
+    onPickCustomStart: () -> Unit,
+    onPickCustomEnd: () -> Unit,
     onSelected: (String) -> Unit,
 ) {
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
@@ -1887,11 +1920,32 @@ private fun FinanceRangeSelector(
                     )
                 }
             }
+            if (selected == "custom") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = onPickCustomStart,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(16.dp),
+                    ) {
+                        Text("From ${displayDate(customStart)}", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    OutlinedButton(
+                        onClick = onPickCustomEnd,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(16.dp),
+                    ) {
+                        Text("To ${displayDate(customEnd)}", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
         }
     }
 }
 
-private fun buildFinanceRangeSelection(key: String): FinanceRangeSelection {
+private fun buildFinanceRangeSelection(key: String, customStart: String = "", customEnd: String = ""): FinanceRangeSelection {
     val option = FinanceRangeOptions.firstOrNull { it.key == key } ?: FinanceRangeOptions[1]
     if (option.months == null) {
         return FinanceRangeSelection(option.label, "All recorded finance data", null, null)
@@ -1907,6 +1961,12 @@ private fun buildFinanceRangeSelection(key: String): FinanceRangeSelection {
         "year" -> {
             start = LocalDate.of(today.year, 1, 1)
             end = LocalDate.of(today.year, 12, 31)
+        }
+        "custom" -> {
+            val parsedStart = runCatching { LocalDate.parse(customStart) }.getOrElse { YearMonth.from(today).atDay(1) }
+            val parsedEnd = runCatching { LocalDate.parse(customEnd) }.getOrElse { YearMonth.from(today).atEndOfMonth() }
+            start = minOf(parsedStart, parsedEnd)
+            end = maxOf(parsedStart, parsedEnd)
         }
         else -> {
             val endMonth = YearMonth.from(today)
