@@ -178,6 +178,7 @@ import com.genalpha.cricketacademy.data.toDraft
 import com.genalpha.cricketacademy.data.trackingCaption
 import com.genalpha.cricketacademy.data.trainingDurationLabel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -568,6 +569,8 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     var showEditorSheet by rememberSaveable { mutableStateOf(false) }
     var selectedStudent by remember { mutableStateOf<Student?>(null) }
     var showDetailSheet by rememberSaveable { mutableStateOf(false) }
+    var rosterScrollTargetId by rememberSaveable { mutableStateOf<String?>(null) }
+    var highlightedRosterStudentId by rememberSaveable { mutableStateOf<String?>(null) }
     var renewalStudent by remember { mutableStateOf<Student?>(null) }
     var showAttendanceHistory by rememberSaveable { mutableStateOf(false) }
     var attendanceHistoryCache by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
@@ -668,6 +671,24 @@ fun AcademyApp(viewModel: AcademyViewModel) {
         }
     }
 
+    LaunchedEffect(rosterScrollTargetId, selectedView, rosterSections, rosterMovementLabel) {
+        val targetId = rosterScrollTargetId ?: return@LaunchedEffect
+        if (selectedView != AppView.Manager) return@LaunchedEffect
+        val targetIndex = rosterLazyListIndexForStudent(
+            sections = rosterSections,
+            studentId = targetId,
+            hasMovementBanner = rosterMovementLabel != null,
+        ) ?: return@LaunchedEffect
+        mainListState.animateScrollToItem(targetIndex)
+        delay(2400)
+        if (highlightedRosterStudentId == targetId) {
+            highlightedRosterStudentId = null
+        }
+        if (rosterScrollTargetId == targetId) {
+            rosterScrollTargetId = null
+        }
+    }
+
     LaunchedEffect(uiState.session?.accessToken) {
         if (uiState.session != null) {
             viewModel.loadFinance()
@@ -699,6 +720,23 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                 }
             timelineLoadingId = null
         }
+    }
+
+    val jumpToRosterStudent: (Student) -> Unit = { student ->
+        selectedView = AppView.Manager
+        showDetailSheet = false
+        showEditorSheet = false
+        viewModel.setSearchQuery("")
+        viewModel.setSlotFilter("all")
+        viewModel.setRosterStatusFilter("all")
+        viewModel.setRosterJerseyFilter("all")
+        viewModel.setRosterTypeFilter("all")
+        viewModel.setRosterFeePaidFilter("all")
+        viewModel.setRosterFeeDueFilter("all")
+        rosterMovementMonthKey = null
+        rosterMovementType = null
+        highlightedRosterStudentId = student.id
+        rosterScrollTargetId = student.id
     }
 
     val colorScheme = if (uiState.darkModeEnabled) AcademyDarkScheme else AcademyLightScheme
@@ -788,10 +826,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         CriticalAlertSection(
                             alertKids = alertKids,
                             payments = uiState.payments,
-                            onStudentClick = { student ->
-                                selectedStudent = student
-                                showDetailSheet = true
-                            },
+                            onStudentClick = jumpToRosterStudent,
                         )
                     }
 
@@ -799,10 +834,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         AlertSection(
                             alertKids = alertKids,
                             payments = uiState.payments,
-                            onStudentClick = { student ->
-                                selectedStudent = student
-                                showDetailSheet = true
-                            },
+                            onStudentClick = jumpToRosterStudent,
                         )
                     }
 
@@ -909,6 +941,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                     student = student,
                                     payments = uiState.payments,
                                     isManager = viewModel.canEdit(),
+                                    highlighted = highlightedRosterStudentId == student.id,
                                     onOpen = {
                                         selectedStudent = student
                                         showDetailSheet = true
@@ -3683,11 +3716,14 @@ private fun RosterRow(
     student: Student,
     payments: List<StudentPayment>,
     isManager: Boolean,
+    highlighted: Boolean = false,
     onOpen: () -> Unit,
     onEdit: () -> Unit,
 ) {
     val needsAttention = student.isFeesPending() || student.isRenewalPending(payments)
     val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val highlightedContainer = if (isDarkTheme) Color(0xFF18314F) else Color(0xFFEAF4FF)
+    val highlightedBorder = if (isDarkTheme) Color(0xFFFFD86B) else BrandBlue
     val slotTone = themedBadgeTone(Color(0xFFEAF2FF), BrandBlueDeep, DarkInfoContainer, DarkInfoText)
     val activeTone = themedBadgeTone(Color(0xFFEAF8F2), BrandGreen, DarkSuccessContainer, DarkSuccessText)
     val discontinuedTone = themedBadgeTone(Color(0xFFEAEFF6), Color(0xFF5D7399), DarkMutedContainer, DarkMutedText)
@@ -3697,12 +3733,23 @@ private fun RosterRow(
     val renewalPendingTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
 
     Card(
-        modifier = Modifier.clickable(onClick = onOpen),
+        modifier = Modifier
+            .animateContentSize()
+            .clickable(onClick = onOpen),
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (needsAttention && isDarkTheme) DarkAttentionCard else if (needsAttention) Color(0xFFFFFAEC) else MaterialTheme.colorScheme.surface
+            containerColor = when {
+                highlighted -> highlightedContainer
+                needsAttention && isDarkTheme -> DarkAttentionCard
+                needsAttention -> Color(0xFFFFFAEC)
+                else -> MaterialTheme.colorScheme.surface
+            }
         ),
-        border = if (needsAttention) BorderStroke(1.dp, if (isDarkTheme) DarkAttentionBorder else Color(0x33F4BE2E)) else null,
+        border = when {
+            highlighted -> BorderStroke(2.dp, highlightedBorder)
+            needsAttention -> BorderStroke(1.dp, if (isDarkTheme) DarkAttentionBorder else Color(0x33F4BE2E))
+            else -> null
+        },
     ) {
         Row(
             modifier = Modifier
@@ -4621,6 +4668,25 @@ private data class RosterSection(
     val title: String,
     val students: List<Student>,
 )
+
+private fun rosterLazyListIndexForStudent(
+    sections: List<RosterSection>,
+    studentId: String,
+    hasMovementBanner: Boolean,
+): Int? {
+    var index = 8
+    if (hasMovementBanner) index += 1
+
+    sections.forEach { section ->
+        index += 1
+        section.students.forEach { student ->
+            if (student.id == studentId) return index
+            index += 1
+        }
+    }
+
+    return null
+}
 
 private fun buildRosterSections(students: List<Student>): List<RosterSection> {
     val slotOrder = listOf("6AM", "7:30AM", "4PM", "5:30PM", "7PM")
