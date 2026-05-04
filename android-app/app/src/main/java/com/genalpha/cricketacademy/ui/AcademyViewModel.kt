@@ -137,12 +137,13 @@ class AcademyViewModel(
             lastEmail = sessionPrefs.loadSavedEmail(),
             lastPassword = sessionPrefs.loadSavedPassword(),
             darkModeEnabled = sessionPrefs.loadDarkModeEnabled(),
-            session = sessionPrefs.loadSession(),
+            session = null,
         )
     )
     val uiState: StateFlow<AcademyUiState> = _uiState.asStateFlow()
 
     init {
+        sessionPrefs.clearSession()
         viewModelScope.launch {
             refreshSessionIfPossible()
             loadKids()
@@ -259,7 +260,6 @@ class AcademyViewModel(
         return try {
             val session = repository.signIn(email.trim(), password)
             sessionPrefs.saveRememberedCredentials(email.trim(), password)
-            sessionPrefs.saveSession(session)
             repository.startStudentRealtime(realtimeListener, session)
             _uiState.update {
                 it.copy(
@@ -778,33 +778,7 @@ class AcademyViewModel(
     }
 
     private suspend fun refreshSessionIfPossible() {
-        val session = _uiState.value.session
-        val savedEmail = _uiState.value.lastEmail
-        val savedPassword = _uiState.value.lastPassword
-
-        try {
-            when {
-                session != null && session.refreshToken.isNotBlank() -> {
-                    val refreshed = repository.refreshSession(session.refreshToken)
-                    sessionPrefs.saveSession(refreshed)
-                    repository.startStudentRealtime(realtimeListener, refreshed)
-                    _uiState.update { it.copy(session = refreshed) }
-                }
-                session == null && savedEmail.isNotBlank() && savedPassword.isNotBlank() -> {
-                    val relogged = repository.signIn(savedEmail, savedPassword)
-                    sessionPrefs.saveSession(relogged)
-                    repository.startStudentRealtime(realtimeListener, relogged)
-                    _uiState.update { it.copy(session = relogged) }
-                }
-            }
-        } catch (_: Exception) {
-            if (session != null) {
-                expireSession()
-            }
-        } finally {
-            // Keep realtime active for public/player flows too, even without manager auth.
-            repository.startStudentRealtime(realtimeListener, _uiState.value.session)
-        }
+        repository.startStudentRealtime(realtimeListener, _uiState.value.session)
     }
 
     private fun startAttendanceLiveSync() {
@@ -892,7 +866,6 @@ class AcademyViewModel(
         if (current.refreshToken.isNotBlank()) {
             try {
                 val refreshed = repository.refreshSession(current.refreshToken)
-                sessionPrefs.saveSession(refreshed)
                 _uiState.update { it.copy(session = refreshed) }
                 return refreshed
             } catch (_: Exception) {
@@ -904,7 +877,6 @@ class AcademyViewModel(
         if (savedEmail.isNotBlank() && savedPassword.isNotBlank()) {
             try {
                 val relogged = repository.signIn(savedEmail, savedPassword)
-                sessionPrefs.saveSession(relogged)
                 _uiState.update { it.copy(session = relogged) }
                 return relogged
             } catch (_: Exception) {
