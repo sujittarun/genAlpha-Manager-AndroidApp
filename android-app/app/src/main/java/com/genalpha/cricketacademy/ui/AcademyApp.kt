@@ -334,8 +334,8 @@ private fun PublicViewHeader(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -346,16 +346,16 @@ private fun PublicViewHeader(
                     Text(
                         text = title,
                         color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 24.sp,
-                        lineHeight = 27.sp,
+                        fontSize = 22.sp,
+                        lineHeight = 25.sp,
                         fontWeight = FontWeight.ExtraBold,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
                 BrandPosterCard(
-                    modifier = Modifier.widthIn(min = 68.dp, max = 76.dp),
-                    imageModifier = Modifier.height(92.dp),
+                    modifier = Modifier.widthIn(min = 58.dp, max = 66.dp),
+                    imageModifier = Modifier.height(76.dp),
                 )
             }
             Text(
@@ -363,6 +363,8 @@ private fun PublicViewHeader(
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -382,8 +384,8 @@ private fun PlayerViewHeader(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -403,8 +405,8 @@ private fun PlayerViewHeader(
                     Text(
                         text = "Today's attendance",
                         color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 28.sp,
-                        lineHeight = 30.sp,
+                        fontSize = 24.sp,
+                        lineHeight = 27.sp,
                         fontWeight = FontWeight.ExtraBold,
                     )
                 }
@@ -414,7 +416,7 @@ private fun PlayerViewHeader(
                 ) {
                     FilledTonalIconButton(
                         onClick = onRefresh,
-                        modifier = Modifier.size(42.dp),
+                        modifier = Modifier.size(38.dp),
                     ) {
                         if (isRefreshing) {
                             CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -423,8 +425,8 @@ private fun PlayerViewHeader(
                         }
                     }
                     BrandPosterCard(
-                        modifier = Modifier.widthIn(min = 78.dp, max = 86.dp),
-                        imageModifier = Modifier.height(92.dp),
+                        modifier = Modifier.widthIn(min = 62.dp, max = 70.dp),
+                        imageModifier = Modifier.height(76.dp),
                     )
                 }
             }
@@ -433,6 +435,8 @@ private fun PlayerViewHeader(
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 CompactStatCard(
@@ -973,7 +977,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         item {
                             PublicViewHeader(
                                 title = "Parent Admission",
-                                subtitle = "Share this view with parents for first-time admission. Staff-only roster data stays hidden until a manager opens the staff dashboard.",
+                                subtitle = "Open the online form for first-time player admission.",
                             )
                         }
                         item {
@@ -989,7 +993,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         }
                         item {
                             EmptyPanel(
-                                message = "Open a fresh form for manual entry, or attach a scan/photo so parents can keep the document alongside the form while entering details."
+                                message = "Use scan/import only when you have a physical form photo."
                             )
                         }
                     } else {
@@ -1933,36 +1937,39 @@ private fun FinancePanel(
     }
 
     if (showExpenseForm) {
+        val dialogDensity = LocalDensity.current
         Dialog(onDismissRequest = { if (!isAddingExpense) showExpenseForm = false }) {
-            FinanceAddExpenseCard(
-                expenseType = expenseType,
-                amount = expenseAmount,
-                paidBy = expensePaidBy,
-                comment = expenseComment,
-                expenseDate = expenseDate,
-                isSaving = isAddingExpense,
-                message = expenseMessage,
-                onDismiss = { if (!isAddingExpense) showExpenseForm = false },
-                onTypeChange = { expenseType = it },
-                onAmountChange = { expenseAmount = it },
-                onPaidByChange = { expensePaidBy = it },
-                onCommentChange = { expenseComment = it },
-                onDateChange = { expenseDate = it },
-                onSubmit = {
-                    scope.launch {
-                        isAddingExpense = true
-                        val result = onAddExpense(expenseType, expenseAmount, expensePaidBy, expenseComment, expenseDate)
-                        isAddingExpense = false
-                        expenseMessage = result.message
-                        if (result.success) {
-                            expenseAmount = ""
-                            expenseComment = ""
-                            expenseDate = todayIsoDate()
-                            showExpenseForm = false
+            CompositionLocalProvider(LocalDensity provides dialogDensity) {
+                FinanceAddExpenseCard(
+                    expenseType = expenseType,
+                    amount = expenseAmount,
+                    paidBy = expensePaidBy,
+                    comment = expenseComment,
+                    expenseDate = expenseDate,
+                    isSaving = isAddingExpense,
+                    message = expenseMessage,
+                    onDismiss = { if (!isAddingExpense) showExpenseForm = false },
+                    onTypeChange = { expenseType = it },
+                    onAmountChange = { expenseAmount = it },
+                    onPaidByChange = { expensePaidBy = it },
+                    onCommentChange = { expenseComment = it },
+                    onDateChange = { expenseDate = it },
+                    onSubmit = {
+                        scope.launch {
+                            isAddingExpense = true
+                            val result = onAddExpense(expenseType, expenseAmount, expensePaidBy, expenseComment, expenseDate)
+                            isAddingExpense = false
+                            expenseMessage = result.message
+                            if (result.success) {
+                                expenseAmount = ""
+                                expenseComment = ""
+                                expenseDate = todayIsoDate()
+                                showExpenseForm = false
+                            }
                         }
-                    }
-                },
-            )
+                    },
+                )
+            }
         }
     }
 
@@ -2522,54 +2529,57 @@ private fun FinanceMonthDetailDialog(
             "${ym.month.name.lowercase(Locale.US).replaceFirstChar { it.titlecase(Locale.US) }} ${ym.year}"
         }.getOrElse { monthKey }
     }
+    val dialogDensity = LocalDensity.current
 
     Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(
-                modifier = Modifier
-                    .padding(16.dp)
-                    .heightIn(max = 620.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+        CompositionLocalProvider(LocalDensity provides dialogDensity) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
+                Column(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .heightIn(max = 620.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    Column {
-                        Text(title, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
-                        Text(
-                            "Revenue ${formatCurrency(revenueTotal)} • Expense ${formatCurrency(expenseTotal)} • Net ${formatCurrency(net)}",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column {
+                            Text(title, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+                            Text(
+                                "Revenue ${formatCurrency(revenueTotal)} • Expense ${formatCurrency(expenseTotal)} • Net ${formatCurrency(net)}",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                            )
+                        }
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Outlined.Close, contentDescription = "Close")
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                        FinanceMonthDetailList(
+                            title = "Revenue",
+                            emptyText = "No revenue",
+                            rows = revenueRows.map {
+                                Triple(it.studentName, "${it.type} • ${displayDate(it.date)}", formatCurrency(it.amount))
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
+                        FinanceMonthDetailList(
+                            title = "Expenses",
+                            emptyText = "No expenses",
+                            rows = expenseRows.map {
+                                Triple(it.expenseType, "${it.paidBy} • ${displayDate(it.expenseDate)}", formatCurrency(it.amount))
+                            },
+                            modifier = Modifier.weight(1f),
                         )
                     }
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Outlined.Close, contentDescription = "Close")
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                    FinanceMonthDetailList(
-                        title = "Revenue",
-                        emptyText = "No revenue",
-                        rows = revenueRows.map {
-                            Triple(it.studentName, "${it.type} • ${displayDate(it.date)}", formatCurrency(it.amount))
-                        },
-                        modifier = Modifier.weight(1f),
-                    )
-                    FinanceMonthDetailList(
-                        title = "Expenses",
-                        emptyText = "No expenses",
-                        rows = expenseRows.map {
-                            Triple(it.expenseType, "${it.paidBy} • ${displayDate(it.expenseDate)}", formatCurrency(it.amount))
-                        },
-                        modifier = Modifier.weight(1f),
-                    )
                 }
             }
         }
@@ -2707,8 +2717,8 @@ private fun ScanSourceSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+                .padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -2763,6 +2773,7 @@ private fun FormDialog(
     expanded: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    val dialogDensity = LocalDensity.current
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
@@ -2770,39 +2781,41 @@ private fun FormDialog(
             decorFitsSystemWindows = false,
         ),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.32f))
-                .imePadding()
-                .navigationBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 12.dp),
-            contentAlignment = Alignment.BottomCenter,
-        ) {
-            Surface(
+        CompositionLocalProvider(LocalDensity provides dialogDensity) {
+            Box(
                 modifier = Modifier
-                    .then(
-                        if (expanded) {
-                            Modifier.fillMaxSize()
-                        } else {
-                            Modifier
-                                .fillMaxWidth()
-                                .widthIn(max = 560.dp)
-                        }
-                    ),
-                shape = RoundedCornerShape(28.dp),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 6.dp,
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.32f))
+                    .imePadding()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                contentAlignment = Alignment.BottomCenter,
             ) {
-                Box(
+                Surface(
                     modifier = Modifier
-                        .fillMaxWidth()
                         .then(
-                            if (expanded) Modifier.fillMaxSize()
-                            else Modifier.heightIn(max = 720.dp)
-                        )
+                            if (expanded) {
+                                Modifier.fillMaxSize()
+                            } else {
+                                Modifier
+                                    .fillMaxWidth()
+                                    .widthIn(max = 560.dp)
+                            }
+                        ),
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 6.dp,
                 ) {
-                    content()
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(
+                                if (expanded) Modifier.fillMaxSize()
+                                else Modifier.heightIn(max = 720.dp)
+                            )
+                    ) {
+                        content()
+                    }
                 }
             }
         }
@@ -3440,7 +3453,7 @@ private fun PlayerAttendanceToolbar(
                 FilterChip(
                     selected = selectedSlot.isBlank(),
                     onClick = { onSlotSelected("all") },
-                    label = { Text("All (${activePlayers.size})") },
+                    label = { Text("All (${activePlayers.size})", fontSize = 12.sp, maxLines = 1) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = BrandBlue,
                         selectedLabelColor = Color.White,
@@ -3451,7 +3464,7 @@ private fun PlayerAttendanceToolbar(
                     FilterChip(
                         selected = selectedSlot == slot,
                         onClick = { onSlotSelected(slot) },
-                        label = { Text("$slot ($count)") },
+                        label = { Text("$slot ($count)", fontSize = 12.sp, maxLines = 1) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = BrandBlue,
                             selectedLabelColor = Color.White,
@@ -3463,7 +3476,7 @@ private fun PlayerAttendanceToolbar(
                     FilterChip(
                         selected = selectedSlot == "not-set",
                         onClick = { onSlotSelected("not-set") },
-                        label = { Text("Not set ($notSetCount)") },
+                        label = { Text("Not set ($notSetCount)", fontSize = 12.sp, maxLines = 1) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = BrandBlue,
                             selectedLabelColor = Color.White,
@@ -3711,6 +3724,7 @@ private fun RosterSectionHeader(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RosterRow(
     student: Student,
@@ -3751,15 +3765,14 @@ private fun RosterRow(
             else -> null
         },
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Column(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
@@ -3813,8 +3826,9 @@ private fun RosterRow(
                 }
             }
 
-            Column(
-                horizontalAlignment = Alignment.End,
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Badge(
@@ -3836,7 +3850,10 @@ private fun RosterRow(
                     },
                 )
                 if (isManager) {
-                    TextButton(onClick = onEdit) {
+                    TextButton(
+                        onClick = onEdit,
+                        modifier = Modifier.heightIn(min = 34.dp),
+                    ) {
                         Text("Edit")
                     }
                 } else {
@@ -4408,96 +4425,99 @@ private fun AttendanceHistoryDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.28f))
-                .padding(horizontal = 20.dp, vertical = 40.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Surface(
+        val dialogDensity = LocalDensity.current
+        CompositionLocalProvider(LocalDensity provides dialogDensity) {
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = 760.dp),
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 8.dp,
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.28f))
+                    .padding(horizontal = 20.dp, vertical = 40.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                Column(
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 18.dp, vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                        .widthIn(max = 760.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 8.dp,
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 18.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("Attendance", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrandBlue)
-                            Text(
-                                text = studentName,
-                                fontSize = 22.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        IconButton(onClick = onDismiss, modifier = Modifier.size(34.dp)) {
-                            Icon(Icons.Outlined.Close, contentDescription = "Close")
-                        }
-                    }
-
-                    when {
-                        dates == null -> {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                                Text("Loading attendance days", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("Attendance", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrandBlue)
+                                Text(
+                                    text = studentName,
+                                    fontSize = 22.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            IconButton(onClick = onDismiss, modifier = Modifier.size(34.dp)) {
+                                Icon(Icons.Outlined.Close, contentDescription = "Close")
                             }
                         }
-                        errorMessage != null -> {
-                            Text(errorMessage.orEmpty(), color = BrandRed, fontSize = 13.sp)
-                        }
-                        else -> {
-                            val attendanceDates = dates.orEmpty()
-                            val months = remember(attendanceDates) { buildAttendanceMonths(attendanceDates) }
-                            val presentSet = remember(attendanceDates) { attendanceDates.toSet() }
-                            Surface(
-                                shape = RoundedCornerShape(20.dp),
-                                color = MaterialTheme.colorScheme.background.copy(alpha = 0.84f),
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+
+                        when {
+                            dates == null -> {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Text(
-                                        text = if (attendanceDates.isEmpty()) {
-                                            "No attendance marked yet."
-                                        } else {
-                                            "${attendanceDates.size} training day${if (attendanceDates.size == 1) "" else "s"} marked"
-                                        },
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-                                        fontSize = 12.sp,
-                                    )
-                                    Row(
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                    Text("Loading attendance days", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
+                                }
+                            }
+                            errorMessage != null -> {
+                                Text(errorMessage.orEmpty(), color = BrandRed, fontSize = 13.sp)
+                            }
+                            else -> {
+                                val attendanceDates = dates.orEmpty()
+                                val months = remember(attendanceDates) { buildAttendanceMonths(attendanceDates) }
+                                val presentSet = remember(attendanceDates) { attendanceDates.toSet() }
+                                Surface(
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = MaterialTheme.colorScheme.background.copy(alpha = 0.84f),
+                                ) {
+                                    Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .horizontalScroll(rememberScrollState()),
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(10.dp),
                                     ) {
-                                        months.forEach { month ->
-                                            AttendanceMonthCard(
-                                                month = month,
-                                                attendanceDates = presentSet,
-                                            )
+                                        Text(
+                                            text = if (attendanceDates.isEmpty()) {
+                                                "No attendance marked yet."
+                                            } else {
+                                                "${attendanceDates.size} training day${if (attendanceDates.size == 1) "" else "s"} marked"
+                                            },
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                                            fontSize = 12.sp,
+                                        )
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .horizontalScroll(rememberScrollState()),
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        ) {
+                                            months.forEach { month ->
+                                                AttendanceMonthCard(
+                                                    month = month,
+                                                    attendanceDates = presentSet,
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -4886,16 +4906,25 @@ private fun ManagerPinSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Manager View", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrandBlue)
-                IconButton(onClick = onDismiss, modifier = Modifier.size(34.dp)) {
+                Text("Staff PIN", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrandBlue)
+                IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
                     Icon(Icons.Outlined.Close, contentDescription = "Close")
                 }
             }
-            Text("Enter 6-digit PIN", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
             Text(
-                "This lock keeps dashboard stats and player management away from parents and player attendance mode.",
+                "Enter 6-digit PIN",
+                fontSize = 22.sp,
+                lineHeight = 25.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                "Unlock staff-only dashboard and player management.",
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-                lineHeight = 20.sp,
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
 
             Box(
@@ -4925,8 +4954,8 @@ private fun ManagerPinSheet(
                         .clickable {
                             focusRequester.requestFocus()
                             keyboardController?.show()
-                        },
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    },
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
                     repeat(6) { index ->
                         val char = pin.getOrNull(index)?.toString().orEmpty()
@@ -4948,13 +4977,13 @@ private fun ManagerPinSheet(
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(60.dp),
+                                    .height(48.dp),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
                                     text = char,
                                     color = MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 24.sp,
+                                    fontSize = 20.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                 )
                             }
@@ -4962,11 +4991,13 @@ private fun ManagerPinSheet(
                     }
                 }
             }
-            Text(
-                text = if (isChecking) "Checking PIN..." else "Enter all 6 digits to open Manager View",
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
-                fontSize = 12.sp,
-            )
+            if (isChecking) {
+                Text(
+                    text = "Checking PIN...",
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+                    fontSize = 12.sp,
+                )
+            }
             if (inlineMessage.isNotBlank()) {
                 Text(inlineMessage, color = BrandRed, fontSize = 13.sp)
             }
