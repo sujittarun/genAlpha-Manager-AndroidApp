@@ -117,15 +117,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.focus.onFocusEvent
@@ -133,7 +130,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -4872,13 +4868,7 @@ private fun ManagerPinSheet(
     var pin by rememberSaveable { mutableStateOf("") }
     var inlineMessage by rememberSaveable { mutableStateOf("") }
     var isChecking by rememberSaveable { mutableStateOf(false) }
-    val focusRequester = remember { FocusRequester() }
-    val keyboardController = LocalSoftwareKeyboardController.current
-
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
-        keyboardController?.show()
-    }
+    val dialogDensity = LocalDensity.current
 
     LaunchedEffect(pin, isChecking) {
         if (pin.length == 6 && !isChecking) {
@@ -4887,119 +4877,154 @@ private fun ManagerPinSheet(
             if (!result.success) {
                 inlineMessage = result.message
                 pin = ""
-                focusRequester.requestFocus()
-                keyboardController?.show()
             }
             isChecking = false
         }
     }
 
-    FormDialog(onDismiss = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Staff PIN", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrandBlue)
-                IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Outlined.Close, contentDescription = "Close")
-                }
-            }
-            Text(
-                "Enter 6-digit PIN",
-                fontSize = 22.sp,
-                lineHeight = 25.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                "Unlock staff-only dashboard and player management.",
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-                fontSize = 12.sp,
-                lineHeight = 17.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        CompositionLocalProvider(LocalDensity provides dialogDensity) {
             Box(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.32f))
+                    .navigationBarsPadding()
+                    .padding(horizontal = 18.dp, vertical = 24.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                BasicTextField(
-                    value = pin,
-                    onValueChange = {
-                        pin = it.filter(Char::isDigit).take(6)
-                        inlineMessage = ""
-                    },
-                    modifier = Modifier
-                        .size(1.dp)
-                        .focusRequester(focusRequester),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions.Default.copy(
-                        keyboardType = KeyboardType.NumberPassword,
-                        imeAction = ImeAction.Done,
-                    ),
-                    cursorBrush = SolidColor(Color.Transparent),
-                    decorationBox = {},
-                )
-
-                Row(
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable {
-                            focusRequester.requestFocus()
-                            keyboardController?.show()
-                    },
-                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                        .widthIn(max = 520.dp),
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 6.dp,
                 ) {
-                    repeat(6) { index ->
-                        val char = pin.getOrNull(index)?.toString().orEmpty()
-                        val isActiveSlot = index == pin.length.coerceAtMost(5)
-                        Surface(
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(18.dp),
-                            color = MaterialTheme.colorScheme.surface,
-                            border = BorderStroke(
-                                width = if (isActiveSlot || char.isNotEmpty()) 1.5.dp else 1.dp,
-                                color = when {
-                                    char.isNotEmpty() -> BrandBlue.copy(alpha = 0.75f)
-                                    isActiveSlot -> BrandBlue.copy(alpha = 0.42f)
-                                    else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
-                                }
-                            ),
-                            tonalElevation = 0.dp,
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 18.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(48.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = char,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 20.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                )
+                            Text("Staff PIN", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrandBlue)
+                            IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Outlined.Close, contentDescription = "Close")
                             }
+                        }
+                        Text(
+                            "Enter 6-digit PIN",
+                            fontSize = 22.sp,
+                            lineHeight = 25.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            "Unlock staff-only dashboard and player management.",
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(7.dp),
+                        ) {
+                            repeat(6) { index ->
+                                val char = pin.getOrNull(index)?.toString().orEmpty()
+                                val isActiveSlot = index == pin.length.coerceAtMost(5)
+                                Surface(
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(18.dp),
+                                    color = MaterialTheme.colorScheme.surface,
+                                    border = BorderStroke(
+                                        width = if (isActiveSlot || char.isNotEmpty()) 1.5.dp else 1.dp,
+                                        color = when {
+                                            char.isNotEmpty() -> BrandBlue.copy(alpha = 0.75f)
+                                            isActiveSlot -> BrandBlue.copy(alpha = 0.42f)
+                                            else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+                                        }
+                                    ),
+                                    tonalElevation = 0.dp,
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(46.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            text = char,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            fontSize = 20.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(
+                                listOf("1", "2", "3"),
+                                listOf("4", "5", "6"),
+                                listOf("7", "8", "9"),
+                                listOf("Clear", "0", "Del"),
+                            ).forEach { row ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    row.forEach { key ->
+                                        OutlinedButton(
+                                            enabled = !isChecking,
+                                            onClick = {
+                                                inlineMessage = ""
+                                                pin = when (key) {
+                                                    "Clear" -> ""
+                                                    "Del" -> pin.dropLast(1)
+                                                    else -> (pin + key).take(6)
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(44.dp),
+                                            shape = RoundedCornerShape(16.dp),
+                                        ) {
+                                            Text(
+                                                text = key,
+                                                fontSize = if (key.length == 1) 18.sp else 12.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                maxLines = 1,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (isChecking) {
+                            Text(
+                                text = "Checking PIN...",
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+                                fontSize = 12.sp,
+                            )
+                        }
+                        if (inlineMessage.isNotBlank()) {
+                            Text(inlineMessage, color = BrandRed, fontSize = 13.sp)
                         }
                     }
                 }
-            }
-            if (isChecking) {
-                Text(
-                    text = "Checking PIN...",
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
-                    fontSize = 12.sp,
-                )
-            }
-            if (inlineMessage.isNotBlank()) {
-                Text(inlineMessage, color = BrandRed, fontSize = 13.sp)
             }
         }
     }
