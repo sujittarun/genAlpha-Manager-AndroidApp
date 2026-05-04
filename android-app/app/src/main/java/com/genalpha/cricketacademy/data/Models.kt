@@ -22,6 +22,7 @@ data class Student(
     val paymentUpiId: String,
     val paymentReference: String,
     val comments: String,
+    val filledBy: String,
     val fatherGuardianName: String,
     val parentContactNo: String,
     val alternateContactNo: String,
@@ -58,6 +59,7 @@ data class StudentDraft(
 
 data class AdmissionDraft(
     val applicantName: String = "",
+    val filledBy: String = "Parent / Guardian",
     val nationality: String = "Indian",
     val dateOfBirth: String = "",
     val gender: String = "",
@@ -201,6 +203,7 @@ data class StudentDto(
     @Json(name = "payment_upi_id") val paymentUpiId: String? = "",
     @Json(name = "payment_reference") val paymentReference: String? = "",
     val comments: String? = "",
+    @Json(name = "filled_by") val filledBy: String? = "",
     @Json(name = "father_guardian_name") val fatherGuardianName: String? = "",
     @Json(name = "parent_contact_no") val parentContactNo: String? = "",
     @Json(name = "alternate_contact_no") val alternateContactNo: String? = "",
@@ -229,6 +232,7 @@ fun StudentDto.toDomain(): Student = Student(
     paymentUpiId = paymentUpiId.orEmpty(),
     paymentReference = paymentReference.orEmpty(),
     comments = comments.orEmpty(),
+    filledBy = filledBy.orEmpty(),
     fatherGuardianName = fatherGuardianName.orEmpty(),
     parentContactNo = parentContactNo.orEmpty(),
     alternateContactNo = alternateContactNo.orEmpty(),

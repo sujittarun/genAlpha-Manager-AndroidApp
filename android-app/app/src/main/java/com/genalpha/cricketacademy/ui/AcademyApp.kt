@@ -229,6 +229,7 @@ private val AdmissionFeePlanOptions = listOf(
     SlotOption("special", "Special training"),
     SlotOption("custom", "Custom amount"),
 )
+private val AdmissionFilledByOptions = listOf("Parent / Guardian", "Coach", "Manager")
 
 private fun admissionPlanBase(plan: String): Double = when (plan) {
     "quarterly" -> 10000.0
@@ -4018,6 +4019,13 @@ private fun PlayerDetailSheet(
                         student.fatherGuardianName.ifBlank { "Parent name not saved" },
                         color = MaterialTheme.colorScheme.onSurface,
                     )
+                    if (student.filledBy.isNotBlank()) {
+                        Text(
+                            "Form filled by: ${student.filledBy}",
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
+                            fontSize = 12.sp,
+                        )
+                    }
                     if (student.parentContactNo.isNotBlank()) {
                         Button(
                             onClick = {
@@ -5191,6 +5199,7 @@ private fun AdmissionFormSheet(
 ) {
     val initialDobParts = remember(initialDraft?.dateOfBirth) { splitAdmissionDateParts(initialDraft?.dateOfBirth.orEmpty()) }
     var applicantName by rememberSaveable { mutableStateOf(initialDraft?.applicantName.orEmpty()) }
+    var filledBy by rememberSaveable { mutableStateOf(initialDraft?.filledBy?.ifBlank { "Parent / Guardian" } ?: "Parent / Guardian") }
     var nationality by rememberSaveable { mutableStateOf(initialDraft?.nationality?.ifBlank { "Indian" } ?: "Indian") }
     var birthDay by rememberSaveable { mutableStateOf(initialDobParts.first) }
     var birthMonth by rememberSaveable { mutableStateOf(initialDobParts.second) }
@@ -5363,6 +5372,15 @@ private fun AdmissionFormSheet(
                         .then(rememberBringIntoViewOnFocusModifier()),
                     label = "Applicant name and initial",
                     singleLine = true,
+                )
+                AdmissionDropdownField(
+                    label = "Form filled by",
+                    value = filledBy,
+                    options = AdmissionFilledByOptions,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(rememberBringIntoViewOnFocusModifier()),
+                    onSelect = { filledBy = it },
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     AdmissionDropdownField(
@@ -5876,6 +5894,7 @@ private fun AdmissionFormSheet(
                             inlineMessage = ""
                             val draft = AdmissionDraft(
                                 applicantName = applicantName,
+                                filledBy = filledBy,
                                 nationality = nationality,
                                 dateOfBirth = dateOfBirth,
                                 gender = gender,

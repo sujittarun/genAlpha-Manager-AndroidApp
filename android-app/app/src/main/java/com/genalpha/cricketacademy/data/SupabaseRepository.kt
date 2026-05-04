@@ -323,6 +323,7 @@ class SupabaseRepository(
 
         val body = JSONObject()
             .put("p_applicant_name", draft.applicantName.trim())
+            .put("p_filled_by", draft.filledBy.trim().ifBlank { "Parent / Guardian" })
             .put("p_nationality", draft.nationality.trim())
             .put("p_date_of_birth", draft.dateOfBirth)
             .put("p_age", age)
@@ -375,10 +376,8 @@ class SupabaseRepository(
             )
             if (!isSignatureMismatch) throw error
 
-            // Backward compatibility for DBs that still have the older RPC signature.
-            body.remove("p_payment_method")
-            body.remove("p_payment_upi_id")
-            body.remove("p_payment_reference")
+            // Backward compatibility for DBs that still have the signature before filled_by.
+            body.remove("p_filled_by")
             try {
                 executeSubmission(body)
             } catch (legacyError: SupabaseException) {
@@ -388,9 +387,24 @@ class SupabaseRepository(
                 )
                 if (!legacyMismatch) throw legacyError
 
+                // Backward compatibility for DBs that still have the older RPC signature before payment args.
+                body.remove("p_payment_method")
+                body.remove("p_payment_upi_id")
+                body.remove("p_payment_reference")
+                try {
+                    return@withContext executeSubmission(body)
+                } catch (olderError: SupabaseException) {
+                    val olderMismatch = olderError.message.contains(
+                        "Could not find the function public.submit_admission_form",
+                        ignoreCase = true
+                    )
+                    if (!olderMismatch) throw olderError
+                }
+
                 // Final fallback: direct insert into admissions table when RPC signatures are out of sync.
                 val insertBody = JSONObject()
                     .put("applicant_name", draft.applicantName.trim())
+                    .put("filled_by", draft.filledBy.trim().ifBlank { "Parent / Guardian" })
                     .put("nationality", draft.nationality.trim())
                     .put("date_of_birth", draft.dateOfBirth)
                     .put("age", age)
@@ -484,6 +498,7 @@ class SupabaseRepository(
 
             AdmissionDraft(
                 applicantName = fields.optSafeString("applicantName"),
+                filledBy = "Parent / Guardian",
                 nationality = fields.optSafeString("nationality").ifBlank { "Indian" },
                 dateOfBirth = fields.optSafeString("dateOfBirth"),
                 gender = fields.optSafeString("gender"),
@@ -1130,6 +1145,7 @@ class SupabaseRepository(
             paymentUpiId = optSafeString("payment_upi_id"),
             paymentReference = optSafeString("payment_reference"),
             comments = optSafeString("comments"),
+            filledBy = optSafeString("filled_by"),
             fatherGuardianName = optSafeString("father_guardian_name"),
             parentContactNo = optSafeString("parent_contact_no"),
             alternateContactNo = optSafeString("alternate_contact_no"),

@@ -956,6 +956,7 @@ class AcademyViewModel(
     private fun validateAdmissionDraft(draft: AdmissionDraft): String? {
         if (
             draft.applicantName.isBlank() ||
+            draft.filledBy.isBlank() ||
             draft.dateOfBirth.isBlank() ||
             draft.gender.isBlank() ||
             draft.fatherGuardianName.isBlank() ||
