@@ -147,6 +147,30 @@ class SupabaseRepository(
         messagePreview: String,
         settings: ReminderSettings,
     ) = withContext(Dispatchers.IO) {
+        val functionResult = runCatching {
+            val functionBody = JSONObject()
+                .put("action", "send_reminder")
+                .put("studentId", student.id)
+                .put("dueDate", dueDate)
+                .put("reminderType", reminderType)
+                .toString()
+                .toRequestBody(JSON_MEDIA_TYPE)
+            val request = baseRequest("$baseUrl/functions/v1/whatsapp-reminder")
+                .header("Authorization", "Bearer ${session.accessToken}")
+                .post(functionBody)
+                .build()
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                if (response.isSuccessful) return@withContext
+                if (response.code != 404) {
+                    throw SupabaseException(response.code, parseError(responseBody))
+                }
+            }
+        }
+        functionResult.getOrElse { error ->
+            if (error is SupabaseException) throw error
+        }
+
         val dryRun = settings.dryRunMode || !settings.whatsappRemindersEnabled
         val eventBody = JSONObject()
             .put("student_id", student.id)
