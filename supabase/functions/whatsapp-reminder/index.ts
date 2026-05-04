@@ -15,8 +15,10 @@ const DEFAULT_SETTINGS: ReminderSettings = {
   whatsappRemindersEnabled: false,
   paymentLinksEnabled: false,
   dryRunMode: true,
-  managerPhone: "9059962499",
+  managerPhone: "8143960950",
 };
+const ACADEMY_UPI_ID = "9059962498@ybl";
+const ACADEMY_PAYEE_NAME = "Gen Alpha Cricket Academy";
 
 const PLAN_OPTIONS = ["monthly", "quarterly", "halfyearly", "need_help"];
 const PLAN_LABELS: Record<string, string> = {
@@ -67,6 +69,18 @@ function normalizePhone(value: string): string {
 
 function localIsoDate(date = new Date()): string {
   return date.toISOString().slice(0, 10);
+}
+
+function buildUpiLink(student: any, plan: string, amount: number): string {
+  const note = `Gen Alpha ${PLAN_LABELS[plan]} fee - ${student.name || "Player"}`;
+  const params = new URLSearchParams({
+    pa: ACADEMY_UPI_ID,
+    pn: ACADEMY_PAYEE_NAME,
+    am: String(amount),
+    cu: "INR",
+    tn: note,
+  });
+  return `upi://pay?${params.toString()}`;
 }
 
 function daysSince(dateValue: string): number {
@@ -120,14 +134,14 @@ async function assertAuthenticated(request: Request) {
 
 async function loadSettings(): Promise<ReminderSettings> {
   const rows = await rest(
-    "system_settings?select=setting_key,setting_value&setting_key=in.(whatsapp_reminders_enabled,payment_links_enabled,dry_run_mode,academy_manager_phone)",
+    "system_settings?select=setting_key,setting_value&setting_key=in.(whatsapp_reminders_enabled,payment_links_enabled,dry_run_mode)",
   );
   const byKey = Object.fromEntries((rows || []).map((row: any) => [row.setting_key, row.setting_value]));
   return {
     whatsappRemindersEnabled: parseBoolean(byKey.whatsapp_reminders_enabled, false),
     paymentLinksEnabled: parseBoolean(byKey.payment_links_enabled, false),
     dryRunMode: parseBoolean(byKey.dry_run_mode, true),
-    managerPhone: parseText(byKey.academy_manager_phone, "9059962499"),
+    managerPhone: DEFAULT_SETTINGS.managerPhone,
   };
 }
 
@@ -247,12 +261,12 @@ async function sendTextMessage(to: string, text: string) {
   return await response.json();
 }
 
-async function createRazorpayPaymentLink(student: any, plan: string, reminderEvent: any, settings: ReminderSettings) {
+async function createUpiPaymentLink(student: any, plan: string, reminderEvent: any, settings: ReminderSettings) {
   const dryRun = settings.dryRunMode || !settings.paymentLinksEnabled;
   const amount = PLAN_AMOUNTS[plan] || 0;
   const months = PLAN_MONTHS[plan] || 0;
 
-  if (dryRun || !env("RAZORPAY_KEY_ID") || !env("RAZORPAY_KEY_SECRET")) {
+  if (dryRun) {
     return await insertPaymentLinkRequest({
       reminder_event_id: reminderEvent.id,
       student_id: reminderEvent.student_id,
@@ -261,39 +275,14 @@ async function createRazorpayPaymentLink(student: any, plan: string, reminderEve
       months_covered: months,
       amount,
       cycle_start_date: reminderEvent.due_date,
-      provider: "razorpay",
+      provider: "upi",
       status: "dry_run",
       dry_run: true,
       created_by: "whatsapp-webhook",
     });
   }
 
-  const auth = btoa(`${env("RAZORPAY_KEY_ID")}:${env("RAZORPAY_KEY_SECRET")}`);
-  const response = await fetch("https://api.razorpay.com/v1/payment_links", {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${auth}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      amount: Math.round(amount * 100),
-      currency: "INR",
-      accept_partial: false,
-      description: `Gen Alpha ${PLAN_LABELS[plan]} fee - ${student.name}`,
-      customer: {
-        name: student.name,
-        contact: normalizePhone(student.parent_contact_no || reminderEvent.parent_phone),
-      },
-      notify: { sms: false, email: false },
-      notes: {
-        student_id: reminderEvent.student_id,
-        reminder_event_id: reminderEvent.id,
-        plan_type: plan,
-      },
-    }),
-  });
-  const link = await response.json();
-  if (!response.ok) throw new Error(link?.error?.description || "Razorpay payment link failed.");
+  const upiLink = buildUpiLink(student, plan, amount);
 
   return await insertPaymentLinkRequest({
     reminder_event_id: reminderEvent.id,
@@ -303,11 +292,11 @@ async function createRazorpayPaymentLink(student: any, plan: string, reminderEve
     months_covered: months,
     amount,
     cycle_start_date: reminderEvent.due_date,
-    provider: "razorpay",
+    provider: "upi",
     status: "created",
     dry_run: false,
-    payment_link_url: link.short_url || "",
-    payment_link_id: link.id || "",
+    payment_link_url: upiLink,
+    payment_link_id: "",
     created_by: "whatsapp-webhook",
   });
 }
@@ -348,7 +337,7 @@ async function handleSendReminder(request: Request, payload: any) {
       months_covered: 0,
       amount: 0,
       cycle_start_date: dueDate,
-      provider: "razorpay",
+      provider: "upi",
       status: "dry_run",
       dry_run: true,
       created_by: managerEmail,
@@ -393,7 +382,7 @@ async function handleWebhook(payload: any) {
         }
 
         const student = await fetchStudent(reminderEvent.student_id);
-        const linkRequest = await createRazorpayPaymentLink(student, plan, reminderEvent, settings);
+        const linkRequest = await createUpiPaymentLink(student, plan, reminderEvent, settings);
         await updateReminderEvent(reminderEvent.id, {
           selected_plan: plan,
           amount: PLAN_AMOUNTS[plan],
@@ -403,7 +392,10 @@ async function handleWebhook(payload: any) {
           dry_run: Boolean(linkRequest.dry_run),
         });
         if (!linkRequest.dry_run && linkRequest.payment_link_url) {
-          await sendTextMessage(from, `Payment link for ${PLAN_LABELS[plan]}: ${linkRequest.payment_link_url}`);
+          await sendTextMessage(
+            from,
+            `Gen Alpha ${PLAN_LABELS[plan]} fee: Rs ${PLAN_AMOUNTS[plan]}. Pay using UPI: ${linkRequest.payment_link_url}\n\nUPI ID: ${ACADEMY_UPI_ID}`,
+          );
         }
       }
     }

@@ -100,7 +100,7 @@ data class ReminderSettings(
     val whatsappRemindersEnabled: Boolean = false,
     val paymentLinksEnabled: Boolean = false,
     val dryRunMode: Boolean = true,
-    val managerPhone: String = "9059962499",
+    val managerPhone: String = "8143960950",
 )
 
 data class AdmissionInsertResult(

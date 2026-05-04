@@ -112,7 +112,7 @@ class SupabaseRepository(
     }
 
     suspend fun fetchReminderSettings(session: ManagerSession): ReminderSettings = withContext(Dispatchers.IO) {
-        val keys = "whatsapp_reminders_enabled,payment_links_enabled,dry_run_mode,academy_manager_phone"
+        val keys = "whatsapp_reminders_enabled,payment_links_enabled,dry_run_mode"
         val request = baseRequest("$baseUrl/rest/v1/system_settings?select=setting_key,setting_value&setting_key=in.($keys)")
             .header("Authorization", "Bearer ${session.accessToken}")
             .get()
@@ -133,7 +133,7 @@ class SupabaseRepository(
                 whatsappRemindersEnabled = values["whatsapp_reminders_enabled"].asBoolean(false),
                 paymentLinksEnabled = values["payment_links_enabled"].asBoolean(false),
                 dryRunMode = values["dry_run_mode"].asBoolean(true),
-                managerPhone = values["academy_manager_phone"].asText("9059962499"),
+                managerPhone = "8143960950",
             )
         }
     }
@@ -202,7 +202,7 @@ class SupabaseRepository(
             .put("months_covered", 0)
             .put("amount", 0)
             .put("cycle_start_date", dueDate)
-            .put("provider", "razorpay")
+            .put("provider", "upi")
             .put("status", if (settings.paymentLinksEnabled && !dryRun) "awaiting_parent_choice" else "dry_run")
             .put("dry_run", dryRun || !settings.paymentLinksEnabled)
             .put("created_by", session.email)
