@@ -163,6 +163,7 @@ import com.genalpha.cricketacademy.data.StudentTimelineItem
 import com.genalpha.cricketacademy.data.calculateAgeFromDate
 import com.genalpha.cricketacademy.data.cardTimelineLabel
 import com.genalpha.cricketacademy.data.currentDatePickerValues
+import com.genalpha.cricketacademy.data.daysSince
 import com.genalpha.cricketacademy.data.displayDate
 import com.genalpha.cricketacademy.data.isActive
 import com.genalpha.cricketacademy.data.isFeesPending
@@ -783,6 +784,17 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                     }
 
                     item {
+                        CriticalAlertSection(
+                            alertKids = alertKids,
+                            payments = uiState.payments,
+                            onStudentClick = { student ->
+                                selectedStudent = student
+                                showDetailSheet = true
+                            },
+                        )
+                    }
+
+                    item {
                         AlertSection(
                             alertKids = alertKids,
                             payments = uiState.payments,
@@ -1370,14 +1382,58 @@ private fun HeaderSection(
 }
 
 @Composable
+private fun CriticalAlertSection(
+    alertKids: List<Student>,
+    payments: List<StudentPayment>,
+    onStudentClick: (Student) -> Unit,
+) {
+    val criticalKids = alertKids.filter { it.isCriticalReminder(payments) }
+    if (criticalKids.isEmpty()) return
+
+    Card(
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF7D302F)),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "Immediate follow-up",
+                color = Color.White.copy(alpha = 0.78f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.9.sp,
+            )
+            Text(
+                text = if (criticalKids.size == 1) "1 player over 10 days" else "${criticalKids.size} players over 10 days",
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.ExtraBold,
+                lineHeight = 23.sp,
+            )
+            AlertNameSection(
+                title = "Call parent today",
+                students = criticalKids,
+                onStudentClick = onStudentClick,
+            )
+        }
+    }
+}
+
+@Composable
 private fun AlertSection(
     alertKids: List<Student>,
     payments: List<StudentPayment>,
     onStudentClick: (Student) -> Unit,
 ) {
-    val feesPendingKids = alertKids.filter { it.isFeesPending() }
-    val renewalPendingKids = alertKids.filter { it.isRenewalPending(payments) }
-    val alertCount = alertKids.size
+    val standardAlertKids = alertKids.filterNot { it.isCriticalReminder(payments) }
+    val feesPendingKids = standardAlertKids.filter { it.isFeesPending() }
+    val renewalPendingKids = standardAlertKids.filter { it.isRenewalPending(payments) }
+    val alertCount = standardAlertKids.size
+    val hasCriticalOnly = alertCount == 0 && alertKids.any { it.isCriticalReminder(payments) }
     Card(
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF2266C9)),
@@ -1389,14 +1445,18 @@ private fun AlertSection(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
-                text = "30-Day Alerts",
+                text = "Alert",
                 color = Color.White.copy(alpha = 0.78f),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.9.sp,
             )
             Text(
-                text = if (alertCount == 1) "1 player needs attention" else "$alertCount players need attention",
+                text = when (alertCount) {
+                    0 -> "No regular alerts"
+                    1 -> "1 regular alert"
+                    else -> "$alertCount regular alerts"
+                },
                 color = Color.White,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.ExtraBold,
@@ -1406,6 +1466,13 @@ private fun AlertSection(
             if (alertKids.isEmpty()) {
                 Text(
                     text = "All current join fees and renewals are up to date.",
+                    color = Color.White.copy(alpha = 0.88f),
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp,
+                )
+            } else if (hasCriticalOnly) {
+                Text(
+                    text = "Regular alerts are clear. Immediate follow-up is shown above.",
                     color = Color.White.copy(alpha = 0.88f),
                     fontSize = 13.sp,
                     lineHeight = 19.sp,
@@ -1428,6 +1495,12 @@ private fun AlertSection(
             }
         }
     }
+}
+
+private fun Student.isCriticalReminder(payments: List<StudentPayment>): Boolean {
+    if (!isFeesPending() && !isRenewalPending(payments)) return false
+    val dueDate = if (isFeesPending()) joinDate else nextRenewalCycleDate(payments)
+    return daysSince(dueDate) > 10
 }
 
 @Composable
