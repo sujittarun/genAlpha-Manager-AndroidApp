@@ -121,13 +121,19 @@ async function assertAuthenticated(request: Request) {
   const token = authHeader.replace(/^Bearer\s+/i, "");
   if (!token) throw new Error("Manager login is required.");
 
+  const authApiKey = env("SUPABASE_ANON_KEY") || env("SUPABASE_SERVICE_ROLE_KEY");
+  if (!authApiKey) throw new Error("Supabase auth secret is missing.");
+
   const response = await fetch(`${env("SUPABASE_URL").replace(/\/+$/, "")}/auth/v1/user`, {
     headers: {
-      apikey: env("SUPABASE_ANON_KEY"),
+      apikey: authApiKey,
       Authorization: `Bearer ${token}`,
     },
   });
-  if (!response.ok) throw new Error("Manager session is not valid.");
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Manager session is not valid (${response.status}). ${body || response.statusText}`);
+  }
   const user = await response.json();
   return user?.email || "manager";
 }
