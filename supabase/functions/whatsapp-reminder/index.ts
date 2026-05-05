@@ -353,7 +353,21 @@ async function handleSendReminder(request: Request, payload: any) {
 
   const to = normalizePhone(parentPhone);
   if (!to) return jsonResponse({ error: "Parent phone number is missing." }, 400);
-  const metaResponse = await sendTemplateMessage(to, event.id, student, dueDate);
+  let metaResponse;
+  try {
+    metaResponse = await sendTemplateMessage(to, event.id, student, dueDate);
+  } catch (error) {
+    await updateReminderEvent(event.id, {
+      status: "send_failed",
+      dry_run: false,
+    });
+    const message = error instanceof Error ? error.message : "Meta WhatsApp send failed.";
+    return jsonResponse({
+      success: false,
+      source: "meta_whatsapp",
+      error: `Meta WhatsApp send failed: ${message}`,
+    }, 502);
+  }
   await updateReminderEvent(event.id, { status: "sent" });
   return jsonResponse({ success: true, dryRun: false, message: `WhatsApp reminder sent for ${student.name}.`, metaResponse });
 }
