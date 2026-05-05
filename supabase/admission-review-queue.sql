@@ -4,6 +4,9 @@
 alter table public.admissions
 add column if not exists filled_by text not null default 'Parent / Guardian';
 
+alter table public.students
+add column if not exists filled_by text not null default '';
+
 alter table public.admissions
 add column if not exists review_status text;
 
