@@ -110,6 +110,29 @@ data class AdmissionInsertResult(
     @Json(name = "reg_no") val regNo: Long,
 )
 
+data class PendingAdmission(
+    val id: String,
+    @Json(name = "reg_no") val regNo: Long?,
+    @Json(name = "applicant_name") val applicantName: String,
+    val age: Int,
+    val gender: String? = "",
+    @Json(name = "father_guardian_name") val fatherGuardianName: String? = "",
+    @Json(name = "parent_contact_no") val parentContactNo: String? = "",
+    @Json(name = "emergency_contact_no") val alternateContactNo: String? = "",
+    @Json(name = "school_college") val schoolCollege: String? = "",
+    val city: String? = "",
+    val address: String? = "",
+    @Json(name = "time_slot") val timeSlot: String? = "",
+    @Json(name = "join_date") val joinDate: String,
+    @Json(name = "fees_paid") val feesPaid: Boolean,
+    @Json(name = "amount_paid") val amountPaid: Double,
+    @Json(name = "jersey_size") val jerseySize: String? = "",
+    @Json(name = "jersey_pairs") val jerseyPairs: Int? = 0,
+    @Json(name = "filled_by") val filledBy: String? = "Parent / Guardian",
+    val comments: String? = "",
+    @Json(name = "created_at") val createdAt: String? = "",
+)
+
 data class AdmissionRegPreview(
     @Json(name = "next_reg_no") val nextRegNo: Long,
 )

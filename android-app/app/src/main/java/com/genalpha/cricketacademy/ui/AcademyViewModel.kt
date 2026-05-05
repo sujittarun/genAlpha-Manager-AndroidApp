@@ -7,6 +7,7 @@ import com.genalpha.cricketacademy.data.DashboardStats
 import com.genalpha.cricketacademy.data.AdmissionDraft
 import com.genalpha.cricketacademy.data.ManagerSession
 import com.genalpha.cricketacademy.data.OperationResult
+import com.genalpha.cricketacademy.data.PendingAdmission
 import com.genalpha.cricketacademy.data.ReminderSettings
 import com.genalpha.cricketacademy.data.SessionPrefs
 import com.genalpha.cricketacademy.data.SlotSummary
@@ -48,6 +49,8 @@ data class AcademyUiState(
     val kids: List<Student> = emptyList(),
     val todayAttendanceIds: Set<String> = emptySet(),
     val attendanceCounts: Map<String, Int> = emptyMap(),
+    val pendingAdmissions: List<PendingAdmission> = emptyList(),
+    val isAdmissionReviewLoading: Boolean = false,
     val expenses: List<AcademyExpense> = emptyList(),
     val payments: List<StudentPayment> = emptyList(),
     val isFinanceLoading: Boolean = false,
@@ -270,6 +273,7 @@ class AcademyViewModel(
                     errorMessage = null,
                 )
             }
+            refreshAdmissionReviewInBackground()
             OperationResult(true, "Manager login successful.")
         } catch (error: Exception) {
             _uiState.update { it.copy(isAuthLoading = false) }
@@ -280,7 +284,7 @@ class AcademyViewModel(
     fun logout() {
         sessionPrefs.clearSession()
         repository.startStudentRealtime(realtimeListener, null)
-        _uiState.update { it.copy(session = null) }
+        _uiState.update { it.copy(session = null, pendingAdmissions = emptyList(), isAdmissionReviewLoading = false) }
     }
 
     suspend fun peekNextAdmissionRegNo(): Long = repository.peekNextAdmissionRegNo()
@@ -469,10 +473,67 @@ class AcademyViewModel(
 
         return try {
             val created = repository.submitAdmission(draft)
-            refreshInBackground()
-            OperationResult(true, "Admission submitted. Reg No ${created.regNo}")
+            refreshAdmissionReviewInBackground()
+            OperationResult(true, "Admission submitted for review. Reg No ${created.regNo}")
         } catch (error: Exception) {
             OperationResult(false, error.message ?: "Unable to submit admission form.")
+        }
+    }
+
+    suspend fun loadPendingAdmissions() {
+        val session = _uiState.value.session ?: run {
+            _uiState.update { it.copy(pendingAdmissions = emptyList(), isAdmissionReviewLoading = false) }
+            return
+        }
+        _uiState.update { it.copy(isAdmissionReviewLoading = true) }
+        try {
+            val admissions = repository.fetchPendingAdmissions(session)
+            _uiState.update {
+                it.copy(
+                    pendingAdmissions = admissions,
+                    isAdmissionReviewLoading = false,
+                    errorMessage = null,
+                )
+            }
+        } catch (error: Exception) {
+            _uiState.update {
+                it.copy(
+                    isAdmissionReviewLoading = false,
+                    errorMessage = error.message ?: "Unable to load admission review queue.",
+                )
+            }
+        }
+    }
+
+    suspend fun approveAdmission(admission: PendingAdmission): OperationResult {
+        return try {
+            val session = withFreshSession { session ->
+                repository.approveAdmission(admission.id, session.email, session)
+                session
+            }
+            _uiState.update { state ->
+                state.copy(pendingAdmissions = state.pendingAdmissions.filterNot { it.id == admission.id })
+            }
+            refreshInBackground()
+            refreshAdmissionReviewInBackground()
+            OperationResult(true, "${admission.applicantName} approved by ${session.email}.")
+        } catch (error: Exception) {
+            OperationResult(false, error.message ?: "Unable to approve admission.")
+        }
+    }
+
+    suspend fun rejectAdmission(admission: PendingAdmission): OperationResult {
+        return try {
+            withFreshSession { session ->
+                repository.rejectAdmission(admission.id, session.email, session)
+            }
+            _uiState.update { state ->
+                state.copy(pendingAdmissions = state.pendingAdmissions.filterNot { it.id == admission.id })
+            }
+            refreshAdmissionReviewInBackground()
+            OperationResult(true, "${admission.applicantName} rejected.")
+        } catch (error: Exception) {
+            OperationResult(false, error.message ?: "Unable to reject admission.")
         }
     }
 
@@ -813,6 +874,14 @@ class AcademyViewModel(
                             if (state.kids == sortedLatest) state else state.copy(kids = sortedLatest)
                         }
                     }
+                _uiState.value.session?.let { session ->
+                    runCatching { repository.fetchPendingAdmissions(session) }
+                        .onSuccess { admissions ->
+                            _uiState.update { state ->
+                                if (state.pendingAdmissions == admissions) state else state.copy(pendingAdmissions = admissions)
+                            }
+                        }
+                }
                 delay(1000)
             }
         }
@@ -839,6 +908,12 @@ class AcademyViewModel(
     private fun refreshFinanceInBackground() {
         viewModelScope.launch {
             loadFinance()
+        }
+    }
+
+    private fun refreshAdmissionReviewInBackground() {
+        viewModelScope.launch {
+            loadPendingAdmissions()
         }
     }
 

@@ -152,6 +152,7 @@ import com.genalpha.cricketacademy.data.AdmissionDraft
 import com.genalpha.cricketacademy.data.AcademyExpense
 import com.genalpha.cricketacademy.data.ManagerSession
 import com.genalpha.cricketacademy.data.OperationResult
+import com.genalpha.cricketacademy.data.PendingAdmission
 import com.genalpha.cricketacademy.data.Student
 import com.genalpha.cricketacademy.data.StudentDraft
 import com.genalpha.cricketacademy.data.StudentPayment
@@ -692,6 +693,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     LaunchedEffect(uiState.session?.accessToken) {
         if (uiState.session != null) {
             viewModel.loadFinance()
+            viewModel.loadPendingAdmissions()
         }
     }
 
@@ -845,6 +847,22 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                             paid = stats.paidCount,
                             returning = stats.returningCount,
                         )
+                    }
+
+                    if (uiState.session != null && (uiState.pendingAdmissions.isNotEmpty() || uiState.isAdmissionReviewLoading)) {
+                        item {
+                            AdmissionReviewSection(
+                                admissions = uiState.pendingAdmissions,
+                                isLoading = uiState.isAdmissionReviewLoading,
+                                onApprove = viewModel::approveAdmission,
+                                onReject = viewModel::rejectAdmission,
+                                onMessage = { message ->
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(message)
+                                    }
+                                },
+                            )
+                        }
                     }
 
                     item {
@@ -2853,6 +2871,202 @@ private fun StatsSection(
                 value = returning,
                 accent = BrandBlueDeep,
             )
+        }
+    }
+}
+
+@Composable
+private fun AdmissionReviewSection(
+    admissions: List<PendingAdmission>,
+    isLoading: Boolean,
+    onApprove: suspend (PendingAdmission) -> OperationResult,
+    onReject: suspend (PendingAdmission) -> OperationResult,
+    onMessage: (String) -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.14f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Parent Submission Review",
+                        color = BrandBlue,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 0.7.sp,
+                    )
+                    Text(
+                        "Approve admissions before they enter the roster",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 18.sp,
+                        lineHeight = 21.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                    )
+                }
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = BrandGold.copy(alpha = 0.18f),
+                ) {
+                    Text(
+                        "${admissions.size} pending",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        color = BrandBlueDeep,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                    )
+                }
+            }
+
+            if (isLoading && admissions.isEmpty()) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text("Loading submissions...", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), fontSize = 13.sp)
+                }
+            }
+
+            admissions.forEach { admission ->
+                AdmissionReviewCard(
+                    admission = admission,
+                    onApprove = onApprove,
+                    onReject = onReject,
+                    onMessage = onMessage,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdmissionReviewCard(
+    admission: PendingAdmission,
+    onApprove: suspend (PendingAdmission) -> OperationResult,
+    onReject: suspend (PendingAdmission) -> OperationResult,
+    onMessage: (String) -> Unit,
+) {
+    var actionInProgress by rememberSaveable(admission.id) { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val feeText = if (admission.feesPaid) {
+        "Paid Rs ${String.format(Locale.US, "%,.0f", admission.amountPaid)}"
+    } else {
+        "Fees not paid"
+    }
+
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.background.copy(alpha = 0.62f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(13.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        "Reg ${admission.regNo ?: "-"} • ${admission.filledBy.orEmpty().ifBlank { "Parent / Guardian" }}",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                    )
+                    Text(
+                        admission.applicantName,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 17.sp,
+                        lineHeight = 20.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                    )
+                    Text(
+                        "${admission.age} yrs • ${admission.timeSlot.orEmpty().ifBlank { "Slot not set" }} • ${displayDate(admission.joinDate)}",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                    )
+                }
+                Badge(
+                    label = feeText,
+                    container = if (admission.feesPaid) BrandGreen.copy(alpha = 0.12f) else BrandRed.copy(alpha = 0.1f),
+                    color = if (admission.feesPaid) BrandGreen else BrandRed,
+                )
+            }
+
+            Text(
+                "Parent: ${admission.fatherGuardianName.orEmpty().ifBlank { "-" }} • ${admission.parentContactNo.orEmpty().ifBlank { admission.alternateContactNo.orEmpty().ifBlank { "No phone" } }}",
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+            )
+            Text(
+                "School: ${admission.schoolCollege.orEmpty().ifBlank { "-" }} • Jersey ${admission.jerseySize.orEmpty().ifBlank { "not set" }} / ${admission.jerseyPairs ?: 0} pair${if ((admission.jerseyPairs ?: 0) == 1) "" else "s"}",
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+            )
+            if (!admission.comments.isNullOrBlank()) {
+                Text(
+                    admission.comments,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    modifier = Modifier.weight(1f),
+                    enabled = actionInProgress == null,
+                    shape = RoundedCornerShape(14.dp),
+                    onClick = {
+                        scope.launch {
+                            actionInProgress = "approve"
+                            val result = onApprove(admission)
+                            onMessage(result.message)
+                            actionInProgress = null
+                        }
+                    },
+                ) {
+                    if (actionInProgress == "approve") {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Color.White)
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+                    Text("Approve", maxLines = 1)
+                }
+                OutlinedButton(
+                    modifier = Modifier.weight(1f),
+                    enabled = actionInProgress == null,
+                    shape = RoundedCornerShape(14.dp),
+                    onClick = {
+                        scope.launch {
+                            actionInProgress = "reject"
+                            val result = onReject(admission)
+                            onMessage(result.message)
+                            actionInProgress = null
+                        }
+                    },
+                ) {
+                    if (actionInProgress == "reject") {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+                    Text("Reject", color = BrandRed, maxLines = 1)
+                }
+            }
         }
     }
 }

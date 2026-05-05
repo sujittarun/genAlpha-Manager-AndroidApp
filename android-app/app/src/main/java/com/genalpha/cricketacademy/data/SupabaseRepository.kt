@@ -45,6 +45,9 @@ class SupabaseRepository(
     private val admissionInsertAdapter = moshi.adapter<List<AdmissionInsertResult>>(
         Types.newParameterizedType(List::class.java, AdmissionInsertResult::class.java)
     )
+    private val pendingAdmissionListAdapter = moshi.adapter<List<PendingAdmission>>(
+        Types.newParameterizedType(List::class.java, PendingAdmission::class.java)
+    )
     private val studentListAdapter = moshi.adapter<List<StudentDto>>(
         Types.newParameterizedType(List::class.java, StudentDto::class.java)
     )
@@ -431,6 +434,7 @@ class SupabaseRepository(
                     .put("ready_to_start", draft.readyToStartNow)
                     .put("consent_accepted", draft.consentAccepted)
                     .put("terms_accepted", draft.termsAccepted)
+                    .put("review_status", "pending")
                     .toString()
                     .toRequestBody(JSON_MEDIA_TYPE)
 
@@ -467,6 +471,53 @@ class SupabaseRepository(
             rows.firstOrNull()?.nextRegNo
                 ?: throw SupabaseException(response.code, "Unable to fetch the next registration number.")
         }
+    }
+
+    suspend fun fetchPendingAdmissions(session: ManagerSession): List<PendingAdmission> = withContext(Dispatchers.IO) {
+        val request = baseRequest("$baseUrl/rest/v1/admissions?select=*&review_status=eq.pending&order=created_at.asc")
+            .header("Authorization", "Bearer ${session.accessToken}")
+            .get()
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw SupabaseException(response.code, parseError(response.body?.string()))
+            }
+
+            pendingAdmissionListAdapter.fromJson(response.body?.string().orEmpty()).orEmpty()
+        }
+    }
+
+    suspend fun approveAdmission(
+        admissionId: String,
+        reviewedBy: String,
+        session: ManagerSession,
+    ) = withContext(Dispatchers.IO) {
+        executeWriteRequest(
+            url = "$baseUrl/rest/v1/rpc/approve_admission",
+            session = session,
+            method = "POST",
+            body = JSONObject()
+                .put("p_admission_id", admissionId)
+                .put("p_reviewed_by", reviewedBy)
+                .put("p_review_notes", ""),
+        )
+    }
+
+    suspend fun rejectAdmission(
+        admissionId: String,
+        reviewedBy: String,
+        session: ManagerSession,
+    ) = withContext(Dispatchers.IO) {
+        executeWriteRequest(
+            url = "$baseUrl/rest/v1/rpc/reject_admission",
+            session = session,
+            method = "POST",
+            body = JSONObject()
+                .put("p_admission_id", admissionId)
+                .put("p_reviewed_by", reviewedBy)
+                .put("p_review_notes", ""),
+        )
     }
 
     suspend fun extractAdmissionDraft(
