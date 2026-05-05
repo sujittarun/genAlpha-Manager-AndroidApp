@@ -4,17 +4,6 @@
 alter table public.admissions
 add column if not exists filled_by text not null default 'Parent / Guardian';
 
-create table if not exists public.student_timeline (
-  id uuid primary key default gen_random_uuid(),
-  student_id uuid not null references public.students(id) on delete cascade,
-  event_type text not null,
-  event_date date not null default current_date,
-  title text not null,
-  details text not null default '',
-  changed_by text not null default 'System',
-  created_at timestamptz not null default timezone('utc', now())
-);
-
 alter table public.admissions
 add column if not exists review_status text;
 
@@ -252,22 +241,24 @@ begin
       approved_student_id = v_student_id
   where id = p_admission_id;
 
-  insert into public.student_timeline (
-    student_id,
-    event_type,
-    event_date,
-    title,
-    details,
-    changed_by
-  )
-  values (
-    v_student_id,
-    'admission_review',
-    current_date,
-    'Admission approved',
-    concat('Reg No ', coalesce(v_admission.reg_no::text, 'manual'), case when coalesce(p_review_notes, '') <> '' then concat(' • ', p_review_notes) else '' end),
-    coalesce(nullif(p_reviewed_by, ''), 'Manager')
-  );
+  if to_regclass('public.student_timeline') is not null then
+    insert into public.student_timeline (
+      student_id,
+      event_type,
+      event_date,
+      title,
+      details,
+      changed_by
+    )
+    values (
+      v_student_id,
+      'admission_review',
+      current_date,
+      'Admission approved',
+      concat('Reg No ', coalesce(v_admission.reg_no::text, 'manual'), case when coalesce(p_review_notes, '') <> '' then concat(' - ', p_review_notes) else '' end),
+      coalesce(nullif(p_reviewed_by, ''), 'Manager')
+    );
+  end if;
 
   return query
   select v_student_id, v_admission.reg_no;
