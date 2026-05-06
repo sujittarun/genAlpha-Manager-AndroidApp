@@ -20,6 +20,7 @@ const DEFAULT_SETTINGS: ReminderSettings = {
 };
 const ACADEMY_UPI_ID = "9059962499@ybl";
 const ACADEMY_PAYEE_NAME = "Gen Alpha Cricket Academy";
+const PAYMENT_PAGE_URL = "https://genalphaacademy.in/pay.html";
 
 const PLAN_OPTIONS = ["monthly", "quarterly", "halfyearly", "need_help"];
 const PLAN_LABELS: Record<string, string> = {
@@ -110,6 +111,19 @@ function buildUpiLink(student: any, plan: string, amount: number): string {
     )
     .join("&");
   return `upi://pay?${query}`;
+}
+
+function buildPaymentPageUrl(
+  student: any,
+  plan: string,
+  amount: number,
+): string {
+  const params = new URLSearchParams({
+    a: amount.toFixed(2),
+    p: PLAN_LABELS[plan] || "fees",
+    name: String(student.name || "Player"),
+  });
+  return `${PAYMENT_PAGE_URL}?${params.toString()}`;
 }
 
 function normalizeChoiceText(value: unknown): string {
@@ -473,6 +487,7 @@ async function createUpiPaymentLink(
   }
 
   const upiLink = buildUpiLink(student, plan, amount);
+  const paymentPageUrl = buildPaymentPageUrl(student, plan, amount);
 
   return await insertPaymentLinkRequest({
     reminder_event_id: reminderEvent.id,
@@ -487,8 +502,8 @@ async function createUpiPaymentLink(
     provider: "upi",
     status: "created",
     dry_run: false,
-    payment_link_url: upiLink,
-    payment_link_id: "",
+    payment_link_url: paymentPageUrl,
+    payment_link_id: upiLink,
     created_by: "whatsapp-webhook",
   });
 }
@@ -747,7 +762,7 @@ async function handleWebhook(payload: any) {
             from,
             `Gen Alpha ${PLAN_LABELS[plan]} fee: Rs ${
               PLAN_AMOUNTS[plan]
-            }. Pay using UPI: ${linkRequest.payment_link_url}\n\nUPI ID: ${ACADEMY_UPI_ID}`,
+            }.\n\nPay here: ${linkRequest.payment_link_url}\n\nUPI ID: ${ACADEMY_UPI_ID}`,
           );
         }
       }
