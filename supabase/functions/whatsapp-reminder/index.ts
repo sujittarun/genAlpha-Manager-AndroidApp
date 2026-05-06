@@ -93,6 +93,35 @@ function buildUpiLink(student: any, plan: string, amount: number): string {
   return `upi://pay?${params.toString()}`;
 }
 
+function normalizeChoiceText(value: unknown): string {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function normalizeSelectedPlan(value: unknown): string {
+  const normalized = normalizeChoiceText(value);
+  if (
+    ["monthly", "month", "1month", "one1month", "onemonth", "1"].includes(
+      normalized,
+    )
+  ) {
+    return "monthly";
+  }
+  if (
+    ["quarterly", "3month", "3months", "threemonths", "3"].includes(normalized)
+  ) {
+    return "quarterly";
+  }
+  if (
+    ["halfyearly", "6month", "6months", "sixmonths", "6"].includes(normalized)
+  ) {
+    return "halfyearly";
+  }
+  if (["needhelp", "help", "support"].includes(normalized)) {
+    return "need_help";
+  }
+  return "";
+}
+
 function daysSince(dateValue: string): number {
   const due = new Date(`${dateValue}T00:00:00+05:30`);
   const now = new Date();
@@ -199,6 +228,19 @@ async function insertPaymentLinkRequest(payload: Record<string, unknown>) {
     body: JSON.stringify(payload),
   });
   return rows?.[0];
+}
+
+async function insertWebhookEvent(payload: Record<string, unknown>) {
+  try {
+    const rows = await rest("whatsapp_webhook_events?select=*", {
+      method: "POST",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify(payload),
+    });
+    return rows?.[0] || null;
+  } catch (_error) {
+    return null;
+  }
 }
 
 async function updateReminderEvent(
@@ -312,6 +354,38 @@ async function sendTemplateMessage(
                     amount_1000: 3500000,
                   },
                 },
+              ],
+            },
+            {
+              type: "button",
+              sub_type: "quick_reply",
+              index: "0",
+              parameters: [
+                { type: "payload", payload: `renewal:${eventId}:monthly` },
+              ],
+            },
+            {
+              type: "button",
+              sub_type: "quick_reply",
+              index: "1",
+              parameters: [
+                { type: "payload", payload: `renewal:${eventId}:quarterly` },
+              ],
+            },
+            {
+              type: "button",
+              sub_type: "quick_reply",
+              index: "2",
+              parameters: [
+                { type: "payload", payload: `renewal:${eventId}:halfyearly` },
+              ],
+            },
+            {
+              type: "button",
+              sub_type: "quick_reply",
+              index: "3",
+              parameters: [
+                { type: "payload", payload: `renewal:${eventId}:need_help` },
               ],
             },
           ],
@@ -542,9 +616,21 @@ async function handleWebhook(payload: any) {
           : [];
         const eventId = parts[1] || "";
         const labelText = String(reply?.title || reply?.text || "");
-        const plan = parts[2] || Object.entries(PLAN_LABELS).find(([, label]) =>
-          label === labelText
-        )?.[0] || "";
+        const plan = parts[2] ||
+          normalizeSelectedPlan(replyPayload) ||
+          normalizeSelectedPlan(labelText) ||
+          normalizeSelectedPlan(message?.text?.body);
+        const webhookLog = await insertWebhookEvent({
+          event_type: "incoming_message",
+          from_phone: from.slice(-10),
+          message_id: String(message.id || ""),
+          reminder_event_id: eventId || null,
+          processed: false,
+          processing_note: plan
+            ? `Plan detected: ${plan}`
+            : "No matching plan detected.",
+          payload: message,
+        });
         if (!plan) {
           continue;
         }
@@ -558,6 +644,20 @@ async function handleWebhook(payload: any) {
           ))?.[0]
           : await findLatestReminderByPhone(from);
         if (!reminderEvent) {
+          if (webhookLog?.id) {
+            await rest(
+              `whatsapp_webhook_events?id=eq.${
+                encodeURIComponent(webhookLog.id)
+              }`,
+              {
+                method: "PATCH",
+                body: JSON.stringify({
+                  processing_note:
+                    "Plan detected but no matching reminder event found.",
+                }),
+              },
+            );
+          }
           continue;
         }
 
@@ -567,6 +667,21 @@ async function handleWebhook(payload: any) {
             help_requested: true,
             status: "help_requested",
           });
+          if (webhookLog?.id) {
+            await rest(
+              `whatsapp_webhook_events?id=eq.${
+                encodeURIComponent(webhookLog.id)
+              }`,
+              {
+                method: "PATCH",
+                body: JSON.stringify({
+                  reminder_event_id: reminderEvent.id,
+                  processed: true,
+                  processing_note: "Help request processed.",
+                }),
+              },
+            );
+          }
           await sendTextMessage(
             from,
             `Please contact Gen Alpha Cricket Academy manager: ${settings.managerPhone}`,
@@ -591,6 +706,23 @@ async function handleWebhook(payload: any) {
             : "payment_link_sent",
           dry_run: Boolean(linkRequest.dry_run),
         });
+        if (webhookLog?.id) {
+          await rest(
+            `whatsapp_webhook_events?id=eq.${
+              encodeURIComponent(webhookLog.id)
+            }`,
+            {
+              method: "PATCH",
+              body: JSON.stringify({
+                reminder_event_id: reminderEvent.id,
+                processed: true,
+                processing_note: linkRequest.dry_run
+                  ? "Payment link dry-run processed."
+                  : "UPI payment link sent.",
+              }),
+            },
+          );
+        }
         if (!linkRequest.dry_run && linkRequest.payment_link_url) {
           await sendTextMessage(
             from,
