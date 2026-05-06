@@ -18,7 +18,7 @@ const DEFAULT_SETTINGS: ReminderSettings = {
   dryRunMode: true,
   managerPhone: "8143960950",
 };
-const ACADEMY_UPI_ID = "9059962498@ybl";
+const ACADEMY_UPI_ID = "9059962499@ybl";
 const ACADEMY_PAYEE_NAME = "Gen Alpha Cricket Academy";
 
 const PLAN_OPTIONS = ["monthly", "quarterly", "halfyearly", "need_help"];
