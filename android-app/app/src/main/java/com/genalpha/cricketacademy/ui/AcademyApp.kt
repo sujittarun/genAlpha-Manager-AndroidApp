@@ -1,7 +1,6 @@
 package com.genalpha.cricketacademy.ui
 
 import android.app.DatePickerDialog
-import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
@@ -10,10 +9,6 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
-import android.provider.MediaStore
-import android.util.Base64
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.text.BasicTextField
@@ -561,11 +556,6 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     var showManagerPinSheet by rememberSaveable { mutableStateOf(false) }
     var showLoginSheet by rememberSaveable { mutableStateOf(false) }
     var showAdmissionSheet by rememberSaveable { mutableStateOf(false) }
-    var showScanSourceSheet by rememberSaveable { mutableStateOf(false) }
-    var attachedAdmissionDocumentLabel by rememberSaveable { mutableStateOf<String?>(null) }
-    var admissionInitialDraft by remember { mutableStateOf<AdmissionDraft?>(null) }
-    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
-    var isScanLoading by rememberSaveable { mutableStateOf(false) }
     var editingStudent by remember { mutableStateOf<Student?>(null) }
     var showEditorSheet by rememberSaveable { mutableStateOf(false) }
     var selectedStudent by remember { mutableStateOf<Student?>(null) }
@@ -580,65 +570,6 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     var timelineLoadingId by rememberSaveable { mutableStateOf<String?>(null) }
     var playerSearchQuery by rememberSaveable { mutableStateOf("") }
     var playerSlotFilter by rememberSaveable { mutableStateOf("") }
-    val imagePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            isScanLoading = true
-            val result = runCatching {
-                val (fileBase64, mimeType) = withContext(Dispatchers.IO) {
-                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                        ?: throw IllegalStateException("Unable to read selected document.")
-                    Base64.encodeToString(bytes, Base64.NO_WRAP) to
-                        (context.contentResolver.getType(uri) ?: "image/jpeg")
-                }
-                viewModel.extractAdmissionDraft(
-                    fileBase64 = fileBase64,
-                    mimeType = mimeType,
-                    fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "admission-document",
-                )
-            }.getOrElse {
-                com.genalpha.cricketacademy.ui.AdmissionExtractionResult(false, it.message ?: "Unable to read document.", null)
-            }
-            admissionInitialDraft = result.draft
-            attachedAdmissionDocumentLabel =
-                if (result.success) "AI filled from imported document" else "Imported document attached"
-            showAdmissionSheet = true
-            snackbarHostState.showSnackbar(result.message)
-            isScanLoading = false
-        }
-    }
-    val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicture()
-    ) { captured: Boolean ->
-        val uri = pendingCameraUri
-        if (!captured || uri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            isScanLoading = true
-            val result = runCatching {
-                val fileBase64 = withContext(Dispatchers.IO) {
-                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                        ?: throw IllegalStateException("Unable to read camera scan.")
-                    Base64.encodeToString(bytes, Base64.NO_WRAP)
-                }
-                viewModel.extractAdmissionDraft(
-                    fileBase64 = fileBase64,
-                    mimeType = context.contentResolver.getType(uri) ?: "image/jpeg",
-                    fileName = "camera-scan.jpg",
-                )
-            }.getOrElse {
-                AdmissionExtractionResult(false, it.message ?: "Unable to read camera scan.", null)
-            }
-            admissionInitialDraft = result.draft
-            attachedAdmissionDocumentLabel =
-                if (result.success) "AI filled from camera scan" else "Camera scan attached"
-            showAdmissionSheet = true
-            snackbarHostState.showSnackbar(result.message)
-            isScanLoading = false
-        }
-    }
-
     val playerFiltered = remember(activePlayers, playerSearchQuery, playerSlotFilter) {
         activePlayers.filter { student ->
             val slotMatch = when {
@@ -996,18 +927,9 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         }
                         item {
                             AdmissionActionsSection(
-                                isScanLoading = isScanLoading,
                                 onOpen = {
-                                    attachedAdmissionDocumentLabel = null
-                                    admissionInitialDraft = null
                                     showAdmissionSheet = true
                                 },
-                                onScan = { showScanSourceSheet = true },
-                            )
-                        }
-                        item {
-                            EmptyPanel(
-                                message = "Use scan/import only when you have a physical form photo."
                             )
                         }
                     } else {
@@ -1115,39 +1037,16 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                     )
                 }
 
-                if (showScanSourceSheet) {
-                    ScanSourceSheet(
-                        isLoading = isScanLoading,
-                        onDismiss = { showScanSourceSheet = false },
-                        onCamera = {
-                            showScanSourceSheet = false
-                            val uri = context.createAdmissionScanUri()
-                            pendingCameraUri = uri
-                            cameraLauncher.launch(uri)
-                        },
-                        onPhotos = {
-                            showScanSourceSheet = false
-                            imagePickerLauncher.launch("image/*")
-                        },
-                    )
-                }
-
                 if (showAdmissionSheet) {
                     AdmissionFormSheet(
-                        attachedDocumentLabel = attachedAdmissionDocumentLabel,
                         onLoadRegNo = { viewModel.peekNextAdmissionRegNo() },
                         onDismiss = {
                             showAdmissionSheet = false
-                            attachedAdmissionDocumentLabel = null
-                            admissionInitialDraft = null
                         },
-                        initialDraft = admissionInitialDraft,
                         onSubmit = { draft ->
                             viewModel.submitAdmission(draft).also { result ->
                                 if (result.success) {
                                     showAdmissionSheet = false
-                                    attachedAdmissionDocumentLabel = null
-                                    admissionInitialDraft = null
                                 }
                                 if (result.success && draft.feesPaid) {
                                     context.shareReceiptPdf(buildAndroidAdmissionReceipt(draft, result.message))
@@ -1594,9 +1493,7 @@ private fun AlertNameSection(
 
 @Composable
 private fun AdmissionActionsSection(
-    isScanLoading: Boolean,
     onOpen: () -> Unit,
-    onScan: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Button(
@@ -1618,27 +1515,6 @@ private fun AdmissionActionsSection(
                 Icon(Icons.Outlined.PersonAddAlt1, contentDescription = null)
                 Spacer(modifier = Modifier.size(10.dp))
                 Text("New Admission Form", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
-            }
-        }
-        OutlinedButton(
-            onClick = onScan,
-            enabled = !isScanLoading,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            shape = RoundedCornerShape(20.dp),
-        ) {
-            if (isScanLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
-                    strokeWidth = 2.dp,
-                )
-                Spacer(modifier = Modifier.size(8.dp))
-                Text("Reading scanned form")
-            } else {
-                Icon(Icons.Outlined.Search, contentDescription = null)
-                Spacer(modifier = Modifier.size(8.dp))
-                Text("Scan / Import Document", fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -2715,67 +2591,6 @@ private fun RenewalPaymentDialog(
                     Spacer(modifier = Modifier.size(8.dp))
                 }
                 Text("Save renewal payment")
-            }
-        }
-    }
-}
-
-@Composable
-private fun ScanSourceSheet(
-    isLoading: Boolean,
-    onDismiss: () -> Unit,
-    onCamera: () -> Unit,
-    onPhotos: () -> Unit,
-) {
-    FormDialog(onDismiss = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Admission Scan", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrandBlue)
-                IconButton(onClick = onDismiss, modifier = Modifier.size(34.dp)) {
-                    Icon(Icons.Outlined.Close, contentDescription = "Close")
-                }
-            }
-            Text(
-                "Choose how to capture the document",
-                fontSize = 24.sp,
-                lineHeight = 28.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                "Scan with the camera or import an image from photos. AI will fill the readable fields, then parents can review before submitting.",
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
-            )
-            Button(
-                onClick = onCamera,
-                enabled = !isLoading,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(18.dp),
-            ) {
-                Text("Scan with Camera")
-            }
-            OutlinedButton(
-                onClick = onPhotos,
-                enabled = !isLoading,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(18.dp),
-            ) {
-                Text("Import from Photos")
             }
         }
     }
@@ -5527,38 +5342,35 @@ private fun PlayerEditorSheet(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AdmissionFormSheet(
-    attachedDocumentLabel: String?,
     onLoadRegNo: suspend () -> Long,
     onDismiss: () -> Unit,
-    initialDraft: AdmissionDraft?,
     onSubmit: suspend (AdmissionDraft) -> OperationResult,
 ) {
-    val initialDobParts = remember(initialDraft?.dateOfBirth) { splitAdmissionDateParts(initialDraft?.dateOfBirth.orEmpty()) }
-    var applicantName by rememberSaveable { mutableStateOf(initialDraft?.applicantName.orEmpty()) }
-    var filledBy by rememberSaveable { mutableStateOf(initialDraft?.filledBy?.ifBlank { "Parent / Guardian" } ?: "Parent / Guardian") }
-    var nationality by rememberSaveable { mutableStateOf(initialDraft?.nationality?.ifBlank { "Indian" } ?: "Indian") }
-    var birthDay by rememberSaveable { mutableStateOf(initialDobParts.first) }
-    var birthMonth by rememberSaveable { mutableStateOf(initialDobParts.second) }
-    var birthYear by rememberSaveable { mutableStateOf(initialDobParts.third) }
-    var gender by rememberSaveable { mutableStateOf(initialDraft?.gender.orEmpty()) }
-    var fatherGuardianName by rememberSaveable { mutableStateOf(initialDraft?.fatherGuardianName.orEmpty()) }
-    var alternateContactNo by rememberSaveable { mutableStateOf(initialDraft?.alternateContactNo.orEmpty()) }
-    var parentContactNo by rememberSaveable { mutableStateOf(initialDraft?.parentContactNo.orEmpty()) }
-    var city by rememberSaveable { mutableStateOf(initialDraft?.city.orEmpty()) }
-    var address by rememberSaveable { mutableStateOf(initialDraft?.address.orEmpty()) }
-    var schoolCollege by rememberSaveable { mutableStateOf(initialDraft?.schoolCollege.orEmpty()) }
-    var parentAadhaarNo by rememberSaveable { mutableStateOf(initialDraft?.parentAadhaarNo.orEmpty()) }
-    var timeSlot by rememberSaveable { mutableStateOf(initialDraft?.timeSlot.orEmpty()) }
+    var applicantName by rememberSaveable { mutableStateOf("") }
+    var filledBy by rememberSaveable { mutableStateOf("Parent / Guardian") }
+    var nationality by rememberSaveable { mutableStateOf("Indian") }
+    var birthDay by rememberSaveable { mutableStateOf("") }
+    var birthMonth by rememberSaveable { mutableStateOf("") }
+    var birthYear by rememberSaveable { mutableStateOf("") }
+    var gender by rememberSaveable { mutableStateOf("") }
+    var fatherGuardianName by rememberSaveable { mutableStateOf("") }
+    var alternateContactNo by rememberSaveable { mutableStateOf("") }
+    var parentContactNo by rememberSaveable { mutableStateOf("") }
+    var city by rememberSaveable { mutableStateOf("") }
+    var address by rememberSaveable { mutableStateOf("") }
+    var schoolCollege by rememberSaveable { mutableStateOf("") }
+    var parentAadhaarNo by rememberSaveable { mutableStateOf("") }
+    var timeSlot by rememberSaveable { mutableStateOf("") }
     var joinDate by rememberSaveable { mutableStateOf(todayIsoDate()) }
     var feesPaid by rememberSaveable { mutableStateOf(false) }
     var feePlan by rememberSaveable { mutableStateOf("monthly") }
     var customAmount by rememberSaveable { mutableStateOf("") }
     var jerseySize by rememberSaveable { mutableStateOf("") }
     var jerseyPairs by rememberSaveable { mutableStateOf("0") }
-    var comments by rememberSaveable { mutableStateOf(initialDraft?.comments.orEmpty()) }
-    var batsmanStyle by rememberSaveable { mutableStateOf(initialDraft?.batsmanStyle.orEmpty()) }
-    var bowlingStyles by rememberSaveable { mutableStateOf(initialDraft?.bowlingStyles.orEmpty().toSet()) }
-    var readyToStartNow by rememberSaveable { mutableStateOf(initialDraft?.readyToStartNow == true) }
+    var comments by rememberSaveable { mutableStateOf("") }
+    var batsmanStyle by rememberSaveable { mutableStateOf("") }
+    var bowlingStyles by rememberSaveable { mutableStateOf(emptySet<String>()) }
+    var readyToStartNow by rememberSaveable { mutableStateOf(false) }
     var consentAccepted by rememberSaveable { mutableStateOf(false) }
     var termsAccepted by rememberSaveable { mutableStateOf(false) }
     var inlineMessage by rememberSaveable { mutableStateOf("") }
@@ -5660,45 +5472,6 @@ private fun AdmissionFormSheet(
                 value = previewRegNo?.toString() ?: "Loading...",
                 accent = BrandBlue,
             )
-            if (!attachedDocumentLabel.isNullOrBlank()) {
-                Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = BrandBlue.copy(alpha = 0.08f),
-                    border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.12f)),
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            Icons.Outlined.Description,
-                            contentDescription = null,
-                            tint = BrandBlue,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
-                        ) {
-                            Text(
-                                "Attached document",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = BrandBlue,
-                            )
-                            Text(
-                                attachedDocumentLabel,
-                                fontSize = 14.sp,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                    }
-                }
-            }
-
             AdmissionSectionCard(title = "Player details") {
                 AdmissionTextField(
                     value = applicantName,
@@ -7023,14 +6796,4 @@ private fun buildAndroidMonthlyFinanceBackup(
             }
         }
     }
-}
-
-private fun Context.createAdmissionScanUri(): Uri {
-    val values = ContentValues().apply {
-        put(MediaStore.Images.Media.DISPLAY_NAME, "gen-alpha-admission-${System.currentTimeMillis()}.jpg")
-        put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-    }
-
-    return contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-        ?: throw IllegalStateException("Unable to open camera storage.")
 }

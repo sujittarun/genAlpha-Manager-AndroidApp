@@ -1,5 +1,2 @@
-[functions.extract-admission]
-verify_jwt = false
-
 [functions.whatsapp-reminder]
 verify_jwt = false
