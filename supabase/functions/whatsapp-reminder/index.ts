@@ -79,18 +79,35 @@ function whatsappTimestampToIso(value: unknown): string {
     : new Date().toISOString();
 }
 
-function buildUpiLink(student: any, plan: string, amount: number): string {
+function encodeUpiValue(value: string): string {
+  return encodeURIComponent(value).replace(
+    /[!'()*]/g,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
+function buildUpiLink(
+  student: any,
+  plan: string,
+  amount: number,
+  eventId: string,
+): string {
   const note = `Gen Alpha ${PLAN_LABELS[plan]} fee - ${
     student.name || "Player"
   }`;
-  const params = new URLSearchParams({
-    pa: ACADEMY_UPI_ID,
-    pn: ACADEMY_PAYEE_NAME,
-    am: String(amount),
-    cu: "INR",
-    tn: note,
-  });
-  return `upi://pay?${params.toString()}`;
+  const params = [
+    ["pa", ACADEMY_UPI_ID],
+    ["pn", ACADEMY_PAYEE_NAME],
+    ["tr", eventId],
+    ["tn", note],
+    ["am", amount.toFixed(2)],
+    ["cu", "INR"],
+  ];
+  const query = params
+    .filter(([, value]) => String(value || "").trim())
+    .map(([key, value]) => `${key}=${encodeUpiValue(String(value))}`)
+    .join("&");
+  return `upi://pay?${query}`;
 }
 
 function normalizeChoiceText(value: unknown): string {
@@ -453,7 +470,7 @@ async function createUpiPaymentLink(
     });
   }
 
-  const upiLink = buildUpiLink(student, plan, amount);
+  const upiLink = buildUpiLink(student, plan, amount, reminderEvent.id);
 
   return await insertPaymentLinkRequest({
     reminder_event_id: reminderEvent.id,
