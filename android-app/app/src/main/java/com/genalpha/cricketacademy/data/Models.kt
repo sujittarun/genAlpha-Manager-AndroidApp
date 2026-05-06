@@ -99,9 +99,9 @@ data class OperationResult(
 )
 
 data class ReminderSettings(
-    val whatsappRemindersEnabled: Boolean = false,
-    val paymentLinksEnabled: Boolean = false,
-    val dryRunMode: Boolean = true,
+    val whatsappRemindersEnabled: Boolean = true,
+    val paymentLinksEnabled: Boolean = true,
+    val dryRunMode: Boolean = false,
     val managerPhone: String = "8143960950",
 )
 

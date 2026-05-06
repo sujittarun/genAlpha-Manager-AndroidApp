@@ -4501,7 +4501,7 @@ private fun PlayerDetailSheet(
                                 Icon(Icons.Outlined.Refresh, contentDescription = null)
                             }
                             Spacer(modifier = Modifier.size(6.dp))
-                            Text("Dry-run reminder")
+                            Text("Send reminder")
                         }
                     }
                     TextButton(

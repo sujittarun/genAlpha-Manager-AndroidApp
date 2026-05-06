@@ -691,8 +691,8 @@ class AcademyViewModel(
                 )
                 reminderSettings to nextDue
             }
-            val mode = if (settings.dryRunMode || !settings.whatsappRemindersEnabled) "Dry-run" else "WhatsApp"
-            OperationResult(true, "$mode reminder logged for ${student.name} (${dueDate}).")
+            val mode = if (settings.dryRunMode || !settings.whatsappRemindersEnabled) "Reminder" else "WhatsApp"
+            OperationResult(true, "$mode sent for ${student.name} (${dueDate}).")
         } catch (error: Exception) {
             OperationResult(false, error.message ?: "Unable to log reminder.")
         }

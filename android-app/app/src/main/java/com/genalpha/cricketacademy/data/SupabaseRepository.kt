@@ -133,9 +133,9 @@ class SupabaseRepository(
                 values[row.optString("setting_key")] = row.opt("setting_value")
             }
             ReminderSettings(
-                whatsappRemindersEnabled = values["whatsapp_reminders_enabled"].asBoolean(false),
-                paymentLinksEnabled = values["payment_links_enabled"].asBoolean(false),
-                dryRunMode = values["dry_run_mode"].asBoolean(true),
+                whatsappRemindersEnabled = values["whatsapp_reminders_enabled"].asBoolean(true),
+                paymentLinksEnabled = values["payment_links_enabled"].asBoolean(true),
+                dryRunMode = values["dry_run_mode"].asBoolean(false),
                 managerPhone = "8143960950",
             )
         }

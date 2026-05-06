@@ -13,9 +13,9 @@ type ReminderSettings = {
 };
 
 const DEFAULT_SETTINGS: ReminderSettings = {
-  whatsappRemindersEnabled: false,
-  paymentLinksEnabled: false,
-  dryRunMode: true,
+  whatsappRemindersEnabled: true,
+  paymentLinksEnabled: true,
+  dryRunMode: false,
   managerPhone: "8143960950",
 };
 const ACADEMY_UPI_ID = "9059962499@ybl";
@@ -228,10 +228,13 @@ async function loadSettings(): Promise<ReminderSettings> {
   return {
     whatsappRemindersEnabled: parseBoolean(
       byKey.whatsapp_reminders_enabled,
-      false,
+      DEFAULT_SETTINGS.whatsappRemindersEnabled,
     ),
-    paymentLinksEnabled: parseBoolean(byKey.payment_links_enabled, false),
-    dryRunMode: parseBoolean(byKey.dry_run_mode, true),
+    paymentLinksEnabled: parseBoolean(
+      byKey.payment_links_enabled,
+      DEFAULT_SETTINGS.paymentLinksEnabled,
+    ),
+    dryRunMode: parseBoolean(byKey.dry_run_mode, DEFAULT_SETTINGS.dryRunMode),
     managerPhone: DEFAULT_SETTINGS.managerPhone,
   };
 }
