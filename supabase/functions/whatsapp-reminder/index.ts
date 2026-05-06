@@ -225,18 +225,22 @@ async function sendTemplateMessage(to: string, eventId: string, student: any, du
         language: { code: languageCode },
         components: [
           {
+            type: "header",
+            parameters: [
+              {
+                type: "image",
+                image: { link: "https://genalphaacademy.in/assets/og-image.jpg" },
+              },
+            ],
+          },
+          {
             type: "body",
             parameters: [
               { type: "text", text: student.name || "Player" },
               { type: "text", text: buildReminderDueText(reminderType, dueDate) },
+              { type: "currency", currency: { fallback_value: "Rs 3,500", code: "INR", amount_1000: 3500000 } },
             ],
           },
-          ...["monthly", "quarterly", "halfyearly", "need_help"].map((plan, index) => ({
-            type: "button",
-            sub_type: "quick_reply",
-            index: String(index),
-            parameters: [{ type: "payload", payload: `renewal:${eventId}:${plan}` }],
-          })),
         ],
       },
     }),
@@ -244,7 +248,7 @@ async function sendTemplateMessage(to: string, eventId: string, student: any, du
 
   const body = await response.json();
   if (!response.ok) {
-    throw new Error(body?.error?.message || "Meta WhatsApp send failed.");
+    throw new Error(JSON.stringify(body?.error || body));
   }
   return body;
 }
