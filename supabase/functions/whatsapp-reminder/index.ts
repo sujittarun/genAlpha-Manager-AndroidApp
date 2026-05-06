@@ -197,7 +197,11 @@ function buildReminderPreview(student: any, dueDate: string, settings: ReminderS
   return `Gen Alpha Cricket Academy reminder for ${student.name}: ${dueText}. Parent can choose ${choices}. Manager help: ${settings.managerPhone}.`;
 }
 
-async function sendTemplateMessage(to: string, eventId: string, student: any, dueDate: string) {
+function buildReminderDueText(reminderType: string, dueDate: string) {
+  return reminderType === "joining_fee" ? `joining fee due from ${dueDate}` : `renewal fee due from ${dueDate}`;
+}
+
+async function sendTemplateMessage(to: string, eventId: string, student: any, dueDate: string, reminderType: string) {
   const token = env("META_WHATSAPP_TOKEN");
   const phoneNumberId = env("META_WHATSAPP_PHONE_NUMBER_ID");
   const templateName = env("META_WHATSAPP_TEMPLATE_NAME") || "gen_alpha_fee_reminder";
@@ -224,8 +228,7 @@ async function sendTemplateMessage(to: string, eventId: string, student: any, du
             type: "body",
             parameters: [
               { type: "text", text: student.name || "Player" },
-              { type: "text", text: dueDate },
-              { type: "text", text: "1 Month, 3 Months, 6 Months" },
+              { type: "text", text: buildReminderDueText(reminderType, dueDate) },
             ],
           },
           ...["monthly", "quarterly", "halfyearly", "need_help"].map((plan, index) => ({
@@ -355,7 +358,7 @@ async function handleSendReminder(request: Request, payload: any) {
   if (!to) return jsonResponse({ error: "Parent phone number is missing." }, 400);
   let metaResponse;
   try {
-    metaResponse = await sendTemplateMessage(to, event.id, student, dueDate);
+    metaResponse = await sendTemplateMessage(to, event.id, student, dueDate, reminderType);
   } catch (error) {
     await updateReminderEvent(event.id, {
       status: "send_failed",
