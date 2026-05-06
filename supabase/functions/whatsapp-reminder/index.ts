@@ -86,26 +86,28 @@ function encodeUpiValue(value: string): string {
   );
 }
 
-function buildUpiLink(
-  student: any,
-  plan: string,
-  amount: number,
-  eventId: string,
-): string {
+function encodeUpiPayeeAddress(value: string): string {
+  return value.trim();
+}
+
+function buildUpiLink(student: any, plan: string, amount: number): string {
   const note = `Gen Alpha ${PLAN_LABELS[plan]} fee - ${
     student.name || "Player"
   }`;
   const params = [
-    ["pa", ACADEMY_UPI_ID],
+    ["pa", encodeUpiPayeeAddress(ACADEMY_UPI_ID)],
     ["pn", ACADEMY_PAYEE_NAME],
-    ["tr", eventId],
     ["tn", note],
     ["am", amount.toFixed(2)],
     ["cu", "INR"],
   ];
   const query = params
     .filter(([, value]) => String(value || "").trim())
-    .map(([key, value]) => `${key}=${encodeUpiValue(String(value))}`)
+    .map(([key, value]) =>
+      key === "pa"
+        ? `${key}=${String(value)}`
+        : `${key}=${encodeUpiValue(String(value))}`
+    )
     .join("&");
   return `upi://pay?${query}`;
 }
@@ -470,7 +472,7 @@ async function createUpiPaymentLink(
     });
   }
 
-  const upiLink = buildUpiLink(student, plan, amount, reminderEvent.id);
+  const upiLink = buildUpiLink(student, plan, amount);
 
   return await insertPaymentLinkRequest({
     reminder_event_id: reminderEvent.id,
