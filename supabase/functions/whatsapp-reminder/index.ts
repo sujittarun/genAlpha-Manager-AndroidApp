@@ -322,10 +322,35 @@ function buildReminderPreview(
   return `Gen Alpha Cricket Academy reminder for ${student.name}: ${dueText}. Parent can choose ${choices}. Manager help: ${settings.managerPhone}.`;
 }
 
-function buildReminderDueText(reminderType: string, dueDate: string) {
-  return reminderType === "joining_fee"
-    ? `joining fee due from ${dueDate}`
-    : `renewal fee due from ${dueDate}`;
+function ordinalDay(day: number): string {
+  if (day >= 11 && day <= 13) return `${day}th`;
+  const lastDigit = day % 10;
+  if (lastDigit === 1) return `${day}st`;
+  if (lastDigit === 2) return `${day}nd`;
+  if (lastDigit === 3) return `${day}rd`;
+  return `${day}th`;
+}
+
+function buildReminderDueText(_reminderType: string, dueDate: string) {
+  const [year, month, day] = String(dueDate || "").split("-").map(Number);
+  if (!year || !month || !day) return String(dueDate || "");
+
+  const monthName = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ][month - 1];
+
+  return monthName ? `${ordinalDay(day)} ${monthName}` : String(dueDate || "");
 }
 
 async function sendTemplateMessage(
