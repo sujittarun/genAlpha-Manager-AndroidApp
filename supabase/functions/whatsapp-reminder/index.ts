@@ -357,6 +357,12 @@ function buildReminderDueText(_reminderType: string, dueDate: string) {
   return monthName ? `${ordinalDay(day)} ${monthName}` : String(dueDate || "");
 }
 
+function formatWhatsappAmount(amount: number) {
+  return new Intl.NumberFormat("en-IN", {
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
 async function sendTemplateMessage(
   to: string,
   eventId: string,
@@ -407,6 +413,10 @@ async function sendTemplateMessage(
                 {
                   type: "text",
                   text: buildReminderDueText(reminderType, dueDate),
+                },
+                {
+                  type: "text",
+                  text: formatWhatsappAmount(PLAN_AMOUNTS.monthly),
                 },
               ],
             },
