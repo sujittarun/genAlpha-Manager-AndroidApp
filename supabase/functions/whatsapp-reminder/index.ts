@@ -368,7 +368,7 @@ async function sendTemplateMessage(
   const phoneNumberId = env("META_WHATSAPP_PHONE_NUMBER_ID");
   const templateName = env("META_WHATSAPP_TEMPLATE_NAME") ||
     "gen_alpha_fee_reminder";
-  const languageCode = env("META_WHATSAPP_TEMPLATE_LANGUAGE") || "en";
+  const languageCode = env("META_WHATSAPP_TEMPLATE_LANGUAGE") || "en_US";
   if (!token || !phoneNumberId) {
     throw new Error("Meta WhatsApp secrets are missing.");
   }
