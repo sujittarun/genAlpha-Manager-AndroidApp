@@ -193,7 +193,8 @@ async function assertAuthenticated(request: Request) {
   const token = authHeader.replace(/^Bearer\s+/i, "");
   if (!token) throw new Error("Manager login is required.");
 
-  const authApiKey = env("SUPABASE_ANON_KEY") ||
+  const authApiKey = request.headers.get("apikey") ||
+    env("SUPABASE_ANON_KEY") ||
     env("SUPABASE_SERVICE_ROLE_KEY");
   if (!authApiKey) throw new Error("Supabase auth secret is missing.");
 
