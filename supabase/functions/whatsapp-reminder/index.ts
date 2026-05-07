@@ -407,14 +407,6 @@ async function sendTemplateMessage(
                   type: "text",
                   text: buildReminderDueText(reminderType, dueDate),
                 },
-                {
-                  type: "currency",
-                  currency: {
-                    fallback_value: "Rs 3,500",
-                    code: "INR",
-                    amount_1000: 3500000,
-                  },
-                },
               ],
             },
             {
