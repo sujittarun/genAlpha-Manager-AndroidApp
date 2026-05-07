@@ -1544,8 +1544,8 @@ private fun AcademyMomentsSection(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
@@ -1559,25 +1559,27 @@ private fun AcademyMomentsSection(
                 Text(
                     text = "Watch Gen Alpha in action",
                     color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 18.sp,
-                    lineHeight = 22.sp,
+                    fontSize = 16.sp,
+                    lineHeight = 20.sp,
                     fontWeight = FontWeight.ExtraBold,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = "A quick preview for parents before filling the admission form.",
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp,
-                )
             }
-            AcademyMoments.forEachIndexed { index, moment ->
-                AcademyMomentCard(
-                    moment = moment,
-                    featured = index == 0,
-                    onOpen = onOpen,
-                )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                AcademyMoments.forEachIndexed { index, moment ->
+                    AcademyMomentCard(
+                        moment = moment,
+                        featured = index == 0,
+                        onOpen = onOpen,
+                        modifier = Modifier.width(if (index == 0) 250.dp else 220.dp),
+                    )
+                }
             }
         }
     }
@@ -1588,6 +1590,7 @@ private fun AcademyMomentCard(
     moment: AcademyMoment,
     featured: Boolean,
     onOpen: (String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val container = if (featured) {
         Brush.linearGradient(listOf(BrandBlue, BrandBlueDeep))
@@ -1605,8 +1608,7 @@ private fun AcademyMomentCard(
     val buttonText = if (featured) BrandBlueDeep else BrandBlue
 
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
+        modifier = modifier
             .clip(RoundedCornerShape(20.dp))
             .clickable { onOpen(moment.url) },
         shape = RoundedCornerShape(20.dp),
@@ -1621,8 +1623,8 @@ private fun AcademyMomentCard(
         ) {
             Box(
                 modifier = Modifier
-                    .size(if (featured) 50.dp else 42.dp)
-                    .clip(RoundedCornerShape(16.dp))
+                    .size(if (featured) 44.dp else 38.dp)
+                    .clip(RoundedCornerShape(14.dp))
                     .background(if (featured) Color.White.copy(alpha = 0.14f) else BrandGold.copy(alpha = 0.18f)),
                 contentAlignment = Alignment.Center,
             ) {
@@ -1640,8 +1642,8 @@ private fun AcademyMomentCard(
                 Text(
                     text = moment.title,
                     color = titleColor,
-                    fontSize = if (featured) 14.sp else 13.sp,
-                    lineHeight = if (featured) 18.sp else 17.sp,
+                    fontSize = if (featured) 13.sp else 12.sp,
+                    lineHeight = if (featured) 17.sp else 16.sp,
                     fontWeight = FontWeight.ExtraBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1649,8 +1651,8 @@ private fun AcademyMomentCard(
                 Text(
                     text = moment.caption,
                     color = captionColor,
-                    fontSize = 11.sp,
-                    lineHeight = 15.sp,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -1661,9 +1663,9 @@ private fun AcademyMomentCard(
             ) {
                 Text(
                     text = "Watch",
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
                     color = buttonText,
-                    fontSize = 11.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.ExtraBold,
                     maxLines = 1,
                 )
