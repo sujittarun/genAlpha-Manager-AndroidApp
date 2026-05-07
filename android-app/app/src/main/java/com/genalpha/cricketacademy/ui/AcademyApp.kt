@@ -9,9 +9,6 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
-import android.webkit.WebResourceRequest
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.text.BasicTextField
@@ -141,7 +138,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
@@ -239,58 +235,7 @@ private val AcademyMoments = listOf(
         url = "https://www.instagram.com/p/DX7Nld0zX2T/",
     ),
 )
-
-private fun buildInstagramPreviewHtml(): String {
-    val embeds = AcademyMoments.joinToString(separator = "") { moment ->
-        """
-          <blockquote
-            class="instagram-media reel"
-            data-instgrm-permalink="${moment.url}"
-            data-instgrm-version="14">
-            <a href="${moment.url}">${moment.title}</a>
-          </blockquote>
-        """.trimIndent()
-    }
-    return """
-        <!doctype html>
-        <html>
-          <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1" />
-            <style>
-              html, body {
-                margin: 0;
-                padding: 0;
-                background: #f4f8ff;
-                overflow: hidden;
-                font-family: sans-serif;
-              }
-              .strip {
-                display: flex;
-                gap: 10px;
-                height: 252px;
-                overflow-x: auto;
-                overflow-y: hidden;
-                padding: 8px 8px 12px;
-                box-sizing: border-box;
-                -webkit-overflow-scrolling: touch;
-              }
-              .reel {
-                flex: 0 0 238px !important;
-                width: 326px !important;
-                min-width: 0 !important;
-                margin: 0 !important;
-                transform: scale(0.73);
-                transform-origin: top left;
-              }
-            </style>
-          </head>
-          <body>
-            <div class="strip">$embeds</div>
-            <script async src="https://www.instagram.com/embed.js"></script>
-          </body>
-        </html>
-    """.trimIndent()
-}
+private const val AcademyInstagramProfileUrl = "https://www.instagram.com/genalphacricketacademyy/"
 
 private val AdmissionSlotOptions = listOf(
     SlotOption("6AM", "6:00 - 7:30 AM"),
@@ -592,6 +537,13 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val openAcademyMoment: (String) -> Unit = remember(context) {
+        { url ->
+            runCatching {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            }
+        }
+    }
     val snackbarHostState = remember { SnackbarHostState() }
     var rosterMovementMonthKey by rememberSaveable { mutableStateOf<String?>(null) }
     var rosterMovementType by rememberSaveable { mutableStateOf<String?>(null) }
@@ -1011,7 +963,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                             )
                         }
                         item {
-                            AcademyMomentsSection()
+                            AcademyMomentsSection(onOpen = openAcademyMoment)
                         }
                         item {
                             AdmissionActionsSection(
@@ -1580,8 +1532,9 @@ private fun AlertNameSection(
 }
 
 @Composable
-private fun AcademyMomentsSection() {
-    val previewHtml = remember { buildInstagramPreviewHtml() }
+private fun AcademyMomentsSection(
+    onOpen: (String) -> Unit,
+) {
     OutlinedCard(
         shape = RoundedCornerShape(26.dp),
         border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.12f)),
@@ -1614,59 +1567,147 @@ private fun AcademyMomentsSection() {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Surface(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(268.dp)
-                    .clip(RoundedCornerShape(20.dp)),
-                shape = RoundedCornerShape(20.dp),
-                color = SurfaceTint,
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = { webContext ->
-                        WebView(webContext).apply {
-                            webViewClient = object : WebViewClient() {
-                                override fun shouldOverrideUrlLoading(
-                                    view: WebView?,
-                                    request: WebResourceRequest?,
-                                ): Boolean {
-                                    val url = request?.url?.toString().orEmpty()
-                                    return if (request?.isForMainFrame == true && url.contains("instagram.com/")) {
-                                        runCatching {
-                                            webContext.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                        }
-                                        true
-                                    } else {
-                                        false
-                                    }
-                                }
-                            }
-                            settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
-                            settings.loadWithOverviewMode = true
-                            settings.useWideViewPort = true
-                            isHorizontalScrollBarEnabled = false
-                            isVerticalScrollBarEnabled = false
-                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                            loadDataWithBaseURL(
-                                "https://www.instagram.com/",
-                                previewHtml,
-                                "text/html",
-                                "UTF-8",
-                                null,
-                            )
-                        }
-                    },
-                    update = {},
+                AcademyProfilePreviewCard(
+                    onClick = { onOpen(AcademyInstagramProfileUrl) },
+                    modifier = Modifier.width(236.dp),
                 )
+                AcademyMoments.forEach { moment ->
+                    AcademyMomentCard(
+                        moment = moment,
+                        onOpen = onOpen,
+                        modifier = Modifier.width(210.dp),
+                    )
+                }
             }
             Text(
-                text = "Swipe inside the preview to see more reels. Tap a reel to open it.",
+                text = "Tap the profile card to view the newest academy posts.",
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
                 fontSize = 10.sp,
                 lineHeight = 14.sp,
             )
+        }
+    }
+}
+
+@Composable
+private fun AcademyProfilePreviewCard(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .height(132.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .clickable { onClick() },
+        shape = RoundedCornerShape(20.dp),
+        color = Color.Transparent,
+    ) {
+        Box(
+            modifier = Modifier.background(
+                Brush.linearGradient(listOf(BrandBlue, BrandBlueDeep)),
+            ),
+        ) {
+            BrandPosterCard(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .width(78.dp)
+                    .padding(end = 10.dp)
+                    .alpha(0.88f),
+                imageModifier = Modifier.height(92.dp),
+            )
+            Column(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Text(
+                    text = "Instagram",
+                    color = BrandGold,
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                )
+                Text(
+                    text = "Open latest academy posts",
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    lineHeight = 18.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "@genalphacricketacademyy",
+                    color = Color.White.copy(alpha = 0.72f),
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AcademyMomentCard(
+    moment: AcademyMoment,
+    onOpen: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .height(132.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .clickable { onOpen(moment.url) },
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                BrandPosterCard(
+                    modifier = Modifier.width(44.dp),
+                    imageModifier = Modifier.height(52.dp),
+                )
+                Text(
+                    text = "Reel",
+                    color = BrandBlue,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = moment.title,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 13.sp,
+                    lineHeight = 16.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "Tap to watch on Instagram",
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
+                )
+            }
         }
     }
 }
