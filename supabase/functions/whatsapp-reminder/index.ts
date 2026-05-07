@@ -379,90 +379,103 @@ async function sendTemplateMessage(
     throw new Error("Meta WhatsApp secrets are missing.");
   }
 
-  const response = await fetch(
-    `https://graph.facebook.com/v20.0/${phoneNumberId}/messages`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to,
-        type: "template",
-        template: {
-          name: templateName,
-          language: { code: languageCode },
-          components: [
-            {
-              type: "header",
-              parameters: [
-                {
-                  type: "image",
-                  image: {
-                    link: "https://genalphaacademy.in/assets/og-image.jpg",
-                  },
-                },
-              ],
-            },
-            {
-              type: "body",
-              parameters: [
-                { type: "text", text: student.name || "Player" },
-                {
-                  type: "text",
-                  text: buildReminderDueText(reminderType, dueDate),
-                },
-                {
-                  type: "text",
-                  text: formatWhatsappAmount(PLAN_AMOUNTS.monthly),
-                },
-              ],
-            },
-            {
-              type: "button",
-              sub_type: "quick_reply",
-              index: "0",
-              parameters: [
-                { type: "payload", payload: `renewal:${eventId}:monthly` },
-              ],
-            },
-            {
-              type: "button",
-              sub_type: "quick_reply",
-              index: "1",
-              parameters: [
-                { type: "payload", payload: `renewal:${eventId}:quarterly` },
-              ],
-            },
-            {
-              type: "button",
-              sub_type: "quick_reply",
-              index: "2",
-              parameters: [
-                { type: "payload", payload: `renewal:${eventId}:halfyearly` },
-              ],
-            },
-            {
-              type: "button",
-              sub_type: "quick_reply",
-              index: "3",
-              parameters: [
-                { type: "payload", payload: `renewal:${eventId}:need_help` },
-              ],
-            },
-          ],
-        },
-      }),
-    },
+  const languageCandidates = Array.from(
+    new Set([languageCode, "en_US", "en_GB", "en"].filter(Boolean)),
   );
+  let lastBody: any = null;
 
-  const body = await response.json();
-  if (!response.ok) {
-    throw new Error(JSON.stringify(body?.error || body));
+  for (const candidateLanguage of languageCandidates) {
+    const response = await fetch(
+      `https://graph.facebook.com/v20.0/${phoneNumberId}/messages`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          to,
+          type: "template",
+          template: {
+            name: templateName,
+            language: { code: candidateLanguage },
+            components: [
+              {
+                type: "header",
+                parameters: [
+                  {
+                    type: "image",
+                    image: {
+                      link: "https://genalphaacademy.in/assets/og-image.jpg",
+                    },
+                  },
+                ],
+              },
+              {
+                type: "body",
+                parameters: [
+                  { type: "text", text: student.name || "Player" },
+                  {
+                    type: "text",
+                    text: buildReminderDueText(reminderType, dueDate),
+                  },
+                  {
+                    type: "text",
+                    text: formatWhatsappAmount(PLAN_AMOUNTS.monthly),
+                  },
+                ],
+              },
+              {
+                type: "button",
+                sub_type: "quick_reply",
+                index: "0",
+                parameters: [
+                  { type: "payload", payload: `renewal:${eventId}:monthly` },
+                ],
+              },
+              {
+                type: "button",
+                sub_type: "quick_reply",
+                index: "1",
+                parameters: [
+                  { type: "payload", payload: `renewal:${eventId}:quarterly` },
+                ],
+              },
+              {
+                type: "button",
+                sub_type: "quick_reply",
+                index: "2",
+                parameters: [
+                  { type: "payload", payload: `renewal:${eventId}:halfyearly` },
+                ],
+              },
+              {
+                type: "button",
+                sub_type: "quick_reply",
+                index: "3",
+                parameters: [
+                  { type: "payload", payload: `renewal:${eventId}:need_help` },
+                ],
+              },
+            ],
+          },
+        }),
+      },
+    );
+
+    const body = await response.json();
+    if (response.ok) return body;
+
+    lastBody = body;
+    const error = body?.error || body;
+    const message = String(error?.message || error?.error_data?.details || "");
+    const canRetryLanguage = error?.code === 132001 ||
+      message.toLowerCase().includes("translation");
+    if (!canRetryLanguage) break;
   }
-  return body;
+
+  throw new Error(JSON.stringify(lastBody?.error || lastBody));
 }
 
 async function sendTextMessage(to: string, text: string) {
