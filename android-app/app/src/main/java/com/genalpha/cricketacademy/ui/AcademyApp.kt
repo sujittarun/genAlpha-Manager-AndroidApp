@@ -255,8 +255,8 @@ private val AdmissionFeePlanOptions = listOf(
 private val AdmissionFilledByOptions = listOf("Parent / Guardian", "Coach", "Manager")
 
 private fun admissionPlanBase(plan: String): Double = when (plan) {
-    "quarterly" -> 10000.0
-    "halfyearly" -> 20500.0
+    "quarterly" -> 9975.0
+    "halfyearly" -> 18900.0
     "special" -> 10000.0
     "custom" -> 0.0
     else -> 3500.0
@@ -2124,8 +2124,8 @@ private fun initialCoverageMonthsForAmount(amount: Double, feesPaid: Boolean): I
     val withoutAdmissionFee = (amount - 500.0).coerceAtLeast(0.0)
     val roundedAmount = kotlin.math.round(amount).toInt()
     return when {
-        withoutAdmissionFee >= 20000.0 || roundedAmount in setOf(20000, 20500, 21000) -> 6
-        roundedAmount in setOf(9000, 9500, 10500, 11000) ||
+        withoutAdmissionFee >= 18900.0 || roundedAmount in setOf(18900, 19400, 20000, 20500, 21000) -> 6
+        roundedAmount in setOf(9000, 9500, 9975, 10475, 10500, 11000) ||
             withoutAdmissionFee in 9000.0..10500.0 -> 3
         else -> 1
     }
@@ -2140,8 +2140,8 @@ private fun paymentMonthsCovered(payment: StudentPayment): Int {
     }
     val amount = kotlin.math.round(payment.amount).toInt()
     val amountMonths = when (amount) {
-        20000, 20500, 21000 -> 6
-        9000, 9500, 10500, 11000 -> 3
+        18900, 19400, 20000, 20500, 21000 -> 6
+        9000, 9500, 9975, 10475, 10500, 11000 -> 3
         else -> 1
     }
     return maxOf(explicitMonths, planMonths, amountMonths)
@@ -2741,8 +2741,8 @@ private fun RenewalPaymentDialog(
     var isSaving by rememberSaveable(student.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val planInfo = when (plan) {
-        "quarterly" -> Triple("3 months", 3, 10500.0)
-        "halfyearly" -> Triple("6 months", 6, 21000.0)
+        "quarterly" -> Triple("3 months", 3, 9975.0)
+        "halfyearly" -> Triple("6 months", 6, 18900.0)
         "special" -> Triple("Special training", 1, 10000.0)
         "custom" -> Triple("Custom amount", 1, amount.toDoubleOrNull() ?: 0.0)
         else -> Triple("Monthly", 1, 3500.0)
@@ -2775,8 +2775,8 @@ private fun RenewalPaymentDialog(
                         else -> "monthly"
                     }
                     amount = when (plan) {
-                        "quarterly" -> "10500"
-                        "halfyearly" -> "21000"
+                        "quarterly" -> "9975"
+                        "halfyearly" -> "18900"
                         "special" -> "10000"
                         "custom" -> ""
                         else -> "3500"

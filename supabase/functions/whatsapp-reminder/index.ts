@@ -31,8 +31,8 @@ const PLAN_LABELS: Record<string, string> = {
 };
 const PLAN_AMOUNTS: Record<string, number> = {
   monthly: 3500,
-  quarterly: 10500,
-  halfyearly: 21000,
+  quarterly: 9975,
+  halfyearly: 18900,
 };
 const PLAN_MONTHS: Record<string, number> = {
   monthly: 1,
