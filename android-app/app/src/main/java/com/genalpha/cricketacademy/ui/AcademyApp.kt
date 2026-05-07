@@ -207,36 +207,6 @@ private data class SlotOption(
     val label: String,
 )
 
-private data class AcademyMoment(
-    val title: String,
-    val caption: String,
-    val url: String,
-)
-
-private val AcademyMoments = listOf(
-    AcademyMoment(
-        title = "Featured training reel",
-        caption = "See the young Gen Alpha players in action.",
-        url = "https://www.instagram.com/p/DYASby5T07s/",
-    ),
-    AcademyMoment(
-        title = "Training clip",
-        caption = "A quick look at the coaching atmosphere.",
-        url = "https://www.instagram.com/p/DX7KNNXTsjM/",
-    ),
-    AcademyMoment(
-        title = "Match moment",
-        caption = "Cricket moments from the academy ground.",
-        url = "https://www.instagram.com/p/DX9hyIQzM-3/",
-    ),
-    AcademyMoment(
-        title = "Academy reel",
-        caption = "More from Gen Alpha Cricket Academy.",
-        url = "https://www.instagram.com/p/DX7Nld0zX2T/",
-    ),
-)
-private const val AcademyInstagramProfileUrl = "https://www.instagram.com/genalphacricketacademyy/"
-
 private val AdmissionSlotOptions = listOf(
     SlotOption("6AM", "6:00 - 7:30 AM"),
     SlotOption("7:30AM", "7:30 - 9:00 AM"),
@@ -543,13 +513,6 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val openAcademyMoment: (String) -> Unit = remember(context) {
-        { url ->
-            runCatching {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-            }
-        }
-    }
     val snackbarHostState = remember { SnackbarHostState() }
     var rosterMovementMonthKey by rememberSaveable { mutableStateOf<String?>(null) }
     var rosterMovementType by rememberSaveable { mutableStateOf<String?>(null) }
@@ -967,9 +930,6 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                 title = "Parent Admission",
                                 subtitle = "Open the online form for first-time player admission.",
                             )
-                        }
-                        item {
-                            AcademyMomentsSection(onOpen = openAcademyMoment)
                         }
                         item {
                             AdmissionActionsSection(
@@ -1531,187 +1491,6 @@ private fun AlertNameSection(
                     fontSize = 14.sp,
                     lineHeight = 20.sp,
                     fontWeight = FontWeight.SemiBold,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun AcademyMomentsSection(
-    onOpen: (String) -> Unit,
-) {
-    OutlinedCard(
-        shape = RoundedCornerShape(26.dp),
-        border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.12f)),
-        colors = CardDefaults.outlinedCardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-        ),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(9.dp),
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = "Academy moments",
-                    color = BrandBlue,
-                    fontSize = 11.sp,
-                    lineHeight = 14.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 0.08.em,
-                )
-                Text(
-                    text = "Watch Gen Alpha in action",
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 16.sp,
-                    lineHeight = 20.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                AcademyProfilePreviewCard(
-                    onClick = { onOpen(AcademyInstagramProfileUrl) },
-                    modifier = Modifier.width(236.dp),
-                )
-                AcademyMoments.forEach { moment ->
-                    AcademyMomentCard(
-                        moment = moment,
-                        onOpen = onOpen,
-                        modifier = Modifier.width(210.dp),
-                    )
-                }
-            }
-            Text(
-                text = "Tap the profile card to view the newest academy posts.",
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-                fontSize = 10.sp,
-                lineHeight = 14.sp,
-            )
-        }
-    }
-}
-
-@Composable
-private fun AcademyProfilePreviewCard(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier
-            .height(132.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .clickable { onClick() },
-        shape = RoundedCornerShape(20.dp),
-        color = Color.Transparent,
-    ) {
-        Box(
-            modifier = Modifier.background(
-                Brush.linearGradient(listOf(BrandBlue, BrandBlueDeep)),
-            ),
-        ) {
-            BrandPosterCard(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .width(78.dp)
-                    .padding(end = 10.dp)
-                    .alpha(0.88f),
-                imageModifier = Modifier.height(92.dp),
-            )
-            Column(
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp),
-            ) {
-                Text(
-                    text = "Instagram",
-                    color = BrandGold,
-                    fontSize = 11.sp,
-                    lineHeight = 14.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                )
-                Text(
-                    text = "Open latest academy posts",
-                    color = Color.White,
-                    fontSize = 15.sp,
-                    lineHeight = 18.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = "@genalphacricketacademyy",
-                    color = Color.White.copy(alpha = 0.72f),
-                    fontSize = 10.sp,
-                    lineHeight = 13.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun AcademyMomentCard(
-    moment: AcademyMoment,
-    onOpen: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier
-            .height(132.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .clickable { onOpen(moment.url) },
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                BrandPosterCard(
-                    modifier = Modifier.width(44.dp),
-                    imageModifier = Modifier.height(52.dp),
-                )
-                Text(
-                    text = "Reel",
-                    color = BrandBlue,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    maxLines = 1,
-                )
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(
-                    text = moment.title,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 13.sp,
-                    lineHeight = 16.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = "Tap to watch on Instagram",
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-                    fontSize = 10.sp,
-                    lineHeight = 13.sp,
                 )
             }
         }
