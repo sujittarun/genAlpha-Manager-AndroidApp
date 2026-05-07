@@ -9,6 +9,9 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.text.BasicTextField
@@ -138,6 +141,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
@@ -235,6 +239,58 @@ private val AcademyMoments = listOf(
         url = "https://www.instagram.com/p/DX7Nld0zX2T/",
     ),
 )
+
+private fun buildInstagramPreviewHtml(): String {
+    val embeds = AcademyMoments.joinToString(separator = "") { moment ->
+        """
+          <blockquote
+            class="instagram-media reel"
+            data-instgrm-permalink="${moment.url}"
+            data-instgrm-version="14">
+            <a href="${moment.url}">${moment.title}</a>
+          </blockquote>
+        """.trimIndent()
+    }
+    return """
+        <!doctype html>
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <style>
+              html, body {
+                margin: 0;
+                padding: 0;
+                background: #f4f8ff;
+                overflow: hidden;
+                font-family: sans-serif;
+              }
+              .strip {
+                display: flex;
+                gap: 10px;
+                height: 252px;
+                overflow-x: auto;
+                overflow-y: hidden;
+                padding: 8px 8px 12px;
+                box-sizing: border-box;
+                -webkit-overflow-scrolling: touch;
+              }
+              .reel {
+                flex: 0 0 238px !important;
+                width: 326px !important;
+                min-width: 0 !important;
+                margin: 0 !important;
+                transform: scale(0.73);
+                transform-origin: top left;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="strip">$embeds</div>
+            <script async src="https://www.instagram.com/embed.js"></script>
+          </body>
+        </html>
+    """.trimIndent()
+}
 
 private val AdmissionSlotOptions = listOf(
     SlotOption("6AM", "6:00 - 7:30 AM"),
@@ -536,13 +592,6 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val openAcademyMoment: (String) -> Unit = remember(context) {
-        { url ->
-            runCatching {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-            }
-        }
-    }
     val snackbarHostState = remember { SnackbarHostState() }
     var rosterMovementMonthKey by rememberSaveable { mutableStateOf<String?>(null) }
     var rosterMovementType by rememberSaveable { mutableStateOf<String?>(null) }
@@ -962,7 +1011,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                             )
                         }
                         item {
-                            AcademyMomentsSection(onOpen = openAcademyMoment)
+                            AcademyMomentsSection()
                         }
                         item {
                             AdmissionActionsSection(
@@ -1531,9 +1580,8 @@ private fun AlertNameSection(
 }
 
 @Composable
-private fun AcademyMomentsSection(
-    onOpen: (String) -> Unit,
-) {
+private fun AcademyMomentsSection() {
+    val previewHtml = remember { buildInstagramPreviewHtml() }
     OutlinedCard(
         shape = RoundedCornerShape(26.dp),
         border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.12f)),
@@ -1566,110 +1614,59 @@ private fun AcademyMomentsSection(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Row(
+            Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    .height(268.dp)
+                    .clip(RoundedCornerShape(20.dp)),
+                shape = RoundedCornerShape(20.dp),
+                color = SurfaceTint,
             ) {
-                AcademyMoments.forEachIndexed { index, moment ->
-                    AcademyMomentCard(
-                        moment = moment,
-                        featured = index == 0,
-                        onOpen = onOpen,
-                        modifier = Modifier.width(if (index == 0) 250.dp else 220.dp),
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AcademyMomentCard(
-    moment: AcademyMoment,
-    featured: Boolean,
-    onOpen: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val container = if (featured) {
-        Brush.linearGradient(listOf(BrandBlue, BrandBlueDeep))
-    } else {
-        Brush.linearGradient(
-            listOf(
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f),
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
-            ),
-        )
-    }
-    val titleColor = if (featured) Color.White else MaterialTheme.colorScheme.onSurface
-    val captionColor = if (featured) Color.White.copy(alpha = 0.78f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f)
-    val buttonContainer = if (featured) BrandGold else BrandBlue.copy(alpha = 0.1f)
-    val buttonText = if (featured) BrandBlueDeep else BrandBlue
-
-    Surface(
-        modifier = modifier
-            .clip(RoundedCornerShape(20.dp))
-            .clickable { onOpen(moment.url) },
-        shape = RoundedCornerShape(20.dp),
-        color = Color.Transparent,
-    ) {
-        Row(
-            modifier = Modifier
-                .background(container)
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(if (featured) 44.dp else 38.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(if (featured) Color.White.copy(alpha = 0.14f) else BrandGold.copy(alpha = 0.18f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = "IG",
-                    color = if (featured) Color.White else BrandBlueDeep,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.ExtraBold,
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { webContext ->
+                        WebView(webContext).apply {
+                            webViewClient = object : WebViewClient() {
+                                override fun shouldOverrideUrlLoading(
+                                    view: WebView?,
+                                    request: WebResourceRequest?,
+                                ): Boolean {
+                                    val url = request?.url?.toString().orEmpty()
+                                    return if (request?.isForMainFrame == true && url.contains("instagram.com/")) {
+                                        runCatching {
+                                            webContext.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                        }
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                }
+                            }
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.loadWithOverviewMode = true
+                            settings.useWideViewPort = true
+                            isHorizontalScrollBarEnabled = false
+                            isVerticalScrollBarEnabled = false
+                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                            loadDataWithBaseURL(
+                                "https://www.instagram.com/",
+                                previewHtml,
+                                "text/html",
+                                "UTF-8",
+                                null,
+                            )
+                        }
+                    },
+                    update = {},
                 )
             }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Text(
-                    text = moment.title,
-                    color = titleColor,
-                    fontSize = if (featured) 13.sp else 12.sp,
-                    lineHeight = if (featured) 17.sp else 16.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = moment.caption,
-                    color = captionColor,
-                    fontSize = 10.sp,
-                    lineHeight = 14.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Surface(
-                shape = RoundedCornerShape(999.dp),
-                color = buttonContainer,
-            ) {
-                Text(
-                    text = "Watch",
-                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
-                    color = buttonText,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    maxLines = 1,
-                )
-            }
+            Text(
+                text = "Swipe inside the preview to see more reels. Tap a reel to open it.",
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                fontSize = 10.sp,
+                lineHeight = 14.sp,
+            )
         }
     }
 }
