@@ -247,8 +247,8 @@ private val AdmissionSlotOptions = listOf(
 private const val AdmissionOneTimeFee = 500.0
 private val AdmissionFeePlanOptions = listOf(
     SlotOption("monthly", "Monthly"),
-    SlotOption("quarterly", "3 months"),
-    SlotOption("halfyearly", "6 months"),
+    SlotOption("quarterly", "3 months - 5% off"),
+    SlotOption("halfyearly", "6 months - 10% off"),
     SlotOption("special", "Special training"),
     SlotOption("custom", "Custom amount"),
 )
@@ -263,6 +263,12 @@ private fun admissionPlanBase(plan: String): Double = when (plan) {
 }
 
 private fun admissionPlanTotal(plan: String): Double = admissionPlanBase(plan) + AdmissionOneTimeFee
+
+private fun planDiscountLabel(plan: String): String = when (plan) {
+    "quarterly" -> "5% discount applied"
+    "halfyearly" -> "10% discount applied"
+    else -> ""
+}
 
 private val BatsmanOptions = listOf("Right-handed batsman", "Left-handed batsman")
 private val BowlingOptions = listOf(
@@ -2741,8 +2747,8 @@ private fun RenewalPaymentDialog(
     var isSaving by rememberSaveable(student.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val planInfo = when (plan) {
-        "quarterly" -> Triple("3 months", 3, 9975.0)
-        "halfyearly" -> Triple("6 months", 6, 18900.0)
+        "quarterly" -> Triple("3 months - 5% off", 3, 9975.0)
+        "halfyearly" -> Triple("6 months - 10% off", 6, 18900.0)
         "special" -> Triple("Special training", 1, 10000.0)
         "custom" -> Triple("Custom amount", 1, amount.toDoubleOrNull() ?: 0.0)
         else -> Triple("Monthly", 1, 3500.0)
@@ -2765,11 +2771,11 @@ private fun RenewalPaymentDialog(
             AdmissionDropdownField(
                 label = "Plan",
                 value = planInfo.first,
-                options = listOf("Monthly", "3 months", "6 months", "Special training", "Custom amount"),
+                options = listOf("Monthly", "3 months - 5% off", "6 months - 10% off", "Special training", "Custom amount"),
                 onSelect = { selected ->
                     plan = when (selected) {
-                        "3 months" -> "quarterly"
-                        "6 months" -> "halfyearly"
+                        "3 months - 5% off" -> "quarterly"
+                        "6 months - 10% off" -> "halfyearly"
                         "Special training" -> "special"
                         "Custom amount" -> "custom"
                         else -> "monthly"
@@ -2783,6 +2789,14 @@ private fun RenewalPaymentDialog(
                     }
                 },
             )
+            planDiscountLabel(plan).takeIf { it.isNotBlank() }?.let { discount ->
+                Text(
+                    text = discount,
+                    color = BrandGreen,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                )
+            }
             AdmissionTextField(
                 value = amount,
                 onValueChange = { amount = it.filter { char -> char.isDigit() || char == '.' } },
@@ -5883,7 +5897,8 @@ private fun AdmissionFormSheet(
                         text = if (feePlan == "custom") {
                             "Custom amount Rs ${String.format(Locale.US, "%,d", planAmount.toInt())}"
                         } else {
-                            "Plan Rs ${String.format(Locale.US, "%,d", admissionPlanBase(feePlan).toInt())} + Rs ${AdmissionOneTimeFee.toInt()} admission. First payment Rs ${String.format(Locale.US, "%,d", planAmount.toInt())}"
+                            val discount = planDiscountLabel(feePlan).takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()
+                            "Plan Rs ${String.format(Locale.US, "%,d", admissionPlanBase(feePlan).toInt())}$discount + Rs ${AdmissionOneTimeFee.toInt()} admission. First payment Rs ${String.format(Locale.US, "%,d", planAmount.toInt())}"
                         },
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),

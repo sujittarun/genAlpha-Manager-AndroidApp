@@ -25,8 +25,8 @@ const PAYMENT_PAGE_URL = "https://genalphaacademy.in/pay.html";
 const PLAN_OPTIONS = ["monthly", "quarterly", "halfyearly", "need_help"];
 const PLAN_LABELS: Record<string, string> = {
   monthly: "1 Month",
-  quarterly: "3 Months",
-  halfyearly: "6 Months",
+  quarterly: "3 Months (5% off)",
+  halfyearly: "6 Months (10% off)",
   need_help: "Need Help",
 };
 const PLAN_AMOUNTS: Record<string, number> = {
