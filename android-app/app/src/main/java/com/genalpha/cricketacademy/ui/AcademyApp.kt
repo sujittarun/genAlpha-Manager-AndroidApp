@@ -207,6 +207,35 @@ private data class SlotOption(
     val label: String,
 )
 
+private data class AcademyMoment(
+    val title: String,
+    val caption: String,
+    val url: String,
+)
+
+private val AcademyMoments = listOf(
+    AcademyMoment(
+        title = "Featured training reel",
+        caption = "See the young Gen Alpha players in action.",
+        url = "https://www.instagram.com/p/DYASby5T07s/",
+    ),
+    AcademyMoment(
+        title = "Training clip",
+        caption = "A quick look at the coaching atmosphere.",
+        url = "https://www.instagram.com/p/DX7KNNXTsjM/",
+    ),
+    AcademyMoment(
+        title = "Match moment",
+        caption = "Cricket moments from the academy ground.",
+        url = "https://www.instagram.com/p/DX9hyIQzM-3/",
+    ),
+    AcademyMoment(
+        title = "Academy reel",
+        caption = "More from Gen Alpha Cricket Academy.",
+        url = "https://www.instagram.com/p/DX7Nld0zX2T/",
+    ),
+)
+
 private val AdmissionSlotOptions = listOf(
     SlotOption("6AM", "6:00 - 7:30 AM"),
     SlotOption("7:30AM", "7:30 - 9:00 AM"),
@@ -507,6 +536,13 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val openAcademyMoment: (String) -> Unit = remember(context) {
+        { url ->
+            runCatching {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            }
+        }
+    }
     val snackbarHostState = remember { SnackbarHostState() }
     var rosterMovementMonthKey by rememberSaveable { mutableStateOf<String?>(null) }
     var rosterMovementType by rememberSaveable { mutableStateOf<String?>(null) }
@@ -924,6 +960,9 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                 title = "Parent Admission",
                                 subtitle = "Open the online form for first-time player admission.",
                             )
+                        }
+                        item {
+                            AcademyMomentsSection(onOpen = openAcademyMoment)
                         }
                         item {
                             AdmissionActionsSection(
@@ -1485,6 +1524,148 @@ private fun AlertNameSection(
                     fontSize = 14.sp,
                     lineHeight = 20.sp,
                     fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AcademyMomentsSection(
+    onOpen: (String) -> Unit,
+) {
+    OutlinedCard(
+        shape = RoundedCornerShape(26.dp),
+        border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.12f)),
+        colors = CardDefaults.outlinedCardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "Academy moments",
+                    color = BrandBlue,
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 0.08.em,
+                )
+                Text(
+                    text = "Watch Gen Alpha in action",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 18.sp,
+                    lineHeight = 22.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "A quick preview for parents before filling the admission form.",
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                )
+            }
+            AcademyMoments.forEachIndexed { index, moment ->
+                AcademyMomentCard(
+                    moment = moment,
+                    featured = index == 0,
+                    onOpen = onOpen,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AcademyMomentCard(
+    moment: AcademyMoment,
+    featured: Boolean,
+    onOpen: (String) -> Unit,
+) {
+    val container = if (featured) {
+        Brush.linearGradient(listOf(BrandBlue, BrandBlueDeep))
+    } else {
+        Brush.linearGradient(
+            listOf(
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f),
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
+            ),
+        )
+    }
+    val titleColor = if (featured) Color.White else MaterialTheme.colorScheme.onSurface
+    val captionColor = if (featured) Color.White.copy(alpha = 0.78f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f)
+    val buttonContainer = if (featured) BrandGold else BrandBlue.copy(alpha = 0.1f)
+    val buttonText = if (featured) BrandBlueDeep else BrandBlue
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .clickable { onOpen(moment.url) },
+        shape = RoundedCornerShape(20.dp),
+        color = Color.Transparent,
+    ) {
+        Row(
+            modifier = Modifier
+                .background(container)
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(if (featured) 50.dp else 42.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(if (featured) Color.White.copy(alpha = 0.14f) else BrandGold.copy(alpha = 0.18f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "IG",
+                    color = if (featured) Color.White else BrandBlueDeep,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = moment.title,
+                    color = titleColor,
+                    fontSize = if (featured) 14.sp else 13.sp,
+                    lineHeight = if (featured) 18.sp else 17.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = moment.caption,
+                    color = captionColor,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Surface(
+                shape = RoundedCornerShape(999.dp),
+                color = buttonContainer,
+            ) {
+                Text(
+                    text = "Watch",
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    color = buttonText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
                 )
             }
         }
