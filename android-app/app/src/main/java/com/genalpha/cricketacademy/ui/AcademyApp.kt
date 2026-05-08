@@ -2450,10 +2450,13 @@ private fun FinanceMonthDetailDialog(
                     ) {
                         Column {
                             Text(title, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
-                            Text(
-                                "Revenue ${formatCurrency(revenueTotal)} • Joining ${formatCurrency(joiningTotal)} • Renewal ${formatCurrency(renewalTotal)} • Expense ${formatCurrency(expenseTotal)} • Net ${formatCurrency(net)}",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                            FinanceMonthSummaryStrip(
+                                revenue = formatCurrency(revenueTotal),
+                                joining = formatCurrency(joiningTotal),
+                                renewal = formatCurrency(renewalTotal),
+                                expense = formatCurrency(expenseTotal),
+                                net = formatCurrency(net),
+                                isNetPositive = net >= 0,
                             )
                         }
                         IconButton(onClick = onDismiss) {
@@ -2479,6 +2482,62 @@ private fun FinanceMonthDetailDialog(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FinanceMonthSummaryStrip(
+    revenue: String,
+    joining: String,
+    renewal: String,
+    expense: String,
+    net: String,
+    isNetPositive: Boolean,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FinanceSummaryMiniCard(
+                label = "Revenue",
+                value = revenue,
+                subText = "Joining $joining • Renewal $renewal",
+                modifier = Modifier.weight(1.35f),
+            )
+            FinanceSummaryMiniCard(
+                label = "Expense",
+                value = expense,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        FinanceSummaryMiniCard(
+            label = "Net",
+            value = net,
+            valueColor = if (isNetPositive) BrandGreen else BrandRed,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun FinanceSummaryMiniCard(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    subText: String? = null,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+    ) {
+        Column(modifier = Modifier.padding(9.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(label.uppercase(Locale.US), fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f))
+            Text(value, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, color = valueColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (!subText.isNullOrBlank()) {
+                Text(subText, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
