@@ -2417,6 +2417,8 @@ private fun FinanceMonthDetailDialog(
         expenses.filter { it.expenseDate.startsWith(monthKey) }
     }
     val revenueTotal = revenueRows.sumOf { it.amount }
+    val joiningTotal = revenueRows.filter { it.type == "Joining" }.sumOf { it.amount }
+    val renewalTotal = revenueRows.filter { it.type == "Renewal" }.sumOf { it.amount }
     val expenseTotal = expenseRows.sumOf { it.amount }
     val net = revenueTotal - expenseTotal
     val title = remember(monthKey) {
@@ -2449,7 +2451,7 @@ private fun FinanceMonthDetailDialog(
                         Column {
                             Text(title, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
                             Text(
-                                "Revenue ${formatCurrency(revenueTotal)} • Expense ${formatCurrency(expenseTotal)} • Net ${formatCurrency(net)}",
+                                "Revenue ${formatCurrency(revenueTotal)} • Joining ${formatCurrency(joiningTotal)} • Renewal ${formatCurrency(renewalTotal)} • Expense ${formatCurrency(expenseTotal)} • Net ${formatCurrency(net)}",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
                             )
