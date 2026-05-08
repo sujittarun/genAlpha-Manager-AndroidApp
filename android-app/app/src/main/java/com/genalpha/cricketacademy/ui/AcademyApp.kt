@@ -4884,14 +4884,15 @@ private fun LoginSheet(
     var password by rememberSaveable(lastPassword) { mutableStateOf(lastPassword) }
     var inlineMessage by rememberSaveable { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+    val scrollState = rememberScrollState()
 
     FormDialog(onDismiss = onDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+                .heightIn(max = 560.dp)
+                .padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -4903,32 +4904,41 @@ private fun LoginSheet(
                     Icon(Icons.Outlined.Close, contentDescription = "Close")
                 }
             }
-            Text("Secure editing access", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
-            Text(
-                "Sign in with your Supabase manager account to unlock editing features in the app.",
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-                lineHeight = 20.sp,
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+                    .verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("Secure editing access", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
+                Text(
+                    "Sign in to unlock editing features.",
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                    fontSize = 13.sp,
+                    lineHeight = 17.sp,
+                )
 
-            OutlinedTextField(
-                value = email,
-                onValueChange = { email = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(rememberBringIntoViewOnFocusModifier()),
-                label = { Text("Manager email") },
-                singleLine = true,
-            )
-            OutlinedTextField(
-                value = password,
-                onValueChange = { password = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(rememberBringIntoViewOnFocusModifier()),
-                label = { Text("Password") },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-            )
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(rememberBringIntoViewOnFocusModifier()),
+                    label = { Text("Manager email") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(rememberBringIntoViewOnFocusModifier()),
+                    label = { Text("Password") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                )
+            }
             if (inlineMessage.isNotBlank()) {
                 Text(inlineMessage, color = BrandRed, fontSize = 13.sp)
             }
