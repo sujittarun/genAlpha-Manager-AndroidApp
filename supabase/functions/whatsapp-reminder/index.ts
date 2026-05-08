@@ -20,6 +20,9 @@ const DEFAULT_SETTINGS: ReminderSettings = {
 };
 const ACADEMY_UPI_ID = "9059962499@ybl";
 const ACADEMY_PAYEE_NAME = "Gen Alpha Cricket Academy";
+const ACADEMY_PAYMENT_PHONE = "9059962499";
+const ACADEMY_PAYMENT_ACCOUNT_NAME = "Srinivas";
+const ACADEMY_PAYMENT_BANK = "Kotak Mahindra Bank";
 const PAYMENT_PAGE_URL = "https://genalphaacademy.in/pay.html";
 
 const PLAN_OPTIONS = ["monthly", "quarterly", "halfyearly", "need_help"];
@@ -124,6 +127,15 @@ function buildPaymentPageUrl(
     name: String(student.name || "Player"),
   });
   return `${PAYMENT_PAGE_URL}?${params.toString()}`;
+}
+
+function paymentContactDetails(): string {
+  return [
+    `UPI ID: ${ACADEMY_UPI_ID}`,
+    `Phone: ${ACADEMY_PAYMENT_PHONE}`,
+    `Name: ${ACADEMY_PAYMENT_ACCOUNT_NAME}`,
+    ACADEMY_PAYMENT_BANK,
+  ].join("\n");
 }
 
 function normalizeChoiceText(value: unknown): string {
@@ -684,7 +696,7 @@ async function handleSendSampleReminder(request: Request, payload: any) {
   const paymentPageUrl = buildPaymentPageUrl(sampleStudent, "monthly", amount);
   await sendTextMessage(
     to,
-    `Sample Gen Alpha fee link: ${paymentPageUrl}\n\nUPI ID: ${ACADEMY_UPI_ID}`,
+    `Sample Gen Alpha fee link: ${paymentPageUrl}\n\n${paymentContactDetails()}`,
   );
 
   return jsonResponse({
@@ -843,7 +855,7 @@ async function handleWebhook(payload: any) {
             from,
             `Gen Alpha ${PLAN_LABELS[plan]} fee: Rs ${
               PLAN_AMOUNTS[plan]
-            }.\n\nPay here: ${linkRequest.payment_link_url}\n\nUPI ID: ${ACADEMY_UPI_ID}`,
+            }.\n\nPay here: ${linkRequest.payment_link_url}\n\n${paymentContactDetails()}`,
           );
         }
       }
