@@ -635,6 +635,66 @@ async function handleSendReminder(request: Request, payload: any) {
   });
 }
 
+async function handleSendSampleReminder(request: Request, payload: any) {
+  const sampleToken = env("SAMPLE_REMINDER_TOKEN");
+  const requestSampleToken = request.headers.get("x-sample-reminder-token") ||
+    "";
+  if (sampleToken && requestSampleToken === sampleToken) {
+    // One-off operational sample sends can use this private token because the
+    // WhatsApp webhook itself must remain publicly reachable by Meta.
+  } else {
+    await assertAuthenticated(request);
+  }
+
+  const to = normalizePhone(String(payload.phone || payload.to || ""));
+  if (!to) return jsonResponse({ error: "Phone number is required." }, 400);
+
+  const settings = await loadSettings();
+  if (!settings.whatsappRemindersEnabled) {
+    return jsonResponse({ error: "WhatsApp reminders are disabled." }, 400);
+  }
+
+  const sampleStudent = {
+    name: String(payload.name || "Parent"),
+  };
+  const dueDate = String(payload.dueDate || localIsoDate());
+  const sampleEventId = crypto.randomUUID();
+  let metaResponse;
+
+  try {
+    metaResponse = await sendTemplateMessage(
+      to,
+      sampleEventId,
+      sampleStudent,
+      dueDate,
+      "renewal",
+    );
+  } catch (error) {
+    const message = error instanceof Error
+      ? error.message
+      : "Meta WhatsApp send failed.";
+    return jsonResponse({
+      success: false,
+      source: "meta_whatsapp",
+      error: `Meta WhatsApp send failed: ${message}`,
+    }, 502);
+  }
+
+  const amount = PLAN_AMOUNTS.monthly;
+  const paymentPageUrl = buildPaymentPageUrl(sampleStudent, "monthly", amount);
+  await sendTextMessage(
+    to,
+    `Sample Gen Alpha fee link: ${paymentPageUrl}\n\nUPI ID: ${ACADEMY_UPI_ID}`,
+  );
+
+  return jsonResponse({
+    success: true,
+    message: `Sample WhatsApp reminder sent to ${to.slice(-10)}.`,
+    metaResponse,
+    paymentPageUrl,
+  });
+}
+
 async function handleWebhook(payload: any) {
   for (const entry of payload?.entry || []) {
     for (const change of entry?.changes || []) {
@@ -818,6 +878,9 @@ Deno.serve(async (request) => {
     const payload = await request.json();
     if (payload?.action === "send_reminder") {
       return await handleSendReminder(request, payload);
+    }
+    if (payload?.action === "send_sample_reminder") {
+      return await handleSendSampleReminder(request, payload);
     }
     return await handleWebhook(payload);
   } catch (error) {
