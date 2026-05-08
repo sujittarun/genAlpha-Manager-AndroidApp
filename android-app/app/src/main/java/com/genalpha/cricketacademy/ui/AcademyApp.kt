@@ -2675,6 +2675,7 @@ private fun RenewalPaymentDialog(
 private fun FormDialog(
     onDismiss: () -> Unit,
     expanded: Boolean = false,
+    contentAlignment: Alignment = Alignment.BottomCenter,
     content: @Composable () -> Unit,
 ) {
     val dialogDensity = LocalDensity.current
@@ -2693,7 +2694,7 @@ private fun FormDialog(
                     .imePadding()
                     .navigationBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 12.dp),
-                contentAlignment = Alignment.BottomCenter,
+                contentAlignment = contentAlignment,
             ) {
                 Surface(
                     modifier = Modifier
@@ -4886,11 +4887,11 @@ private fun LoginSheet(
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
 
-    FormDialog(onDismiss = onDismiss) {
+    FormDialog(onDismiss = onDismiss, contentAlignment = Alignment.Center) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 560.dp)
+                .heightIn(max = 520.dp)
                 .padding(horizontal = 18.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
