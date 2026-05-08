@@ -1980,9 +1980,8 @@ private data class FinanceRangeSelection(
 )
 
 private val FinanceRangeOptions = listOf(
-    FinanceRangeOption("week", "1 week", 0L, "week"),
     FinanceRangeOption("month", "1 month", 1L),
-    FinanceRangeOption("2months", "2 months", 2L),
+    FinanceRangeOption("lastmonth", "Last month", 0L, "lastmonth"),
     FinanceRangeOption("3months", "3 months", 3L),
     FinanceRangeOption("6months", "6 months", 6L),
     FinanceRangeOption("year", "1 year", 0L, "year"),
@@ -2097,9 +2096,10 @@ private fun buildFinanceRangeSelection(key: String, customStart: String = "", cu
     val start: LocalDate
     val end: LocalDate
     when (option.type) {
-        "week" -> {
-            start = today.minusDays((today.dayOfWeek.value - 1).toLong())
-            end = start.plusDays(6)
+        "lastmonth" -> {
+            val previousMonth = YearMonth.from(today).minusMonths(1)
+            start = previousMonth.atDay(1)
+            end = previousMonth.atEndOfMonth()
         }
         "year" -> {
             start = LocalDate.of(today.year, 1, 1)
