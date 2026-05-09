@@ -15,6 +15,14 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 
 ## 2026-05-09
 
+### Payment Verification UI
+
+- Roster/profile fee status now uses latest WhatsApp reminder/payment-link state to show `Reminder sent`, `Pending verification`, or `Paid`.
+- Player profile now shows `Confirm payment received` when a parent has replied `Paid` or sent a screenshot and the payment is awaiting manager verification.
+- Confirming payment records the renewal payment with the selected WhatsApp plan amount/months, updates renewal dates, and triggers the renewal confirmation WhatsApp.
+- Timeline payment-proof entries can show stored screenshot thumbnails and open them in a viewer when the proof exists in private Supabase Storage.
+- Android listens for reminder/payment-link realtime changes so the status can update without manual refresh.
+
 ### Renewal Verification WhatsApp and Proof Logging
 
 - Changed parent payment-proof reply to: `Once the academy confirms the payment, we’ll update your renewal. Thank You!`

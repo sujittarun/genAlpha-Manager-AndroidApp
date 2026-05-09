@@ -114,6 +114,59 @@ class SupabaseRepository(
         }
     }
 
+    suspend fun fetchPaymentFollowUps(accessToken: String): List<PaymentFollowUp> = withContext(Dispatchers.IO) {
+        val reminderRequest = baseRequest("$baseUrl/rest/v1/reminder_events?select=id,student_id,reminder_type,status,due_date,selected_plan,amount,created_at&order=created_at.desc&limit=300")
+            .header("Authorization", "Bearer $accessToken")
+            .get()
+            .build()
+        val linkRequest = baseRequest("$baseUrl/rest/v1/payment_link_requests?select=id,reminder_event_id,student_id,payment_type,plan_type,months_covered,amount,cycle_start_date,status,created_at&order=created_at.desc&limit=300")
+            .header("Authorization", "Bearer $accessToken")
+            .get()
+            .build()
+
+        val reminders = client.newCall(reminderRequest).execute().use { response ->
+            if (!response.isSuccessful) JSONArray() else JSONArray(response.body?.string().orEmpty())
+        }
+        val links = client.newCall(linkRequest).execute().use { response ->
+            if (!response.isSuccessful) JSONArray() else JSONArray(response.body?.string().orEmpty())
+        }
+
+        val remindersByStudent = mutableMapOf<String, JSONObject>()
+        repeat(reminders.length()) { index ->
+            val row = reminders.getJSONObject(index)
+            val studentId = row.optString("student_id")
+            if (studentId.isNotBlank() && !remindersByStudent.containsKey(studentId)) {
+                remindersByStudent[studentId] = row
+            }
+        }
+
+        val linksByStudent = mutableMapOf<String, JSONObject>()
+        repeat(links.length()) { index ->
+            val row = links.getJSONObject(index)
+            val studentId = row.optString("student_id")
+            if (studentId.isNotBlank() && !linksByStudent.containsKey(studentId)) {
+                linksByStudent[studentId] = row
+            }
+        }
+
+        (remindersByStudent.keys + linksByStudent.keys).map { studentId ->
+            val reminder = remindersByStudent[studentId]
+            val link = linksByStudent[studentId]
+            PaymentFollowUp(
+                studentId = studentId,
+                reminderId = reminder?.optString("id").orEmpty().ifBlank { link?.optString("reminder_event_id").orEmpty() },
+                reminderStatus = reminder?.optString("status").orEmpty(),
+                linkStatus = link?.optString("status").orEmpty(),
+                reminderType = reminder?.optString("reminder_type").orEmpty().ifBlank { link?.optString("payment_type").orEmpty() },
+                selectedPlan = link?.optString("plan_type").orEmpty().ifBlank { reminder?.optString("selected_plan").orEmpty() },
+                amount = if (link != null && link.has("amount")) link.optDouble("amount", 0.0) else reminder?.optDouble("amount", 0.0) ?: 0.0,
+                monthsCovered = link?.optInt("months_covered", 0) ?: 0,
+                cycleStartDate = link?.optString("cycle_start_date").orEmpty().ifBlank { reminder?.optString("due_date").orEmpty() },
+                createdAt = link?.optString("created_at").orEmpty().ifBlank { reminder?.optString("created_at").orEmpty() },
+            )
+        }
+    }
+
     suspend fun fetchReminderSettings(session: ManagerSession): ReminderSettings = withContext(Dispatchers.IO) {
         val keys = "whatsapp_reminders_enabled,payment_links_enabled,dry_run_mode"
         val request = baseRequest("$baseUrl/rest/v1/system_settings?select=setting_key,setting_value&setting_key=in.($keys)")
@@ -594,6 +647,25 @@ class SupabaseRepository(
         }
     }
 
+    suspend fun createPaymentProofSignedUrl(accessToken: String, path: String): String = withContext(Dispatchers.IO) {
+        if (path.isBlank()) return@withContext ""
+        val body = JSONObject()
+            .put("expiresIn", 600)
+            .toString()
+            .toRequestBody(JSON_MEDIA_TYPE)
+        val request = baseRequest("$baseUrl/storage/v1/object/sign/payment-proofs/$path")
+            .header("Authorization", "Bearer $accessToken")
+            .post(body)
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return@withContext ""
+            val json = JSONObject(response.body?.string().orEmpty())
+            val signedUrl = json.optString("signedURL").ifBlank { json.optString("signedUrl") }
+            if (signedUrl.startsWith("http")) signedUrl else "$baseUrl/storage/v1$signedUrl"
+        }
+    }
+
     suspend fun markTodayAttendance(studentId: String, date: String = todayIsoDate()) {
         withContext(Dispatchers.IO) {
             val body = JSONObject()
@@ -1059,6 +1131,18 @@ class SupabaseRepository(
                                     .put("schema", "public")
                                     .put("table", "student_payments")
                             )
+                            .put(
+                                JSONObject()
+                                    .put("event", "*")
+                                    .put("schema", "public")
+                                    .put("table", "reminder_events")
+                            )
+                            .put(
+                                JSONObject()
+                                    .put("event", "*")
+                                    .put("schema", "public")
+                                    .put("table", "payment_link_requests")
+                            )
                     )
                     .put("private", false)
             )
@@ -1120,6 +1204,8 @@ class SupabaseRepository(
                             if (deletedId.isNotBlank()) {
                                 realtimeListener?.onPaymentDeleted(deletedId)
                             }
+                        } else if (table == "reminder_events" || table == "payment_link_requests") {
+                            realtimeListener?.onReminderPaymentChanged()
                         } else {
                             val deletedId = oldRecord?.optString("id").orEmpty()
                             if (deletedId.isNotBlank()) {
@@ -1139,6 +1225,8 @@ class SupabaseRepository(
                             realtimeListener?.onExpenseUpsert(record.toRealtimeExpense())
                         } else if (table == "student_payments") {
                             realtimeListener?.onPaymentUpsert(record.toRealtimePayment())
+                        } else if (table == "reminder_events" || table == "payment_link_requests") {
+                            realtimeListener?.onReminderPaymentChanged()
                         } else {
                             realtimeListener?.onStudentUpsert(record.toRealtimeStudent())
                         }
@@ -1304,6 +1392,7 @@ interface StudentRealtimeListener {
     fun onExpenseDeleted(expenseId: String) {}
     fun onPaymentUpsert(payment: StudentPayment) {}
     fun onPaymentDeleted(paymentId: String) {}
+    fun onReminderPaymentChanged() {}
     fun onStatus(message: String) {}
     fun onError(message: String) {}
 }

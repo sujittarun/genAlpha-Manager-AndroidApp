@@ -58,6 +58,7 @@ Important: keep Android-only code in the Android repo and web-only code in `web-
 - Mobile number validation: parent and alternate contact should be 10 digits when provided/required.
 - Payment is not mandatory. If fees paid is "No", no receipt should be generated at admission submit time.
 - Parent UPI payments are not automatically verified. If a parent marks payment made or enters UTR/reference, store it as `Payment pending verification`: keep `fees_paid=false`, keep the submitted amount/reference for manager review, do not count it in finance, and do not generate receipt until manager verifies/marks paid.
+- Roster/profile fee state should distinguish `Reminder sent`, `Pending verification`, and `Paid` when WhatsApp reminder/payment-link data exists.
 
 ### Admission Review Queue
 
@@ -103,6 +104,8 @@ Important: keep Android-only code in the Android repo and web-only code in `web-
   - Number of months/training duration in academy. Do not count discontinued gaps as active training time.
   - Total amount paid and detail of months/plans paid.
   - Timeline/history in small, informational style; do not make timeline visually heavy.
+  - If a parent uploads a payment screenshot/image through WhatsApp and it is stored in `payment-proofs`, timeline should show a small thumbnail that can open in a viewer.
+  - If latest WhatsApp payment status is pending verification, manager profile should show `Confirm payment received`; confirming records renewal payment, updates due dates, and sends the renewal confirmation WhatsApp.
 
 ### Attendance
 

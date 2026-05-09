@@ -107,6 +107,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -147,11 +148,13 @@ import com.genalpha.cricketacademy.data.AdmissionDraft
 import com.genalpha.cricketacademy.data.AcademyExpense
 import com.genalpha.cricketacademy.data.ManagerSession
 import com.genalpha.cricketacademy.data.OperationResult
+import com.genalpha.cricketacademy.data.PaymentFollowUp
 import com.genalpha.cricketacademy.data.PendingAdmission
 import com.genalpha.cricketacademy.data.Student
 import com.genalpha.cricketacademy.data.StudentDraft
 import com.genalpha.cricketacademy.data.StudentPayment
 import com.genalpha.cricketacademy.data.StudentTimelineItem
+import com.genalpha.cricketacademy.data.addMonthsForPlan
 import com.genalpha.cricketacademy.data.calculateAgeFromDate
 import com.genalpha.cricketacademy.data.cardTimelineLabel
 import com.genalpha.cricketacademy.data.currentDatePickerValues
@@ -177,6 +180,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.net.URL
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.temporal.ChronoUnit
@@ -897,6 +901,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                 RosterRow(
                                     student = student,
                                     payments = uiState.payments,
+                                    paymentFollowUp = uiState.paymentFollowUps.firstOrNull { it.studentId == student.id },
                                     isManager = viewModel.canEdit(),
                                     highlighted = highlightedRosterStudentId == student.id,
                                     onOpen = {
@@ -1096,6 +1101,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                     PlayerDetailSheet(
                         student = selectedStudent!!,
                         payments = uiState.payments,
+                        paymentFollowUp = uiState.paymentFollowUps.firstOrNull { it.studentId == selectedStudent!!.id },
                         attendanceCount = uiState.attendanceCounts[selectedStudent!!.id] ?: 0,
                         timeline = timelineCache[selectedStudent!!.id].orEmpty(),
                         isTimelineLoading = timelineLoadingId == selectedStudent!!.id,
@@ -1134,6 +1140,21 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                     timelineCache = timelineCache + (activeStudent.id to refreshed)
                                 }
                                 scope.launch { snackbarHostState.showSnackbar(result.message) }
+                            }
+                        },
+                        onConfirmPayment = {
+                            selectedStudent?.let { activeStudent ->
+                                val followUp = uiState.paymentFollowUps.firstOrNull { it.studentId == activeStudent.id }
+                                if (followUp == null) {
+                                    scope.launch { snackbarHostState.showSnackbar("No pending payment proof found.") }
+                                } else {
+                                    val result = viewModel.confirmPendingPayment(activeStudent, followUp)
+                                    if (result.success) {
+                                        val refreshed = runCatching { viewModel.studentTimeline(activeStudent.id) }.getOrDefault(emptyList())
+                                        timelineCache = timelineCache + (activeStudent.id to refreshed)
+                                    }
+                                    scope.launch { snackbarHostState.showSnackbar(result.message) }
+                                }
                             }
                         },
                         onToggleStatus = {
@@ -3841,6 +3862,7 @@ private fun RosterSectionHeader(
 private fun RosterRow(
     student: Student,
     payments: List<StudentPayment>,
+    paymentFollowUp: PaymentFollowUp?,
     isManager: Boolean,
     highlighted: Boolean = false,
     onOpen: () -> Unit,
@@ -3856,8 +3878,10 @@ private fun RosterRow(
     val feePaidTone = themedBadgeTone(Color(0xFFEAF2FF), BrandBlue, DarkInfoContainer, DarkInfoText)
     val feePendingTone = themedBadgeTone(Color(0xFFFFE8E8), BrandRed, DarkDangerContainer, DarkDangerText)
     val feeVerificationTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
+    val feeReminderTone = themedBadgeTone(Color(0xFFEAF2FF), BrandBlueDeep, DarkInfoContainer, DarkInfoText)
     val renewalOkTone = themedBadgeTone(Color(0xFFEAF8F2), BrandGreen, DarkSuccessContainer, DarkSuccessText)
     val renewalPendingTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
+    val feeLabel = student.feeStatusLabel(paymentFollowUp, payments)
 
     Card(
         modifier = Modifier
@@ -3945,15 +3969,17 @@ private fun RosterRow(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Badge(
-                    label = student.feeStatusLabel(),
+                    label = feeLabel,
                     container = when {
+                        feeLabel == "Reminder sent" -> feeReminderTone.container
                         student.feesPaid -> feePaidTone.container
-                        student.isPaymentPendingVerification() -> feeVerificationTone.container
+                        feeLabel == "Pending verification" -> feeVerificationTone.container
                         else -> feePendingTone.container
                     },
                     color = when {
+                        feeLabel == "Reminder sent" -> feeReminderTone.text
                         student.feesPaid -> feePaidTone.text
-                        student.isPaymentPendingVerification() -> feeVerificationTone.text
+                        feeLabel == "Pending verification" -> feeVerificationTone.text
                         else -> feePendingTone.text
                     },
                 )
@@ -3994,6 +4020,7 @@ private fun RosterRow(
 private fun PlayerDetailSheet(
     student: Student,
     payments: List<StudentPayment>,
+    paymentFollowUp: PaymentFollowUp?,
     attendanceCount: Int,
     timeline: List<StudentTimelineItem>,
     isTimelineLoading: Boolean,
@@ -4004,11 +4031,13 @@ private fun PlayerDetailSheet(
     onDelete: suspend () -> Unit,
     onRenew: suspend () -> Unit,
     onSendReminder: suspend () -> Unit,
+    onConfirmPayment: suspend () -> Unit,
     onToggleStatus: suspend () -> Unit,
 ) {
     var actionInProgress by rememberSaveable(student.id) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val slotTone = themedBadgeTone(Color(0xFFEAF2FF), BrandBlueDeep, DarkInfoContainer, DarkInfoText)
     val newTone = themedBadgeTone(Color(0xFFEAF2FF), BrandBlueDeep, DarkInfoContainer, DarkInfoText)
     val returningTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
@@ -4016,6 +4045,8 @@ private fun PlayerDetailSheet(
     val discontinuedTone = themedBadgeTone(Color(0xFFEAEFF6), Color(0xFF5D7399), DarkMutedContainer, DarkMutedText)
     val renewalOkTone = themedBadgeTone(Color(0xFFEAF8F2), BrandGreen, DarkSuccessContainer, DarkSuccessText)
     val renewalPendingTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
+    val feeReminderTone = themedBadgeTone(Color(0xFFEAF2FF), BrandBlueDeep, DarkInfoContainer, DarkInfoText)
+    val feeVerificationTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
     val feesPaidAccent = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) DarkInfoText else BrandBlue
     val feesPendingAccent = if (student.isPaymentPendingVerification()) Color(0xFF8F6500) else BrandRed
     val paymentRows = remember(student, payments) { buildPlayerPaymentRows(student, payments) }
@@ -4023,6 +4054,22 @@ private fun PlayerDetailSheet(
     val totalMonthsPaid = paymentRows.sumOf { it.months }
     val reminderDue = student.isFeesPending() || student.isRenewalPending(payments)
     val reminderOverdueDays = remember(student, payments) { reminderOverdueDays(student, payments) }
+    val feeLabel = student.feeStatusLabel(paymentFollowUp, payments)
+    val pendingFollowUp = paymentFollowUp?.takeIf { it.isPendingVerification() }
+    val pendingPlan = pendingFollowUp?.selectedPlan?.takeIf { it.isNotBlank() } ?: "monthly"
+    val pendingMonths = pendingFollowUp?.monthsCovered?.takeIf { it > 0 } ?: when (pendingPlan) {
+        "quarterly" -> 3
+        "halfyearly" -> 6
+        else -> 1
+    }
+    val pendingAmount = pendingFollowUp?.amount?.takeIf { it > 0.0 } ?: when (pendingPlan) {
+        "quarterly" -> 9975.0
+        "halfyearly" -> 18900.0
+        "special" -> 10000.0
+        else -> 3500.0
+    }
+    val pendingFromDate = pendingFollowUp?.cycleStartDate?.takeIf { it.isNotBlank() } ?: student.nextRenewalCycleDate(payments)
+    val pendingToDate = addMonthsForPlan(pendingFromDate, pendingMonths)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -4142,8 +4189,12 @@ private fun PlayerDetailSheet(
 
             DataTile(
                 label = "Fees",
-                value = student.feeStatusLabel().removePrefix("Fees "),
-                accent = if (student.feesPaid) feesPaidAccent else feesPendingAccent,
+                value = feeLabel.removePrefix("Fees "),
+                accent = when (feeLabel) {
+                    "Reminder sent" -> feeReminderTone.text
+                    "Pending verification" -> feeVerificationTone.text
+                    else -> if (student.feesPaid) feesPaidAccent else feesPendingAccent
+                },
             )
 
             Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.background.copy(alpha = 0.84f)) {
@@ -4289,6 +4340,52 @@ private fun PlayerDetailSheet(
                 }
             }
 
+            if (pendingFollowUp != null && isManager) {
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = Color(0xFFFFF2D8).copy(alpha = if (isDarkTheme) 0.16f else 0.72f),
+                    border = BorderStroke(1.dp, Color(0xFFF4BF2A).copy(alpha = 0.3f)),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            "Payment pending verification",
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            "${renewalPlanLabel(pendingPlan)} • Rs ${String.format(Locale.US, "%,.0f", pendingAmount)} • ${displayDate(pendingFromDate)} to ${displayDate(pendingToDate)}",
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                        )
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    actionInProgress = "confirm-payment"
+                                    onConfirmPayment()
+                                    actionInProgress = null
+                                }
+                            },
+                            enabled = actionInProgress == null,
+                            shape = RoundedCornerShape(15.dp),
+                        ) {
+                            if (actionInProgress == "confirm-payment") {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = Color.White,
+                                )
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text("Confirm payment received")
+                        }
+                    }
+                }
+            }
+
             Text(
                 text = "Last updated by ${student.updatedBy}",
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
@@ -4337,6 +4434,9 @@ private fun PlayerDetailSheet(
                                         fontSize = 10.sp,
                                         lineHeight = 13.sp,
                                     )
+                                }
+                                if (item.proofUrl.isNotBlank()) {
+                                    PaymentProofThumbnail(url = item.proofUrl)
                                 }
                             }
                         }
@@ -4437,6 +4537,76 @@ private fun PlayerDetailSheet(
                         Text("Delete", color = BrandRed)
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PaymentProofThumbnail(url: String) {
+    var showViewer by rememberSaveable(url) { mutableStateOf(false) }
+    val bitmap by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = url) {
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                URL(url).openStream().use { stream -> BitmapFactory.decodeStream(stream) }
+            }.getOrNull()
+        }
+    }
+
+    Surface(
+        modifier = Modifier
+            .padding(top = 4.dp)
+            .clickable(enabled = bitmap != null) { showViewer = true },
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(5.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap!!.asImageBitmap(),
+                    contentDescription = "Payment proof thumbnail",
+                    modifier = Modifier
+                        .size(width = 54.dp, height = 42.dp)
+                        .clip(RoundedCornerShape(9.dp)),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(width = 54.dp, height = 42.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                }
+            }
+            Text(
+                "View proof",
+                color = BrandBlue,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.ExtraBold,
+            )
+        }
+    }
+
+    if (showViewer && bitmap != null) {
+        Dialog(onDismissRequest = { showViewer = false }) {
+            Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surface) {
+                Image(
+                    bitmap = bitmap!!.asImageBitmap(),
+                    contentDescription = "Payment proof",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp)
+                        .clip(RoundedCornerShape(16.dp)),
+                    contentScale = ContentScale.Fit,
+                )
             }
         }
     }

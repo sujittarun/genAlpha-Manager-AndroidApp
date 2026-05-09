@@ -7,6 +7,7 @@ import com.genalpha.cricketacademy.data.DashboardStats
 import com.genalpha.cricketacademy.data.AdmissionDraft
 import com.genalpha.cricketacademy.data.ManagerSession
 import com.genalpha.cricketacademy.data.OperationResult
+import com.genalpha.cricketacademy.data.PaymentFollowUp
 import com.genalpha.cricketacademy.data.PendingAdmission
 import com.genalpha.cricketacademy.data.ReminderSettings
 import com.genalpha.cricketacademy.data.SessionPrefs
@@ -54,6 +55,7 @@ data class AcademyUiState(
     val isAdmissionReviewLoading: Boolean = false,
     val expenses: List<AcademyExpense> = emptyList(),
     val payments: List<StudentPayment> = emptyList(),
+    val paymentFollowUps: List<PaymentFollowUp> = emptyList(),
     val isFinanceLoading: Boolean = false,
     val selectedSlotFilter: String = "",
     val searchQuery: String = "",
@@ -132,6 +134,12 @@ class AcademyViewModel(
         override fun onPaymentDeleted(paymentId: String) {
             _uiState.update { state ->
                 state.copy(payments = state.payments.filterNot { it.id == paymentId })
+            }
+        }
+
+        override fun onReminderPaymentChanged() {
+            viewModelScope.launch {
+                loadFinance()
             }
         }
     }
@@ -317,6 +325,7 @@ class AcademyViewModel(
                 it.copy(
                     expenses = emptyList(),
                     payments = emptyList(),
+                    paymentFollowUps = emptyList(),
                     isFinanceLoading = false,
                 )
             }
@@ -327,11 +336,13 @@ class AcademyViewModel(
         try {
             val fetchedExpenses = repository.fetchExpenses(session.accessToken)
             val fetchedPayments = repository.fetchPayments(session.accessToken)
+            val fetchedFollowUps = repository.fetchPaymentFollowUps(session.accessToken)
 
             _uiState.update {
                 it.copy(
                     expenses = fetchedExpenses,
                     payments = fetchedPayments,
+                    paymentFollowUps = fetchedFollowUps,
                     isFinanceLoading = false,
                 )
             }
@@ -401,7 +412,16 @@ class AcademyViewModel(
     }
 
     suspend fun studentTimeline(studentId: String): List<StudentTimelineItem> {
-        return repository.fetchStudentTimeline(studentId)
+        val timeline = repository.fetchStudentTimeline(studentId)
+        val session = _uiState.value.session ?: return timeline
+        return timeline.map { item ->
+            val proofPath = paymentProofPath(item.details.orEmpty())
+            if (proofPath.isBlank()) {
+                item
+            } else {
+                item.copy(proofUrl = repository.createPaymentProofSignedUrl(session.accessToken, proofPath))
+            }
+        }
     }
 
     suspend fun markAttendance(student: Student): OperationResult {
@@ -618,10 +638,11 @@ class AcademyViewModel(
         monthsCovered: Int,
         amount: Double,
         comment: String,
+        cycleDateOverride: String? = null,
     ): OperationResult {
         val payments = _uiState.value.payments
-        val cycleDate = student.nextRenewalCycleDate(payments)
-        if (!student.isRenewalPending(payments)) {
+        val cycleDate = cycleDateOverride?.takeIf { it.isNotBlank() } ?: student.nextRenewalCycleDate(payments)
+        if (cycleDateOverride.isNullOrBlank() && !student.isRenewalPending(payments)) {
             return OperationResult(false, "This player is not due for renewal yet.")
         }
         if (amount <= 0.0) {
@@ -664,6 +685,33 @@ class AcademyViewModel(
         }
     }
 
+    suspend fun confirmPendingPayment(student: Student, followUp: PaymentFollowUp): OperationResult {
+        if (!followUp.isPendingVerification()) {
+            return OperationResult(false, "No pending payment proof found for this player.")
+        }
+        val planType = followUp.selectedPlan.takeIf { it in setOf("monthly", "quarterly", "halfyearly", "special", "custom") } ?: "monthly"
+        val monthsCovered = followUp.monthsCovered.takeIf { it > 0 } ?: when (planType) {
+            "quarterly" -> 3
+            "halfyearly" -> 6
+            else -> 1
+        }
+        val amount = followUp.amount.takeIf { it > 0.0 } ?: when (planType) {
+            "quarterly" -> 9975.0
+            "halfyearly" -> 18900.0
+            "special" -> 10000.0
+            else -> 3500.0
+        }
+        val cycleDate = followUp.cycleStartDate.takeIf { it.isNotBlank() } ?: student.nextRenewalCycleDate(_uiState.value.payments)
+        return recordRenewalPayment(
+            student = student,
+            planType = planType,
+            monthsCovered = monthsCovered,
+            amount = amount,
+            comment = "Confirmed from WhatsApp payment proof.",
+            cycleDateOverride = cycleDate,
+        )
+    }
+
     suspend fun sendRenewalReminder(student: Student): OperationResult {
         val payments = _uiState.value.payments
         val isJoiningFee = student.isFeesPending()
@@ -689,6 +737,7 @@ class AcademyViewModel(
                 reminderSettings to nextDue
             }
             val mode = if (settings.dryRunMode || !settings.whatsappRemindersEnabled) "Reminder" else "WhatsApp"
+            loadFinance()
             OperationResult(true, "$mode sent for ${student.name} (${dueDate}).")
         } catch (error: Exception) {
             OperationResult(false, error.message ?: "Unable to log reminder.")
@@ -1129,6 +1178,12 @@ private fun renewalPlanLabel(plan: String): String = when (plan) {
     "special" -> "Special training"
     "custom" -> "Custom renewal"
     else -> "1 Month"
+}
+
+private fun paymentProofPath(details: String): String {
+    val match = Regex("payment-proofs/([^\\s.]+/[^\\s.]+\\.(?:jpg|jpeg|png|webp|pdf))", RegexOption.IGNORE_CASE)
+        .find(details)
+    return match?.groupValues?.getOrNull(1).orEmpty()
 }
 
 class AcademyViewModelFactory(

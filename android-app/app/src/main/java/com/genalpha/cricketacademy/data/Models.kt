@@ -158,6 +158,7 @@ data class StudentTimelineItem(
     val details: String? = "",
     @Json(name = "changed_by") val changedBy: String? = "System",
     @Json(name = "created_at") val createdAt: String? = "",
+    val proofUrl: String = "",
 )
 
 data class DashboardStats(
@@ -192,6 +193,27 @@ data class StudentPayment(
     @Json(name = "cycle_start_date") val cycleStartDate: String? = "",
     @Json(name = "months_covered") val monthsCovered: Int? = 1,
 )
+
+data class PaymentFollowUp(
+    val studentId: String,
+    val reminderId: String = "",
+    val reminderStatus: String = "",
+    val linkStatus: String = "",
+    val reminderType: String = "",
+    val selectedPlan: String = "",
+    val amount: Double = 0.0,
+    val monthsCovered: Int = 0,
+    val cycleStartDate: String = "",
+    val createdAt: String = "",
+) {
+    fun isPendingVerification(): Boolean =
+        reminderStatus in setOf("payment_pending_verification", "pending_verification") ||
+            linkStatus in setOf("payment_pending_verification", "pending_verification")
+
+    fun isReminderSent(): Boolean =
+        reminderStatus in setOf("queued", "accepted", "sent", "delivered", "read", "payment_link_sent", "payment_attempted", "help_requested") ||
+            linkStatus in setOf("awaiting_parent_choice", "payment_link_sent", "payment_attempted")
+}
 
 data class AuthPayload(
     val email: String,
@@ -314,6 +336,13 @@ fun Student.isPaymentPendingVerification(): Boolean =
 fun Student.feeStatusLabel(): String = when {
     feesPaid -> "Fees paid"
     isPaymentPendingVerification() -> "Pending verification"
+    else -> "Fees pending"
+}
+
+fun Student.feeStatusLabel(followUp: PaymentFollowUp?, payments: List<StudentPayment>): String = when {
+    followUp?.isPendingVerification() == true || isPaymentPendingVerification() -> "Pending verification"
+    followUp?.isReminderSent() == true && (isFeesPending() || isRenewalPending(payments)) -> "Reminder sent"
+    feesPaid -> "Fees paid"
     else -> "Fees pending"
 }
 
