@@ -120,12 +120,16 @@ function buildPaymentPageUrl(
   student: any,
   plan: string,
   amount: number,
+  eventId = "",
 ): string {
   const params = new URLSearchParams({
     a: amount.toFixed(2),
     p: PLAN_LABELS[plan] || "fees",
     name: String(student.name || "Player"),
   });
+  if (eventId) {
+    params.set("e", eventId);
+  }
   return `${PAYMENT_PAGE_URL}?${params.toString()}`;
 }
 
@@ -137,6 +141,12 @@ function paymentContactDetails(): string {
     ACADEMY_PAYMENT_BANK,
   ].join("\n");
 }
+
+const AFTER_PAY_NOW_FOLLOWUP =
+  'After payment, just reply here with "Paid" or send the payment screenshot.';
+
+const PAYMENT_CONFIRMATION_REPLY =
+  "Once the academy confirms the payment, we’ll update your renewal and send the receipt.";
 
 function normalizeChoiceText(value: unknown): string {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -297,6 +307,30 @@ async function updateReminderEvent(
   payload: Record<string, unknown>,
 ) {
   await rest(`reminder_events?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+async function findReminderEvent(eventId: string) {
+  const rows = await rest(
+    `reminder_events?select=*&id=eq.${encodeURIComponent(eventId)}&limit=1`,
+  );
+  return rows?.[0] || null;
+}
+
+async function updateLatestPaymentLinkRequest(
+  reminderEventId: string,
+  payload: Record<string, unknown>,
+) {
+  const rows = await rest(
+    `payment_link_requests?select=id&reminder_event_id=eq.${
+      encodeURIComponent(reminderEventId)
+    }&order=created_at.desc&limit=1`,
+  );
+  const latest = rows?.[0];
+  if (!latest?.id) return;
+  await rest(`payment_link_requests?id=eq.${encodeURIComponent(latest.id)}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
@@ -520,7 +554,12 @@ async function createUpiPaymentLink(
   }
 
   const upiLink = buildUpiLink(student, plan, amount);
-  const paymentPageUrl = buildPaymentPageUrl(student, plan, amount);
+  const paymentPageUrl = buildPaymentPageUrl(
+    student,
+    plan,
+    amount,
+    reminderEvent.id,
+  );
 
   return await insertPaymentLinkRequest({
     reminder_event_id: reminderEvent.id,
@@ -539,6 +578,111 @@ async function createUpiPaymentLink(
     payment_link_id: upiLink,
     created_by: "whatsapp-webhook",
   });
+}
+
+async function handlePaymentAttempted(payload: any) {
+  const eventId = String(payload.eventId || payload.reminderEventId || "");
+  if (!eventId) return jsonResponse({ error: "eventId is required." }, 400);
+
+  const reminderEvent = await findReminderEvent(eventId);
+  if (!reminderEvent) {
+    return jsonResponse({ error: "Reminder event not found." }, 404);
+  }
+
+  const to = normalizePhone(String(reminderEvent.parent_phone || ""));
+  if (!to) {
+    return jsonResponse({ error: "Parent phone number is missing." }, 400);
+  }
+
+  const shouldSendFollowup = ![
+    "payment_attempted",
+    "payment_pending_verification",
+    "payment_confirmed",
+  ].includes(String(reminderEvent.status || ""));
+
+  await updateReminderEvent(eventId, {
+    status: "payment_attempted",
+  });
+  await updateLatestPaymentLinkRequest(eventId, {
+    status: "payment_attempted",
+  });
+
+  let metaResponse = null;
+  if (shouldSendFollowup) {
+    metaResponse = await sendTextMessage(to, AFTER_PAY_NOW_FOLLOWUP);
+  }
+
+  return jsonResponse({
+    success: true,
+    message: shouldSendFollowup
+      ? "Payment follow-up sent."
+      : "Payment attempt already tracked.",
+    metaResponse,
+  });
+}
+
+function isPaymentConfirmationMessage(message: any): boolean {
+  const type = String(message?.type || "");
+  if (["image", "document"].includes(type)) return true;
+
+  const text = normalizeChoiceText(message?.text?.body);
+  return [
+    "paid",
+    "payed",
+    "done",
+    "paymentdone",
+    "paiddone",
+    "sent",
+    "paymentsent",
+    "screenshot",
+    "screenshotsent",
+  ].includes(text);
+}
+
+async function handlePaymentConfirmationMessage(
+  from: string,
+  message: any,
+  webhookLog: any,
+) {
+  const reminderEvent = await findLatestReminderByPhone(from);
+  if (!reminderEvent) {
+    if (webhookLog?.id) {
+      await rest(
+        `whatsapp_webhook_events?id=eq.${encodeURIComponent(webhookLog.id)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            processing_note:
+              "Payment confirmation received but no matching reminder event found.",
+          }),
+        },
+      );
+    }
+    return;
+  }
+
+  await updateReminderEvent(reminderEvent.id, {
+    status: "payment_pending_verification",
+  });
+  await updateLatestPaymentLinkRequest(reminderEvent.id, {
+    status: "payment_pending_verification",
+  });
+
+  if (webhookLog?.id) {
+    await rest(
+      `whatsapp_webhook_events?id=eq.${encodeURIComponent(webhookLog.id)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          reminder_event_id: reminderEvent.id,
+          processed: true,
+          processing_note: "Payment confirmation marked pending verification.",
+        }),
+      },
+    );
+  }
+
+  await sendTextMessage(from, PAYMENT_CONFIRMATION_REPLY);
 }
 
 async function handleSendReminder(request: Request, payload: any) {
@@ -758,6 +902,10 @@ async function handleWebhook(payload: any) {
             : "No matching plan detected.",
           payload: message,
         });
+        if (!plan && isPaymentConfirmationMessage(message)) {
+          await handlePaymentConfirmationMessage(from, message, webhookLog);
+          continue;
+        }
         if (!plan) {
           continue;
         }
@@ -893,6 +1041,9 @@ Deno.serve(async (request) => {
     }
     if (payload?.action === "send_sample_reminder") {
       return await handleSendSampleReminder(request, payload);
+    }
+    if (payload?.action === "payment_attempted") {
+      return await handlePaymentAttempted(payload);
     }
     return await handleWebhook(payload);
   } catch (error) {

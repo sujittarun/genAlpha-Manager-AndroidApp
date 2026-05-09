@@ -216,6 +216,12 @@ Payment UX:
 - Payment should not be mandatory to submit admission.
 - Parent should not need to enter preferred app, parent UPI ID, or UTR unless explicitly needed. UPI does not automatically return reliable payment confirmation without a payment gateway.
 - Current non-gateway UPI flow must not auto-mark paid. Treat parent payment claims as pending verification until a manager confirms in roster/edit/payment flow.
+- Renewal WhatsApp payment flow:
+  - Parent selects a renewal plan in WhatsApp.
+  - Function sends payment page link with reminder event id.
+  - When parent taps `Pay Now` on `pay.html`, call the WhatsApp function with `payment_attempted`, update reminder/payment-link status, and send: `After payment, just reply here with "Paid" or send the payment screenshot.`
+  - If parent replies `Paid` or sends a screenshot/image/document in WhatsApp, mark reminder/payment-link as `payment_pending_verification` and reply: `Once the academy confirms the payment, we’ll update your renewal and send the receipt.`
+  - Still do not mark renewal paid, extend due date, count finance revenue, or send receipt until manager verifies payment.
 
 Receipts:
 
