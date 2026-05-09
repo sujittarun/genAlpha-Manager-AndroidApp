@@ -19,6 +19,7 @@ import com.genalpha.cricketacademy.data.SupabaseException
 import com.genalpha.cricketacademy.data.SupabaseRepository
 import com.genalpha.cricketacademy.data.AcademyExpense
 import com.genalpha.cricketacademy.data.StudentPayment
+import com.genalpha.cricketacademy.data.addMonthsForPlan
 import com.genalpha.cricketacademy.data.buildSlotSummary
 import com.genalpha.cricketacademy.data.buildStats
 import com.genalpha.cricketacademy.data.calculateAgeFromDate
@@ -627,9 +628,22 @@ class AcademyViewModel(
             return OperationResult(false, "Enter a valid renewal amount.")
         }
 
+        var whatsappWarning: String? = null
         return try {
             val (session, insertedPayment) = withFreshSession { session ->
                 val payment = repository.recordRenewalPayment(student, session.email, session, planType, monthsCovered, amount, comment, cycleDate)
+                runCatching {
+                    repository.sendRenewalVerifiedMessage(
+                        student = student,
+                        session = session,
+                        planLabel = renewalPlanLabel(planType),
+                        amount = amount,
+                        fromDate = cycleDate,
+                        toDate = addMonthsForPlan(cycleDate, monthsCovered),
+                    )
+                }.onFailure { error ->
+                    whatsappWarning = error.message ?: "WhatsApp confirmation was not sent."
+                }
                 session to payment
             }
             upsertLocalStudent(
@@ -641,7 +655,10 @@ class AcademyViewModel(
             upsertLocalPayment(insertedPayment)
             refreshFinanceInBackground()
             refreshInBackground()
-            OperationResult(true, "${student.name} renewal payment recorded.")
+            OperationResult(
+                true,
+                "${student.name} renewal payment recorded.${whatsappWarning?.let { " $it" } ?: ""}",
+            )
         } catch (error: Exception) {
             OperationResult(false, error.message ?: "Unable to record renewal payment.")
         }
@@ -1104,6 +1121,14 @@ class AcademyViewModel(
             loadKids()
         }
     }
+}
+
+private fun renewalPlanLabel(plan: String): String = when (plan) {
+    "quarterly" -> "3 Months"
+    "halfyearly" -> "6 Months"
+    "special" -> "Special training"
+    "custom" -> "Custom renewal"
+    else -> "1 Month"
 }
 
 class AcademyViewModelFactory(

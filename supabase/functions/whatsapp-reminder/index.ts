@@ -146,7 +146,7 @@ const AFTER_PAY_NOW_FOLLOWUP =
   'After payment, just reply here with "Paid" or send the payment screenshot.';
 
 const PAYMENT_CONFIRMATION_REPLY =
-  "Once the academy confirms the payment, we’ll update your renewal and send the receipt.";
+  "Once the academy confirms the payment, we’ll update your renewal. Thank You!";
 
 function normalizeChoiceText(value: unknown): string {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -302,6 +302,17 @@ async function insertWebhookEvent(payload: Record<string, unknown>) {
   }
 }
 
+async function insertStudentTimelineEvent(payload: Record<string, unknown>) {
+  try {
+    await rest("student_timeline", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  } catch (_error) {
+    // Timeline logging must never block the parent or manager payment flow.
+  }
+}
+
 async function updateReminderEvent(
   id: string,
   payload: Record<string, unknown>,
@@ -401,6 +412,28 @@ function buildReminderDueText(_reminderType: string, dueDate: string) {
   ][month - 1];
 
   return monthName ? `${ordinalDay(day)} ${monthName}` : String(dueDate || "");
+}
+
+function displayDate(value: string): string {
+  const [year, month, day] = String(value || "").split("-").map(Number);
+  if (!year || !month || !day) return String(value || "");
+
+  const monthName = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ][month - 1];
+
+  return monthName ? `${ordinalDay(day)} ${monthName} ${year}` : String(value || "");
 }
 
 async function sendTemplateMessage(
@@ -523,6 +556,105 @@ async function sendTextMessage(to: string, text: string) {
     },
   );
   return await response.json();
+}
+
+function mediaIdFromMessage(message: any): string {
+  return String(message?.image?.id || message?.document?.id || "");
+}
+
+function extensionForMime(mimeType: string): string {
+  if (mimeType.includes("png")) return "png";
+  if (mimeType.includes("webp")) return "webp";
+  if (mimeType.includes("pdf")) return "pdf";
+  return "jpg";
+}
+
+async function ensurePaymentProofBucket(bucket: string) {
+  const baseUrl = env("SUPABASE_URL").replace(/\/+$/, "");
+  const response = await fetch(`${baseUrl}/storage/v1/bucket`, {
+    method: "POST",
+    headers: serviceHeaders(),
+    body: JSON.stringify({
+      id: bucket,
+      name: bucket,
+      public: false,
+      file_size_limit: 10485760,
+    }),
+  });
+  if (response.ok || response.status === 409) return;
+
+  const text = await response.text();
+  if (/already exists|duplicate/i.test(text)) return;
+  throw new Error(text || "Unable to create payment proof storage bucket.");
+}
+
+async function storePaymentProofMedia(message: any, reminderEvent: any) {
+  const mediaId = mediaIdFromMessage(message);
+  if (!mediaId) return null;
+
+  const token = env("META_WHATSAPP_TOKEN");
+  if (!token) {
+    return {
+      media_id: mediaId,
+      storage_error: "META_WHATSAPP_TOKEN is missing.",
+    };
+  }
+
+  try {
+    const metadataResponse = await fetch(
+      `https://graph.facebook.com/v20.0/${encodeURIComponent(mediaId)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    const metadata = await metadataResponse.json();
+    if (!metadataResponse.ok) {
+      throw new Error(JSON.stringify(metadata?.error || metadata));
+    }
+
+    const mediaResponse = await fetch(metadata.url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!mediaResponse.ok) {
+      throw new Error(await mediaResponse.text() || "Unable to download WhatsApp media.");
+    }
+
+    const mimeType = String(metadata.mime_type || "image/jpeg");
+    const bucket = "payment-proofs";
+    const safeMessageId = String(message.id || mediaId).replace(/[^a-zA-Z0-9_-]/g, "");
+    const safeReminderId = String(reminderEvent.id || "unknown").replace(/[^a-zA-Z0-9_-]/g, "");
+    const objectPath = `${safeReminderId}/${safeMessageId}.${extensionForMime(mimeType)}`;
+    await ensurePaymentProofBucket(bucket);
+
+    const uploadResponse = await fetch(
+      `${env("SUPABASE_URL").replace(/\/+$/, "")}/storage/v1/object/${bucket}/${objectPath}`,
+      {
+        method: "POST",
+        headers: {
+          ...serviceHeaders(),
+          "Content-Type": mimeType,
+          "x-upsert": "true",
+        },
+        body: await mediaResponse.arrayBuffer(),
+      },
+    );
+    if (!uploadResponse.ok) {
+      throw new Error(await uploadResponse.text() || "Unable to store payment proof.");
+    }
+
+    return {
+      media_id: mediaId,
+      mime_type: mimeType,
+      sha256: metadata.sha256 || "",
+      file_size: metadata.file_size || null,
+      storage_bucket: bucket,
+      storage_path: objectPath,
+      stored_at: new Date().toISOString(),
+    };
+  } catch (error) {
+    return {
+      media_id: mediaId,
+      storage_error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 async function createUpiPaymentLink(
@@ -661,11 +793,39 @@ async function handlePaymentConfirmationMessage(
     return;
   }
 
+  const proofMedia = await storePaymentProofMedia(message, reminderEvent);
+  const paymentConfirmation = {
+    message_id: String(message.id || ""),
+    type: String(message.type || ""),
+    text: String(message?.text?.body || ""),
+    image_id: String(message?.image?.id || ""),
+    document_id: String(message?.document?.id || ""),
+    caption: String(message?.image?.caption || message?.document?.caption || ""),
+    proof_media: proofMedia,
+    received_at: new Date().toISOString(),
+  };
+
   await updateReminderEvent(reminderEvent.id, {
     status: "payment_pending_verification",
+    meta_response: {
+      ...(reminderEvent.meta_response || {}),
+      payment_confirmation: paymentConfirmation,
+    },
   });
   await updateLatestPaymentLinkRequest(reminderEvent.id, {
     status: "payment_pending_verification",
+  });
+  await insertStudentTimelineEvent({
+    student_id: reminderEvent.student_id,
+    event_type: "payment_pending_verification",
+    event_date: new Date().toISOString().slice(0, 10),
+    title: "Parent payment proof received",
+    details: proofMedia?.storage_path
+      ? `Parent replied with ${paymentConfirmation.type}. Proof stored at ${proofMedia.storage_bucket}/${proofMedia.storage_path}.`
+      : `Parent replied with ${paymentConfirmation.type || "message"}${
+        paymentConfirmation.text ? `: ${paymentConfirmation.text}` : ""
+      }.`,
+    changed_by: "WhatsApp",
   });
 
   if (webhookLog?.id) {
@@ -848,6 +1008,70 @@ async function handleSendSampleReminder(request: Request, payload: any) {
     message: `Sample WhatsApp reminder sent to ${to.slice(-10)}.`,
     metaResponse,
     paymentPageUrl,
+  });
+}
+
+async function handleRenewalVerified(request: Request, payload: any) {
+  const managerEmail = await assertAuthenticated(request);
+  const studentId = String(payload.studentId || "");
+  if (!studentId) return jsonResponse({ error: "studentId is required." }, 400);
+
+  const student = await fetchStudent(studentId);
+  const to = normalizePhone(String(student.parent_contact_no || ""));
+  if (!to) {
+    return jsonResponse({ error: "Parent phone number is missing." }, 400);
+  }
+
+  const fromDate = String(payload.fromDate || payload.cycleStartDate || "");
+  const toDate = String(payload.toDate || "");
+  const planLabel = String(payload.planLabel || "renewal");
+  const amount = Number(payload.amount || 0);
+  const amountText = Number.isFinite(amount) && amount > 0
+    ? ` Amount received: Rs ${amount.toLocaleString("en-IN")}.`
+    : "";
+  const message = `${student.name || "Player"}'s ${planLabel} has been renewed from ${
+    displayDate(fromDate)
+  } to ${displayDate(toDate)}.${amountText} Thank you!`;
+
+  const metaResponse = await sendTextMessage(to, message);
+
+  const latestReminder = await findLatestReminderByPhone(to);
+  if (latestReminder?.id && latestReminder.student_id === student.id) {
+    await updateReminderEvent(latestReminder.id, {
+      status: "payment_confirmed",
+      meta_response: {
+        ...(latestReminder.meta_response || {}),
+        renewal_verified: {
+          student_id: student.id,
+          from_date: fromDate,
+          to_date: toDate,
+          plan_label: planLabel,
+          amount,
+          sent_by: managerEmail,
+          sent_at: new Date().toISOString(),
+          meta_response: metaResponse,
+        },
+      },
+    });
+    await updateLatestPaymentLinkRequest(latestReminder.id, {
+      status: "payment_confirmed",
+    });
+  }
+  await insertStudentTimelineEvent({
+    student_id: student.id,
+    event_type: "renewal_whatsapp_confirmation",
+    event_date: new Date().toISOString().slice(0, 10),
+    title: "Renewal confirmation sent",
+    details: `${planLabel} renewed from ${displayDate(fromDate)} to ${displayDate(toDate)}${
+      amountText ? ` - ${amountText.trim()}` : ""
+    }`,
+    changed_by: managerEmail,
+  });
+
+  return jsonResponse({
+    success: true,
+    message: `Renewal confirmation sent for ${student.name}.`,
+    metaResponse,
   });
 }
 
@@ -1041,6 +1265,9 @@ Deno.serve(async (request) => {
     }
     if (payload?.action === "send_sample_reminder") {
       return await handleSendSampleReminder(request, payload);
+    }
+    if (payload?.action === "renewal_verified") {
+      return await handleRenewalVerified(request, payload);
     }
     if (payload?.action === "payment_attempted") {
       return await handlePaymentAttempted(payload);

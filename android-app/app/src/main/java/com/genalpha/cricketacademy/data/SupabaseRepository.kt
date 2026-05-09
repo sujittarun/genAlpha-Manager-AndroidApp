@@ -745,6 +745,37 @@ class SupabaseRepository(
         }
     }
 
+    suspend fun sendRenewalVerifiedMessage(
+        student: Student,
+        session: ManagerSession,
+        planLabel: String,
+        amount: Double,
+        fromDate: String,
+        toDate: String,
+    ) = withContext(Dispatchers.IO) {
+        val body = JSONObject()
+            .put("action", "renewal_verified")
+            .put("studentId", student.id)
+            .put("planLabel", planLabel)
+            .put("amount", amount)
+            .put("fromDate", fromDate)
+            .put("toDate", toDate)
+            .toString()
+            .toRequestBody(JSON_MEDIA_TYPE)
+
+        val request = baseRequest("$baseUrl/functions/v1/whatsapp-reminder")
+            .header("Authorization", "Bearer ${session.accessToken}")
+            .post(body)
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            val responseBody = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw SupabaseException(response.code, parseError(responseBody))
+            }
+        }
+    }
+
     suspend fun toggleStudentStatus(student: Student, managerEmail: String, session: ManagerSession) {
         withContext(Dispatchers.IO) {
             val body = JSONObject()

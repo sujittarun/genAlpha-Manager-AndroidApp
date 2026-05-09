@@ -220,8 +220,11 @@ Payment UX:
   - Parent selects a renewal plan in WhatsApp.
   - Function sends payment page link with reminder event id.
   - When parent taps `Pay Now` on `pay.html`, call the WhatsApp function with `payment_attempted`, update reminder/payment-link status, and send: `After payment, just reply here with "Paid" or send the payment screenshot.`
-  - If parent replies `Paid` or sends a screenshot/image/document in WhatsApp, mark reminder/payment-link as `payment_pending_verification` and reply: `Once the academy confirms the payment, we’ll update your renewal and send the receipt.`
+  - If parent replies `Paid` or sends a screenshot/image/document in WhatsApp, mark reminder/payment-link as `payment_pending_verification` and reply: `Once the academy confirms the payment, we’ll update your renewal. Thank You!`
+  - Store parent payment proof details in `reminder_events.meta_response.payment_confirmation`; raw inbound webhook payloads go to `whatsapp_webhook_events`; screenshot/document media should be stored in private Supabase Storage bucket `payment-proofs` when Meta media download succeeds.
   - Still do not mark renewal paid, extend due date, count finance revenue, or send receipt until manager verifies payment.
+  - When manager records/verifies a renewal payment in roster, send a WhatsApp confirmation with the player name and renewal period from cycle start date to selected plan end date.
+  - Manager verification should update reminder/payment-link status to `payment_confirmed` and add timeline/debug metadata where possible.
 
 Receipts:
 

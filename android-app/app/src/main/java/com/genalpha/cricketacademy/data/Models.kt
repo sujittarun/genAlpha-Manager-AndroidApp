@@ -560,6 +560,8 @@ private fun addMonths(value: String, months: Int): String {
     }
 }
 
+fun addMonthsForPlan(value: String, months: Int): String = addMonths(value, months)
+
 private fun stripTime(date: Date): Date {
     val calendar = Calendar.getInstance()
     calendar.time = date
