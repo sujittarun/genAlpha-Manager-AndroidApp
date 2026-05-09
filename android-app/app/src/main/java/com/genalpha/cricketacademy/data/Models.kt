@@ -21,6 +21,7 @@ data class Student(
     val paymentMethod: String,
     val paymentUpiId: String,
     val paymentReference: String,
+    val paymentStatus: String,
     val comments: String,
     val filledBy: String,
     val fatherGuardianName: String,
@@ -79,6 +80,7 @@ data class AdmissionDraft(
     val paymentMethod: String = "UPI",
     val paymentUpiId: String = "",
     val paymentReference: String = "",
+    val paymentPendingVerification: Boolean = false,
     val comments: String = "",
     val batsmanStyle: String = "",
     val bowlingStyles: List<String> = emptyList(),
@@ -126,6 +128,8 @@ data class PendingAdmission(
     @Json(name = "join_date") val joinDate: String,
     @Json(name = "fees_paid") val feesPaid: Boolean,
     @Json(name = "amount_paid") val amountPaid: Double,
+    @Json(name = "payment_reference") val paymentReference: String? = "",
+    @Json(name = "payment_status") val paymentStatus: String? = "",
     @Json(name = "jersey_size") val jerseySize: String? = "",
     @Json(name = "jersey_pairs") val jerseyPairs: Int? = 0,
     @Json(name = "filled_by") val filledBy: String? = "Parent / Guardian",
@@ -225,6 +229,7 @@ data class StudentDto(
     @Json(name = "payment_method") val paymentMethod: String? = "",
     @Json(name = "payment_upi_id") val paymentUpiId: String? = "",
     @Json(name = "payment_reference") val paymentReference: String? = "",
+    @Json(name = "payment_status") val paymentStatus: String? = "",
     val comments: String? = "",
     @Json(name = "filled_by") val filledBy: String? = "",
     @Json(name = "father_guardian_name") val fatherGuardianName: String? = "",
@@ -254,6 +259,7 @@ fun StudentDto.toDomain(): Student = Student(
     paymentMethod = paymentMethod.orEmpty(),
     paymentUpiId = paymentUpiId.orEmpty(),
     paymentReference = paymentReference.orEmpty(),
+    paymentStatus = derivePaymentStatus(paymentStatus, feesPaid, amountPaid, paymentReference.orEmpty()),
     comments = comments.orEmpty(),
     filledBy = filledBy.orEmpty(),
     fatherGuardianName = fatherGuardianName.orEmpty(),
@@ -289,6 +295,30 @@ fun Student.toDraft(): StudentDraft = StudentDraft(
     grade = grade,
     address = address,
 )
+
+fun derivePaymentStatus(
+    rawStatus: String?,
+    feesPaid: Boolean,
+    amountPaid: Double,
+    paymentReference: String,
+): String = when {
+    feesPaid || rawStatus == "paid" -> "paid"
+    rawStatus == "pending_verification" -> "pending_verification"
+    amountPaid > 0.0 || paymentReference.isNotBlank() -> "pending_verification"
+    else -> "unpaid"
+}
+
+fun Student.isPaymentPendingVerification(): Boolean =
+    !feesPaid && paymentStatus == "pending_verification"
+
+fun Student.feeStatusLabel(): String = when {
+    feesPaid -> "Fees paid"
+    isPaymentPendingVerification() -> "Pending verification"
+    else -> "Fees pending"
+}
+
+fun PendingAdmission.isPaymentPendingVerification(): Boolean =
+    !feesPaid && derivePaymentStatus(paymentStatus, feesPaid, amountPaid, paymentReference.orEmpty()) == "pending_verification"
 
 fun Student.referenceDate(): String = renewals.lastOrNull() ?: joinDate
 
@@ -338,6 +368,7 @@ fun Student.isRenewalPending(payments: List<StudentPayment>): Boolean {
 
 fun Student.renewalStatus(payments: List<StudentPayment>): String = when {
     discontinued -> "Tracking paused"
+    isPaymentPendingVerification() -> "Payment pending verification"
     !feesPaid -> "Join fee pending"
     else -> renewalLabelForDueDate(paidThroughDate(payments))
 }

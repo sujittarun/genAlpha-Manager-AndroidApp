@@ -57,6 +57,7 @@ Important: keep Android-only code in the Android repo and web-only code in `web-
   - Consent and terms are mandatory.
 - Mobile number validation: parent and alternate contact should be 10 digits when provided/required.
 - Payment is not mandatory. If fees paid is "No", no receipt should be generated at admission submit time.
+- Parent UPI payments are not automatically verified. If a parent marks payment made or enters UTR/reference, store it as `Payment pending verification`: keep `fees_paid=false`, keep the submitted amount/reference for manager review, do not count it in finance, and do not generate receipt until manager verifies/marks paid.
 
 ### Admission Review Queue
 
@@ -214,6 +215,7 @@ Payment UX:
 - Desktop browser should show QR/payment path and not show unusable mobile-app tiles.
 - Payment should not be mandatory to submit admission.
 - Parent should not need to enter preferred app, parent UPI ID, or UTR unless explicitly needed. UPI does not automatically return reliable payment confirmation without a payment gateway.
+- Current non-gateway UPI flow must not auto-mark paid. Treat parent payment claims as pending verification until a manager confirms in roster/edit/payment flow.
 
 Receipts:
 

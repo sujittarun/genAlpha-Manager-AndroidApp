@@ -157,8 +157,10 @@ import com.genalpha.cricketacademy.data.cardTimelineLabel
 import com.genalpha.cricketacademy.data.currentDatePickerValues
 import com.genalpha.cricketacademy.data.daysSince
 import com.genalpha.cricketacademy.data.displayDate
+import com.genalpha.cricketacademy.data.feeStatusLabel
 import com.genalpha.cricketacademy.data.isActive
 import com.genalpha.cricketacademy.data.isFeesPending
+import com.genalpha.cricketacademy.data.isPaymentPendingVerification
 import com.genalpha.cricketacademy.data.isRenewalPending
 import com.genalpha.cricketacademy.data.latestRenewal
 import com.genalpha.cricketacademy.data.nextRenewalCycleDate
@@ -1054,7 +1056,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                 if (result.success) {
                                     showAdmissionSheet = false
                                 }
-                                if (result.success && draft.feesPaid) {
+                                if (result.success && draft.feesPaid && !draft.paymentPendingVerification) {
                                     context.shareReceiptPdf(buildAndroidAdmissionReceipt(draft, result.message))
                                 }
                                 scope.launch {
@@ -2849,10 +2851,11 @@ private fun AdmissionReviewCard(
 ) {
     var actionInProgress by rememberSaveable(admission.id) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val feeText = if (admission.feesPaid) {
-        "Paid Rs ${String.format(Locale.US, "%,.0f", admission.amountPaid)}"
-    } else {
-        "Fees not paid"
+    val paymentPending = admission.isPaymentPendingVerification()
+    val feeText = when {
+        admission.feesPaid -> "Paid Rs ${String.format(Locale.US, "%,.0f", admission.amountPaid)}"
+        paymentPending -> "Pending verification Rs ${String.format(Locale.US, "%,.0f", admission.amountPaid)}"
+        else -> "Fees not paid"
     }
 
     Surface(
@@ -2892,8 +2895,16 @@ private fun AdmissionReviewCard(
                 }
                 Badge(
                     label = feeText,
-                    container = if (admission.feesPaid) BrandGreen.copy(alpha = 0.12f) else BrandRed.copy(alpha = 0.1f),
-                    color = if (admission.feesPaid) BrandGreen else BrandRed,
+                    container = when {
+                        admission.feesPaid -> BrandGreen.copy(alpha = 0.12f)
+                        paymentPending -> Color(0xFFFFF2D8)
+                        else -> BrandRed.copy(alpha = 0.1f)
+                    },
+                    color = when {
+                        admission.feesPaid -> BrandGreen
+                        paymentPending -> Color(0xFF8F6500)
+                        else -> BrandRed
+                    },
                 )
             }
 
@@ -3844,6 +3855,7 @@ private fun RosterRow(
     val discontinuedTone = themedBadgeTone(Color(0xFFEAEFF6), Color(0xFF5D7399), DarkMutedContainer, DarkMutedText)
     val feePaidTone = themedBadgeTone(Color(0xFFEAF2FF), BrandBlue, DarkInfoContainer, DarkInfoText)
     val feePendingTone = themedBadgeTone(Color(0xFFFFE8E8), BrandRed, DarkDangerContainer, DarkDangerText)
+    val feeVerificationTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
     val renewalOkTone = themedBadgeTone(Color(0xFFEAF8F2), BrandGreen, DarkSuccessContainer, DarkSuccessText)
     val renewalPendingTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
 
@@ -3933,9 +3945,17 @@ private fun RosterRow(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Badge(
-                    label = if (student.feesPaid) "Fees paid" else "Fees pending",
-                    container = if (student.feesPaid) feePaidTone.container else feePendingTone.container,
-                    color = if (student.feesPaid) feePaidTone.text else feePendingTone.text,
+                    label = student.feeStatusLabel(),
+                    container = when {
+                        student.feesPaid -> feePaidTone.container
+                        student.isPaymentPendingVerification() -> feeVerificationTone.container
+                        else -> feePendingTone.container
+                    },
+                    color = when {
+                        student.feesPaid -> feePaidTone.text
+                        student.isPaymentPendingVerification() -> feeVerificationTone.text
+                        else -> feePendingTone.text
+                    },
                 )
                 Badge(
                     label = student.renewalStatus(payments),
@@ -3997,6 +4017,7 @@ private fun PlayerDetailSheet(
     val renewalOkTone = themedBadgeTone(Color(0xFFEAF8F2), BrandGreen, DarkSuccessContainer, DarkSuccessText)
     val renewalPendingTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
     val feesPaidAccent = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) DarkInfoText else BrandBlue
+    val feesPendingAccent = if (student.isPaymentPendingVerification()) Color(0xFF8F6500) else BrandRed
     val paymentRows = remember(student, payments) { buildPlayerPaymentRows(student, payments) }
     val totalPaid = paymentRows.sumOf { it.amount }
     val totalMonthsPaid = paymentRows.sumOf { it.months }
@@ -4121,8 +4142,8 @@ private fun PlayerDetailSheet(
 
             DataTile(
                 label = "Fees",
-                value = if (student.feesPaid) "Paid" else "Not paid",
-                accent = if (student.feesPaid) feesPaidAccent else BrandRed,
+                value = student.feeStatusLabel().removePrefix("Fees "),
+                accent = if (student.feesPaid) feesPaidAccent else feesPendingAccent,
             )
 
             Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.background.copy(alpha = 0.84f)) {
@@ -5720,8 +5741,12 @@ private fun AdmissionFormSheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Fees paid?", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                        Text("If unpaid, amount stays at 0.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
+                        Text("Payment made?", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                        Text(
+                            "UPI payments stay pending until manager verifies.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                        )
                     }
                     Switch(
                         checked = feesPaid,
@@ -6103,13 +6128,14 @@ private fun AdmissionFormSheet(
                                 parentAadhaarNo = parentAadhaarNo,
                                 timeSlot = timeSlot,
                                 joinDate = joinDate,
-                                feesPaid = feesPaid,
+                                feesPaid = false,
                                 amountPaid = if (feesPaid) String.format(Locale.US, "%.2f", planAmount) else "0",
                                 jerseySize = jerseySize,
                                 jerseyPairs = jerseyPairs.ifBlank { "0" },
                                 paymentMethod = "UPI",
                                 paymentUpiId = upiId,
                                 paymentReference = "",
+                                paymentPendingVerification = feesPaid,
                                 comments = comments,
                                 batsmanStyle = batsmanStyle,
                                 bowlingStyles = bowlingStyles.toList(),

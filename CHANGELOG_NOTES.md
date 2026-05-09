@@ -15,6 +15,17 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 
 ## 2026-05-09
 
+### Payment Pending Verification Status
+
+- Added `Payment pending verification` behavior for parent UPI payments in both web and Android.
+- Parent/UPI payment claims no longer auto-mark `fees_paid=true`.
+- Submitted UPI amount/reference is kept for manager review, while finance/paid stats/receipts stay unconfirmed until manager verifies payment.
+- Web admission copy now says payment is submitted for academy verification.
+- Android admission copy now says UPI stays pending until manager verifies.
+- Verification done:
+  - `node --check web-app-repo/script.js`
+  - `./gradlew assembleDebug`
+
 ### Project Context and Changelog Files
 
 - Added and prepared `PROJECT_CONTEXT.md` and `CHANGELOG_NOTES.md` for both Android/root and web repos.

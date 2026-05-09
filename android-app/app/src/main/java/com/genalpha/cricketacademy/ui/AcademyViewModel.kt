@@ -1016,10 +1016,10 @@ class AcademyViewModel(
             return "Parent and alternate contact numbers must be exactly 10 digits."
         }
 
-        if (draft.feesPaid) {
+        if (draft.feesPaid || draft.paymentPendingVerification) {
             val amount = draft.amountPaid.toDoubleOrNull()
             if (amount == null || amount <= 0) {
-                return "Enter a valid fee amount if fees are marked as paid."
+                return "Enter a valid fee amount if payment is marked as made."
             }
         }
 

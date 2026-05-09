@@ -323,6 +323,12 @@ class SupabaseRepository(
     suspend fun submitAdmission(draft: AdmissionDraft): AdmissionInsertResult = withContext(Dispatchers.IO) {
         val age = calculateAgeFromDate(draft.dateOfBirth)
             ?: throw IllegalArgumentException("Enter a valid date of birth.")
+        val verifiedFeesPaid = draft.feesPaid && !draft.paymentPendingVerification
+        val submittedAmount = if (draft.feesPaid || draft.paymentPendingVerification) {
+            draft.amountPaid.toDoubleOrNull() ?: 0.0
+        } else {
+            0.0
+        }
 
         val body = JSONObject()
             .put("p_applicant_name", draft.applicantName.trim())
@@ -340,8 +346,8 @@ class SupabaseRepository(
             .put("p_parent_aadhaar_no", draft.parentAadhaarNo.trim())
             .put("p_time_slot", draft.timeSlot)
             .put("p_join_date", draft.joinDate)
-            .put("p_fees_paid", draft.feesPaid)
-            .put("p_amount_paid", draft.amountPaid.toDoubleOrNull() ?: 0.0)
+            .put("p_fees_paid", verifiedFeesPaid)
+            .put("p_amount_paid", submittedAmount)
             .put("p_jersey_size", draft.jerseySize.trim())
             .put("p_jersey_pairs", draft.jerseyPairs.toIntOrNull() ?: 0)
             .put("p_payment_method", draft.paymentMethod.trim())
@@ -421,8 +427,8 @@ class SupabaseRepository(
                     .put("parent_aadhaar_no", draft.parentAadhaarNo.trim())
                     .put("time_slot", draft.timeSlot)
                     .put("join_date", draft.joinDate)
-                    .put("fees_paid", draft.feesPaid)
-                    .put("amount_paid", draft.amountPaid.toDoubleOrNull() ?: 0.0)
+                    .put("fees_paid", verifiedFeesPaid)
+                    .put("amount_paid", submittedAmount)
                     .put("jersey_size", draft.jerseySize.trim())
                     .put("jersey_pairs", draft.jerseyPairs.toIntOrNull() ?: 0)
                     .put("payment_method", draft.paymentMethod.trim().ifBlank { "UPI" })
@@ -1146,6 +1152,12 @@ class SupabaseRepository(
             paymentMethod = optSafeString("payment_method"),
             paymentUpiId = optSafeString("payment_upi_id"),
             paymentReference = optSafeString("payment_reference"),
+            paymentStatus = derivePaymentStatus(
+                optSafeString("payment_status"),
+                optBoolean("fees_paid", false),
+                optDoubleValue("amount_paid"),
+                optSafeString("payment_reference"),
+            ),
             comments = optSafeString("comments"),
             filledBy = optSafeString("filled_by"),
             fatherGuardianName = optSafeString("father_guardian_name"),
