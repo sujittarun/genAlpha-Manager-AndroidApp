@@ -26,6 +26,7 @@ import com.genalpha.cricketacademy.data.buildStats
 import com.genalpha.cricketacademy.data.calculateAgeFromDate
 import com.genalpha.cricketacademy.data.isFutureDate
 import com.genalpha.cricketacademy.data.isActive
+import com.genalpha.cricketacademy.data.isPaymentPendingVerification
 import com.genalpha.cricketacademy.data.isFeesPending
 import com.genalpha.cricketacademy.data.isRenewalPending
 import com.genalpha.cricketacademy.data.todayIsoDate

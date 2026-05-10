@@ -58,6 +58,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.LightMode
@@ -5621,7 +5623,6 @@ private fun AdmissionFormSheet(
             amount = upiAmount,
             note = "Gen Alpha admission - ${applicantName.ifBlank { "New player" }}",
         )
-    }
     }
     var showUpiWebDialog by rememberSaveable { mutableStateOf(false) }
     val dateOfBirth = remember(birthDay, birthMonth, birthYear) {
