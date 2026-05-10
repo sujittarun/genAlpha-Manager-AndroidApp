@@ -412,8 +412,9 @@ class AcademyViewModel(
     }
 
     suspend fun studentTimeline(studentId: String): List<StudentTimelineItem> {
-        val timeline = repository.fetchStudentTimeline(studentId)
-        val session = _uiState.value.session ?: return timeline
+        val session = _uiState.value.session
+        val timeline = repository.fetchStudentTimeline(studentId, session?.accessToken)
+        if (session == null) return timeline
         return timeline.map { item ->
             val proofPath = paymentProofPath(item.details.orEmpty())
             if (proofPath.isBlank()) {

@@ -632,9 +632,10 @@ class SupabaseRepository(
         }
     }
 
-    suspend fun fetchStudentTimeline(studentId: String): List<StudentTimelineItem> = withContext(Dispatchers.IO) {
+    suspend fun fetchStudentTimeline(studentId: String, accessToken: String? = null): List<StudentTimelineItem> = withContext(Dispatchers.IO) {
+        val token = accessToken?.takeIf { it.isNotBlank() } ?: anonKey
         val request = baseRequest("$baseUrl/rest/v1/student_timeline?select=*&student_id=eq.$studentId&order=created_at.desc&limit=30")
-            .header("Authorization", "Bearer $anonKey")
+            .header("Authorization", "Bearer $token")
             .get()
             .build()
 

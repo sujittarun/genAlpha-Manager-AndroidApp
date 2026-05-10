@@ -1857,8 +1857,20 @@ private fun FinancePanel(
 
     if (showExpenseForm) {
         val dialogDensity = LocalDensity.current
-        Dialog(onDismissRequest = { if (!isAddingExpense) showExpenseForm = false }) {
+        Dialog(
+            onDismissRequest = { if (!isAddingExpense) showExpenseForm = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
             CompositionLocalProvider(LocalDensity provides dialogDensity) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.32f))
+                    .navigationBarsPadding()
+                    .imePadding()
+                    .padding(horizontal = 16.dp, vertical = 24.dp),
+                contentAlignment = Alignment.Center,
+            ) {
                 FinanceAddExpenseCard(
                     expenseType = expenseType,
                     amount = expenseAmount,
@@ -1888,6 +1900,7 @@ private fun FinancePanel(
                         }
                     },
                 )
+            }
             }
         }
     }
@@ -2263,7 +2276,12 @@ private fun FinanceAddExpenseCard(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                 Column {
                     Text("Add expense", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
@@ -2452,17 +2470,27 @@ private fun FinanceMonthDetailDialog(
     }
     val dialogDensity = LocalDensity.current
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
         CompositionLocalProvider(LocalDensity provides dialogDensity) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.32f))
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 24.dp),
+                contentAlignment = Alignment.Center,
+            ) {
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = MaterialTheme.colorScheme.surface,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().widthIn(max = 560.dp),
             ) {
                 Column(
                     modifier = Modifier
                         .padding(16.dp)
-                        .heightIn(max = 620.dp)
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
@@ -2505,6 +2533,7 @@ private fun FinanceMonthDetailDialog(
                         )
                     }
                 }
+            }
             }
         }
     }
@@ -2621,6 +2650,7 @@ private fun RenewalPaymentDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -2698,7 +2728,7 @@ private fun RenewalPaymentDialog(
 private fun FormDialog(
     onDismiss: () -> Unit,
     expanded: Boolean = false,
-    contentAlignment: Alignment = Alignment.BottomCenter,
+    contentAlignment: Alignment = Alignment.Center,
     content: @Composable () -> Unit,
 ) {
     val dialogDensity = LocalDensity.current
@@ -2739,7 +2769,7 @@ private fun FormDialog(
                             .fillMaxWidth()
                             .then(
                                 if (expanded) Modifier.fillMaxSize()
-                                else Modifier.heightIn(max = 720.dp)
+                                else Modifier
                             )
                     ) {
                         content()
@@ -4047,8 +4077,6 @@ private fun PlayerDetailSheet(
     val renewalPendingTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
     val feeReminderTone = themedBadgeTone(Color(0xFFEAF2FF), BrandBlueDeep, DarkInfoContainer, DarkInfoText)
     val feeVerificationTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
-    val feesPaidAccent = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) DarkInfoText else BrandBlue
-    val feesPendingAccent = if (student.isPaymentPendingVerification()) Color(0xFF8F6500) else BrandRed
     val paymentRows = remember(student, payments) { buildPlayerPaymentRows(student, payments) }
     val totalPaid = paymentRows.sumOf { it.amount }
     val totalMonthsPaid = paymentRows.sumOf { it.months }
@@ -4082,27 +4110,34 @@ private fun PlayerDetailSheet(
                 .navigationBarsPadding()
                 .imePadding()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+                .padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                text = "Player Profile",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = BrandBlue,
-            )
-            Text(
-                text = student.name,
-                fontSize = 28.sp,
-                lineHeight = 30.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+            // ── Header ──
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
             ) {
-                Badge(student.timeSlot.ifBlank { "Not set" }, slotTone.container, slotTone.text)
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Player Profile", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandBlue)
+                    Text(
+                        text = student.name,
+                        fontSize = 26.sp, lineHeight = 28.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    student.regNo?.let {
+                        Text("Reg #$it", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f))
+                    }
+                }
+                IconButton(onClick = onDismiss, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Outlined.Close, contentDescription = "Close")
+                }
+            }
+
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Badge(student.timeSlot.ifBlank { "No slot" }, slotTone.container, slotTone.text)
                 Badge(
                     student.studentType(),
                     if (student.studentType() == "Returning") returningTone.container else newTone.container,
@@ -4113,215 +4148,82 @@ private fun PlayerDetailSheet(
                     if (student.discontinued) discontinuedTone.container else activeTone.container,
                     if (student.discontinued) discontinuedTone.text else activeTone.text,
                 )
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                DataTileContent(
-                    modifier = Modifier.weight(1f),
-                    label = "Reg No",
-                    value = student.regNo?.toString() ?: "Manual",
-                    accent = MaterialTheme.colorScheme.onSurface,
-                )
-                DataTileContent(
-                    modifier = Modifier.weight(1f),
-                    label = "Age",
-                    value = student.age.toString(),
-                    accent = MaterialTheme.colorScheme.onSurface,
-                )
-                DataTileContent(
-                    modifier = Modifier.weight(1f),
-                    label = "Days Present",
-                    value = attendanceCount.toString(),
-                    accent = BrandBlue,
-                    onClick = onShowAttendanceHistory,
-                )
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                DataTileContent(
-                    modifier = Modifier.weight(1f),
-                    label = "Training",
-                    value = student.trainingDurationLabel(),
-                    accent = MaterialTheme.colorScheme.onSurface,
-                )
-                DataTileContent(
-                    modifier = Modifier.weight(1f),
-                    label = "Next Fee Due",
-                    value = if (student.discontinued) "Paused" else displayDate(student.nextRenewalCycleDate(payments)),
-                    accent = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                DataTileContent(
-                    modifier = Modifier.weight(1f),
-                    label = "Amount",
-                    value = "Rs ${String.format(Locale.US, "%.2f", student.amountPaid)}",
-                    accent = MaterialTheme.colorScheme.onSurface,
-                )
-                DataTileContent(
-                    modifier = Modifier.weight(1f),
-                    label = "Join Date",
-                    value = displayDate(student.joinDate),
-                    accent = MaterialTheme.colorScheme.onSurface,
-                )
-                DataTileContent(
-                    modifier = Modifier.weight(1f),
-                    label = "Jersey",
-                    value = if (student.jerseySize.isBlank() && student.jerseyPairs <= 0) {
-                        "Not set"
-                    } else {
-                        "${student.jerseySize.ifBlank { "TBD" }} • ${student.jerseyPairs} pair${if (student.jerseyPairs == 1) "" else "s"}"
+                Badge(
+                    feeLabel,
+                    when (feeLabel) {
+                        "Reminder sent" -> feeReminderTone.container
+                        "Pending verification" -> feeVerificationTone.container
+                        "Fees paid" -> renewalOkTone.container
+                        else -> renewalPendingTone.container
                     },
-                    accent = MaterialTheme.colorScheme.onSurface,
+                    when (feeLabel) {
+                        "Reminder sent" -> feeReminderTone.text
+                        "Pending verification" -> feeVerificationTone.text
+                        "Fees paid" -> renewalOkTone.text
+                        else -> renewalPendingTone.text
+                    },
                 )
             }
 
-            DataTile(
-                label = if (student.discontinued) "Discontinued" else "Latest Renewal",
-                value = if (student.discontinued) {
-                    displayDate(student.discontinuedAt)
-                } else {
-                    displayDate(student.latestRenewal())
-                },
-                accent = MaterialTheme.colorScheme.onSurface,
-            )
-
-            DataTile(
-                label = "Fees",
-                value = feeLabel.removePrefix("Fees "),
-                accent = when (feeLabel) {
-                    "Reminder sent" -> feeReminderTone.text
-                    "Pending verification" -> feeVerificationTone.text
-                    else -> if (student.feesPaid) feesPaidAccent else feesPendingAccent
-                },
-            )
-
-            Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.background.copy(alpha = 0.84f)) {
-                Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Text("Payment details", fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        DataTileContent(
-                            modifier = Modifier.weight(1f),
-                            label = "Total Paid",
-                            value = "Rs ${String.format(Locale.US, "%,.0f", totalPaid)}",
-                            accent = BrandGreen,
-                        )
-                        DataTileContent(
-                            modifier = Modifier.weight(1f),
-                            label = "Months Paid",
-                            value = totalMonthsPaid.toString(),
-                            accent = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                    if (paymentRows.isEmpty()) {
-                        Text("No paid fee records yet.", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), fontSize = 13.sp)
-                    } else {
-                        paymentRows.forEach { row ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Text(row.title, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
-                                    Text(
-                                        "${displayDate(row.date)} • ${row.plan} • ${row.months} month${if (row.months == 1) "" else "s"}",
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-                                        fontSize = 12.sp,
-                                    )
-                                }
-                                Text(
-                                    "Rs ${String.format(Locale.US, "%,.0f", row.amount)}",
-                                    color = BrandGreen,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                )
-                            }
-                        }
-                    }
+            // ── Quick Stats ──
+            ProfileSectionCard(title = "Overview") {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DataTileContent(modifier = Modifier.weight(1f), label = "Age", value = student.age.toString(), accent = MaterialTheme.colorScheme.onSurface)
+                    DataTileContent(modifier = Modifier.weight(1f), label = "Days Present", value = attendanceCount.toString(), accent = BrandBlue, onClick = onShowAttendanceHistory)
                 }
-            }
-
-            Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.background.copy(alpha = 0.84f)) {
-                Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text("Parent details", fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
-                    Text(
-                        student.fatherGuardianName.ifBlank { "Parent name not saved" },
-                        color = MaterialTheme.colorScheme.onSurface,
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DataTileContent(modifier = Modifier.weight(1f), label = "Training", value = student.trainingDurationLabel(), accent = MaterialTheme.colorScheme.onSurface)
+                    DataTileContent(modifier = Modifier.weight(1f), label = "Join Date", value = displayDate(student.joinDate), accent = MaterialTheme.colorScheme.onSurface)
+                }
+                if (student.jerseySize.isNotBlank() || student.jerseyPairs > 0) {
+                    DataTileContent(
+                        modifier = Modifier.fillMaxWidth(),
+                        label = "Jersey",
+                        value = "${student.jerseySize.ifBlank { "TBD" }} • ${student.jerseyPairs} pair${if (student.jerseyPairs == 1) "" else "s"}",
+                        accent = MaterialTheme.colorScheme.onSurface,
                     )
-                    if (student.filledBy.isNotBlank()) {
-                        Text(
-                            "Form filled by: ${student.filledBy}",
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
-                            fontSize = 12.sp,
-                        )
-                    }
-                    if (student.parentContactNo.isNotBlank()) {
-                        Button(
-                            onClick = {
-                                context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${student.parentContactNo}")))
-                            },
-                            shape = RoundedCornerShape(16.dp),
-                        ) {
-                            Text("Call ${student.parentContactNo}")
-                        }
-                    } else {
-                        Text("Parent contact not saved", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f))
-                    }
-                    if (student.schoolCollege.isNotBlank() || student.grade.isNotBlank()) {
-                        val schoolLine = listOfNotNull(
-                            student.schoolCollege.takeIf { it.isNotBlank() },
-                            student.grade.takeIf { it.isNotBlank() }?.let { "Grade $it" },
-                        ).joinToString(" • ")
-                        Text(
-                            schoolLine,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-                            fontSize = 13.sp,
-                        )
-                    }
-                    if (student.address.isNotBlank()) {
-                        Text(
-                            student.address,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-                            fontSize = 12.sp,
-                            lineHeight = 17.sp,
-                        )
-                    }
                 }
             }
-
-            Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.background.copy(alpha = 0.84f)) {
-                Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Badge(
-                        label = student.renewalStatus(payments),
-                        container = when {
-                            student.discontinued -> discontinuedTone.container
-                            student.isRenewalPending(payments) -> renewalPendingTone.container
-                            else -> renewalOkTone.container
-                        },
-                        color = when {
+            // ── Fee & Renewal ──
+            ProfileSectionCard(title = "Fee & Renewal") {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DataTileContent(
+                        modifier = Modifier.weight(1f),
+                        label = "Initial Amount",
+                        value = "Rs ${String.format(Locale.US, "%.0f", student.amountPaid)}",
+                        accent = MaterialTheme.colorScheme.onSurface,
+                    )
+                    DataTileContent(
+                        modifier = Modifier.weight(1f),
+                        label = "Next Fee Due",
+                        value = if (student.discontinued) "Paused" else displayDate(student.nextRenewalCycleDate(payments)),
+                        accent = if (!student.discontinued && student.isRenewalPending(payments)) BrandRed else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DataTileContent(
+                        modifier = Modifier.weight(1f),
+                        label = if (student.discontinued) "Discontinued" else "Latest Renewal",
+                        value = if (student.discontinued) displayDate(student.discontinuedAt) else displayDate(student.latestRenewal()),
+                        accent = MaterialTheme.colorScheme.onSurface,
+                    )
+                    DataTileContent(
+                        modifier = Modifier.weight(1f),
+                        label = "Renewal Status",
+                        value = student.renewalStatus(payments),
+                        accent = when {
                             student.discontinued -> discontinuedTone.text
-                            student.isRenewalPending(payments) -> renewalPendingTone.text
-                            else -> renewalOkTone.text
+                            student.isRenewalPending(payments) -> BrandRed
+                            else -> BrandGreen
                         },
                     )
-                    Text(
-                        text = student.trackingCaption(),
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-                        fontSize = 13.sp,
-                        lineHeight = 19.sp,
-                    )
                 }
+                Text(
+                    text = student.trackingCaption(),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                )
             }
 
             if (reminderOverdueDays > 10) {
@@ -4331,7 +4233,7 @@ private fun PlayerDetailSheet(
                     border = BorderStroke(1.dp, BrandRed.copy(alpha = 0.22f)),
                 ) {
                     Text(
-                        text = "Overdue for $reminderOverdueDays days. Follow up with parent today.",
+                        text = "⚠ Overdue for $reminderOverdueDays days. Follow up with parent today.",
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                         color = BrandRed,
                         fontSize = 12.sp,
@@ -4346,38 +4248,20 @@ private fun PlayerDetailSheet(
                     color = Color(0xFFFFF2D8).copy(alpha = if (isDarkTheme) 0.16f else 0.72f),
                     border = BorderStroke(1.dp, Color(0xFFF4BF2A).copy(alpha = 0.3f)),
                 ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(
-                            "Payment pending verification",
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Payment pending verification", fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
                         Text(
                             "${renewalPlanLabel(pendingPlan)} • Rs ${String.format(Locale.US, "%,.0f", pendingAmount)} • ${displayDate(pendingFromDate)} to ${displayDate(pendingToDate)}",
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp,
+                            fontSize = 12.sp, lineHeight = 16.sp,
                         )
                         Button(
-                            onClick = {
-                                scope.launch {
-                                    actionInProgress = "confirm-payment"
-                                    onConfirmPayment()
-                                    actionInProgress = null
-                                }
-                            },
+                            onClick = { scope.launch { actionInProgress = "confirm-payment"; onConfirmPayment(); actionInProgress = null } },
                             enabled = actionInProgress == null,
                             shape = RoundedCornerShape(15.dp),
                         ) {
                             if (actionInProgress == "confirm-payment") {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = Color.White,
-                                )
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
                                 Spacer(Modifier.width(8.dp))
                             }
                             Text("Confirm payment received")
@@ -4386,54 +4270,116 @@ private fun PlayerDetailSheet(
                 }
             }
 
-            Text(
-                text = "Last updated by ${student.updatedBy}",
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                fontSize = 12.sp,
-            )
-
-            Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.background.copy(alpha = 0.58f)) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(7.dp),
-                ) {
-                    Text(
-                        "Timeline",
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-                        fontSize = 12.sp,
-                        letterSpacing = 0.08.em,
-                    )
-                    when {
-                        isTimelineLoading -> Text("Loading timeline...", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), fontSize = 12.sp)
-                        timeline.isEmpty() -> Text(
-                            "No timeline records yet. Run the player profile timeline SQL migration to start capturing changes.",
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-                            fontSize = 11.sp,
-                            lineHeight = 15.sp,
-                        )
-                        else -> timeline.take(8).forEach { item ->
-                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            // ── Payment History ──
+            ProfileSectionCard(title = "Payment History") {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DataTileContent(modifier = Modifier.weight(1f), label = "Total Paid", value = "Rs ${String.format(Locale.US, "%,.0f", totalPaid)}", accent = BrandGreen)
+                    DataTileContent(modifier = Modifier.weight(1f), label = "Months Paid", value = totalMonthsPaid.toString(), accent = MaterialTheme.colorScheme.onSurface)
+                }
+                if (paymentRows.isEmpty()) {
+                    Text("No paid fee records yet.", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), fontSize = 12.sp)
+                } else {
+                    paymentRows.forEach { row ->
+                        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(row.title, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
                                 Text(
-                                    item.title,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
-                                    fontSize = 12.sp,
-                                    lineHeight = 15.sp,
+                                    "${displayDate(row.date)} • ${row.plan} • ${row.months}m",
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+                                    fontSize = 11.sp,
                                 )
+                            }
+                            Text("Rs ${String.format(Locale.US, "%,.0f", row.amount)}", color = BrandGreen, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+                        }
+                    }
+                }
+            }
+
+            // ── Parent & Contact ──
+            ProfileSectionCard(title = "Parent & Contact") {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DataTileContent(
+                        modifier = Modifier.weight(1f),
+                        label = "Guardian",
+                        value = student.fatherGuardianName.ifBlank { "Not saved" },
+                        accent = MaterialTheme.colorScheme.onSurface,
+                    )
+                    if (student.filledBy.isNotBlank()) {
+                        DataTileContent(
+                            modifier = Modifier.weight(1f),
+                            label = "Form filled by",
+                            value = student.filledBy,
+                            accent = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+                if (student.parentContactNo.isNotBlank()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        DataTileContent(modifier = Modifier.weight(1f), label = "Phone", value = student.parentContactNo, accent = MaterialTheme.colorScheme.onSurface)
+                        Button(
+                            onClick = { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${student.parentContactNo}"))) },
+                            shape = RoundedCornerShape(14.dp),
+                        ) { Text("Call", fontSize = 12.sp) }
+                    }
+                }
+                if (student.alternateContactNo.isNotBlank()) {
+                    DataTileContent(modifier = Modifier.fillMaxWidth(), label = "Alternate Contact", value = student.alternateContactNo, accent = MaterialTheme.colorScheme.onSurface)
+                }
+                if (student.schoolCollege.isNotBlank() || student.grade.isNotBlank()) {
+                    DataTileContent(
+                        modifier = Modifier.fillMaxWidth(),
+                        label = "School / Grade",
+                        value = listOfNotNull(
+                            student.schoolCollege.takeIf { it.isNotBlank() },
+                            student.grade.takeIf { it.isNotBlank() }?.let { "Grade $it" },
+                        ).joinToString(" • "),
+                        accent = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                if (student.address.isNotBlank()) {
+                    DataTileContent(modifier = Modifier.fillMaxWidth(), label = "Address", value = student.address, accent = MaterialTheme.colorScheme.onSurface)
+                }
+            }
+
+            // ── Timeline ──
+            ProfileSectionCard(title = "Timeline") {
+                when {
+                    isTimelineLoading -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                        Text("Loading timeline…", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f), fontSize = 12.sp)
+                    }
+                    timeline.isEmpty() -> Text(
+                        "No timeline events recorded yet.",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                        fontSize = 12.sp,
+                    )
+                    else -> timeline.take(12).forEach { item ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                            val dotColor = when (item.eventType) {
+                                "admission", "created" -> BrandBlue
+                                "renewal_paid" -> BrandGreen
+                                "fees_updated" -> BrandGold
+                                "discontinued" -> BrandRed
+                                "active" -> BrandGreen
+                                else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .padding(top = 5.dp)
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(dotColor)
+                            )
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(item.title, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, lineHeight = 15.sp)
                                 Text(
                                     "${displayDate(item.eventDate)} • ${item.changedBy.orEmpty().ifBlank { "System" }}",
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
-                                    fontSize = 10.sp,
-                                    lineHeight = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.52f),
+                                    fontSize = 10.sp, lineHeight = 13.sp,
                                 )
                                 if (!item.details.isNullOrBlank()) {
-                                    Text(
-                                        item.details,
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
-                                        fontSize = 10.sp,
-                                        lineHeight = 13.sp,
-                                    )
+                                    Text(item.details, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f), fontSize = 10.sp, lineHeight = 13.sp)
                                 }
                                 if (item.proofUrl.isNotBlank()) {
                                     PaymentProofThumbnail(url = item.proofUrl)
@@ -4444,100 +4390,55 @@ private fun PlayerDetailSheet(
                 }
             }
 
+            // ── Footer ──
+            Text(
+                text = "Last updated by ${student.updatedBy}",
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                fontSize = 11.sp,
+            )
+
+            // ── Manager Actions ──
             if (isManager) {
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(enabled = actionInProgress == null, onClick = onEdit) { Text("Edit") }
                     OutlinedButton(
                         enabled = actionInProgress == null,
-                        onClick = onEdit,
-                    ) { Text("Edit") }
-                    OutlinedButton(
-                        enabled = actionInProgress == null,
-                        onClick = {
-                            scope.launch {
-                                actionInProgress = "status"
-                                onToggleStatus()
-                                actionInProgress = null
-                            }
-                        }
+                        onClick = { scope.launch { actionInProgress = "status"; onToggleStatus(); actionInProgress = null } },
                     ) {
-                        if (actionInProgress == "status") {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                            )
-                            Spacer(modifier = Modifier.size(8.dp))
-                        }
+                        if (actionInProgress == "status") { CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp); Spacer(modifier = Modifier.size(8.dp)) }
                         Text(if (student.discontinued) "Mark active" else "Discontinue")
                     }
                     if (student.isRenewalPending(payments) && student.isActive()) {
                         ElevatedButton(
                             enabled = actionInProgress == null,
-                            onClick = {
-                                scope.launch {
-                                    actionInProgress = "renew"
-                                    onRenew()
-                                    actionInProgress = null
-                                }
-                            }
+                            onClick = { scope.launch { actionInProgress = "renew"; onRenew(); actionInProgress = null } },
                         ) {
-                            if (actionInProgress == "renew") {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = Color.White,
-                                )
-                            } else {
-                                Icon(Icons.Outlined.Refresh, contentDescription = null)
-                            }
-                            Spacer(modifier = Modifier.size(6.dp))
-                            Text("Renew")
+                            if (actionInProgress == "renew") CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                            else Icon(Icons.Outlined.Refresh, contentDescription = null)
+                            Spacer(modifier = Modifier.size(6.dp)); Text("Renew")
                         }
                     }
                     if (reminderDue && student.isActive()) {
                         OutlinedButton(
                             enabled = actionInProgress == null,
-                            onClick = {
-                                scope.launch {
-                                    actionInProgress = "reminder"
-                                    onSendReminder()
-                                    actionInProgress = null
-                                }
-                            },
+                            onClick = { scope.launch { actionInProgress = "reminder"; onSendReminder(); actionInProgress = null } },
                         ) {
-                            if (actionInProgress == "reminder") {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            } else {
-                                Icon(Icons.Outlined.Refresh, contentDescription = null)
-                            }
-                            Spacer(modifier = Modifier.size(6.dp))
-                            Text("Send reminder")
+                            if (actionInProgress == "reminder") CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.Outlined.Refresh, contentDescription = null)
+                            Spacer(modifier = Modifier.size(6.dp)); Text("Send reminder")
                         }
                     }
                     TextButton(
                         enabled = actionInProgress == null,
-                        onClick = {
-                            scope.launch {
-                                actionInProgress = "delete"
-                                onDelete()
-                                actionInProgress = null
-                            }
-                        }
+                        onClick = { scope.launch { actionInProgress = "delete"; onDelete(); actionInProgress = null } },
                     ) {
-                        if (actionInProgress == "delete") {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = BrandRed,
-                            )
-                            Spacer(modifier = Modifier.size(8.dp))
-                        }
+                        if (actionInProgress == "delete") { CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = BrandRed); Spacer(modifier = Modifier.size(8.dp)) }
                         Text("Delete", color = BrandRed)
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 }
@@ -4608,6 +4509,31 @@ private fun PaymentProofThumbnail(url: String) {
                     contentScale = ContentScale.Fit,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun ProfileSectionCard(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.background.copy(alpha = 0.84f),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = title,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+                fontSize = 12.sp,
+                letterSpacing = 0.04.em,
+            )
+            content()
         }
     }
 }
