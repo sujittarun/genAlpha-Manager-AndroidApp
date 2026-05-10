@@ -791,6 +791,7 @@ class SupabaseRepository(
         amount: Double,
         comment: String,
         cycleDate: String,
+        proofPath: String = "",
     ): StudentPayment {
         return withContext(Dispatchers.IO) {
             val body = JSONObject()
@@ -803,6 +804,7 @@ class SupabaseRepository(
                 .put("paid_on", todayIsoDate())
                 .put("comment", comment)
                 .put("recorded_by", managerEmail)
+                .put("proof_path", proofPath)
 
             val responseBody = executeWriteRequestReturningBody(
                 url = "$baseUrl/rest/v1/student_payments?select=*",

@@ -640,6 +640,7 @@ class AcademyViewModel(
         amount: Double,
         comment: String,
         cycleDateOverride: String? = null,
+        proofPath: String = "",
     ): OperationResult {
         val payments = _uiState.value.payments
         val cycleDate = cycleDateOverride?.takeIf { it.isNotBlank() } ?: student.nextRenewalCycleDate(payments)
@@ -653,7 +654,7 @@ class AcademyViewModel(
         var whatsappWarning: String? = null
         return try {
             val (session, insertedPayment) = withFreshSession { session ->
-                val payment = repository.recordRenewalPayment(student, session.email, session, planType, monthsCovered, amount, comment, cycleDate)
+                val payment = repository.recordRenewalPayment(student, session.email, session, planType, monthsCovered, amount, comment, cycleDate, proofPath)
                 runCatching {
                     repository.sendRenewalVerifiedMessage(
                         student = student,
@@ -715,24 +716,23 @@ class AcademyViewModel(
 
     suspend fun sendRenewalReminder(student: Student): OperationResult {
         val payments = _uiState.value.payments
-        val isJoiningFee = student.isFeesPending()
         val isRenewalDue = student.isRenewalPending(payments)
-        if (!isJoiningFee && !isRenewalDue) {
-            return OperationResult(false, "${student.name} is not due for a fee reminder.")
+        if (!isRenewalDue) {
+            return OperationResult(false, "${student.name} is not due for a renewal reminder.")
         }
 
-        return try {
+         return try {
             val (settings, dueDate) = withFreshSession { session ->
                 val reminderSettings = repository.fetchReminderSettings(session)
-                val nextDue = if (isJoiningFee) student.joinDate else student.nextRenewalCycleDate(payments)
+                val nextDue = student.nextRenewalCycleDate(payments)
                 val overdueDays = maxOf(0, ChronoUnit.DAYS.between(LocalDate.parse(nextDue), LocalDate.now()).toInt())
                 repository.logRenewalReminder(
                     session = session,
                     student = student,
-                    reminderType = if (isJoiningFee) "joining_fee" else "renewal",
+                    reminderType = "renewal",
                     dueDate = nextDue,
                     overdueDays = overdueDays,
-                    messagePreview = buildReminderPreview(student, nextDue, reminderSettings.managerPhone, isJoiningFee),
+                    messagePreview = buildReminderPreview(student, nextDue, reminderSettings.managerPhone, false),
                     settings = reminderSettings,
                 )
                 reminderSettings to nextDue

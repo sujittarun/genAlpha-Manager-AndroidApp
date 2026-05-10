@@ -4080,7 +4080,7 @@ private fun PlayerDetailSheet(
     val paymentRows = remember(student, payments) { buildPlayerPaymentRows(student, payments) }
     val totalPaid = paymentRows.sumOf { it.amount }
     val totalMonthsPaid = paymentRows.sumOf { it.months }
-    val reminderDue = student.isFeesPending() || student.isRenewalPending(payments)
+    val reminderDue = student.isRenewalPending(payments)
     val reminderOverdueDays = remember(student, payments) { reminderOverdueDays(student, payments) }
     val feeLabel = student.feeStatusLabel(paymentFollowUp, payments)
     val pendingFollowUp = paymentFollowUp?.takeIf { it.isPendingVerification() }
@@ -4163,6 +4163,36 @@ private fun PlayerDetailSheet(
                         else -> renewalPendingTone.text
                     },
                 )
+            }
+
+            // ── Quick Actions (top) ──
+            if (isManager) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(enabled = actionInProgress == null, onClick = onEdit) {
+                        Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp)); Text("Edit")
+                    }
+                    if (student.isRenewalPending(payments) && student.isActive()) {
+                        ElevatedButton(
+                            enabled = actionInProgress == null,
+                            onClick = { scope.launch { actionInProgress = "renew"; onRenew(); actionInProgress = null } },
+                        ) {
+                            if (actionInProgress == "renew") CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                            else Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp)); Text("Renew")
+                        }
+                    }
+                    if (reminderDue && student.isActive()) {
+                        OutlinedButton(
+                            enabled = actionInProgress == null,
+                            onClick = { scope.launch { actionInProgress = "reminder"; onSendReminder(); actionInProgress = null } },
+                        ) {
+                            if (actionInProgress == "reminder") CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.Outlined.Notifications, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp)); Text("Send reminder")
+                        }
+                    }
+                }
             }
 
             // ── Quick Stats ──
@@ -4397,43 +4427,24 @@ private fun PlayerDetailSheet(
                 fontSize = 11.sp,
             )
 
-            // ── Manager Actions ──
+            // ── Danger Zone ──
             if (isManager) {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedButton(enabled = actionInProgress == null, onClick = onEdit) { Text("Edit") }
+                HorizontalDivider(color = BrandRed.copy(alpha = 0.12f))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         enabled = actionInProgress == null,
                         onClick = { scope.launch { actionInProgress = "status"; onToggleStatus(); actionInProgress = null } },
+                        border = BorderStroke(1.dp, BrandRed.copy(alpha = 0.3f)),
                     ) {
-                        if (actionInProgress == "status") { CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp); Spacer(modifier = Modifier.size(8.dp)) }
-                        Text(if (student.discontinued) "Mark active" else "Discontinue")
-                    }
-                    if (student.isRenewalPending(payments) && student.isActive()) {
-                        ElevatedButton(
-                            enabled = actionInProgress == null,
-                            onClick = { scope.launch { actionInProgress = "renew"; onRenew(); actionInProgress = null } },
-                        ) {
-                            if (actionInProgress == "renew") CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
-                            else Icon(Icons.Outlined.Refresh, contentDescription = null)
-                            Spacer(modifier = Modifier.size(6.dp)); Text("Renew")
-                        }
-                    }
-                    if (reminderDue && student.isActive()) {
-                        OutlinedButton(
-                            enabled = actionInProgress == null,
-                            onClick = { scope.launch { actionInProgress = "reminder"; onSendReminder(); actionInProgress = null } },
-                        ) {
-                            if (actionInProgress == "reminder") CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            else Icon(Icons.Outlined.Refresh, contentDescription = null)
-                            Spacer(modifier = Modifier.size(6.dp)); Text("Send reminder")
-                        }
+                        if (actionInProgress == "status") { CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = BrandRed); Spacer(Modifier.width(8.dp)) }
+                        Text(if (student.discontinued) "Mark active" else "Discontinue", color = BrandRed.copy(alpha = 0.8f))
                     }
                     TextButton(
                         enabled = actionInProgress == null,
                         onClick = { scope.launch { actionInProgress = "delete"; onDelete(); actionInProgress = null } },
                     ) {
-                        if (actionInProgress == "delete") { CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = BrandRed); Spacer(modifier = Modifier.size(8.dp)) }
-                        Text("Delete", color = BrandRed)
+                        if (actionInProgress == "delete") { CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = BrandRed); Spacer(Modifier.width(8.dp)) }
+                        Text("Delete player", color = BrandRed)
                     }
                 }
             }
