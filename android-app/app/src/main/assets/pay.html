@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#1557a6" />
+    <title>Pay Gen Alpha Cricket Academy</title>
+    <link rel="icon" type="image/png" sizes="192x192" href="./assets/gen-alpha-favicon-192.png" />
+    <script src="./supabase-config.js"></script>
+    <style>
+      :root {
+        --blue: #1557a6;
+        --deep: #0d2f5f;
+        --gold: #f7c948;
+        --ink: #10223f;
+        --muted: #667085;
+        --line: #d9e2f2;
+        --soft: #f3f7fd;
+        --card: rgba(255, 255, 255, 0.96);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: clamp(18px, 4vw, 40px);
+        color: var(--ink);
+        font-family: "Trebuchet MS", Verdana, sans-serif;
+        background:
+          radial-gradient(circle at 18% 8%, rgba(247, 201, 72, 0.34), transparent 28%),
+          radial-gradient(circle at 86% 72%, rgba(21, 87, 166, 0.18), transparent 30%),
+          linear-gradient(145deg, #eef5ff 0%, #ffffff 48%, #e8f1ff 100%);
+      }
+
+      .pay-card {
+        position: relative;
+        width: min(620px, 100%);
+        overflow: hidden;
+        margin: 0 auto;
+        border: 1px solid rgba(21, 87, 166, 0.14);
+        border-radius: clamp(26px, 4vw, 34px);
+        padding: clamp(18px, 4vw, 28px);
+        background: var(--card);
+        box-shadow: 0 28px 70px rgba(16, 34, 63, 0.18);
+      }
+
+      .pay-card::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto 0;
+        height: 9px;
+        background: linear-gradient(90deg, var(--blue), var(--gold));
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin: 6px 0 18px;
+      }
+
+      .brand img {
+        width: clamp(58px, 11vw, 74px);
+        height: clamp(58px, 11vw, 74px);
+        object-fit: contain;
+        filter: drop-shadow(0 10px 18px rgba(13, 47, 95, 0.12));
+      }
+
+      .eyebrow {
+        margin: 0;
+        color: var(--blue);
+        font-size: clamp(0.72rem, 2vw, 0.82rem);
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 3px 0 0;
+        color: var(--deep);
+        font-size: clamp(1.45rem, 5vw, 2.05rem);
+        line-height: 1.08;
+      }
+
+      .amount-box {
+        position: relative;
+        overflow: hidden;
+        margin: 0 0 14px;
+        padding: clamp(20px, 5vw, 30px);
+        border-radius: clamp(22px, 5vw, 28px);
+        background:
+          radial-gradient(circle at 90% 18%, rgba(247, 201, 72, 0.32), transparent 26%),
+          linear-gradient(135deg, #1557a6, #0d3d78);
+        color: white;
+      }
+
+      .amount-label {
+        margin: 0 0 5px;
+        color: rgba(255, 255, 255, 0.78);
+        font-size: 0.86rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+      }
+
+      .amount {
+        margin: 0;
+        font-size: clamp(2.65rem, 11vw, 4.35rem);
+        line-height: 0.95;
+        font-weight: 900;
+        letter-spacing: -0.04em;
+      }
+
+      .detail-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin: 0 0 14px;
+      }
+
+      .detail {
+        display: grid;
+        gap: 6px;
+        min-height: 78px;
+        padding: 13px 14px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--soft);
+      }
+
+      .detail span:first-child {
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-weight: 800;
+      }
+
+      .detail strong {
+        text-align: left;
+        overflow-wrap: anywhere;
+        font-size: 0.98rem;
+        line-height: 1.25;
+      }
+
+      .pay-button {
+        width: 100%;
+        border: 0;
+        min-height: 58px;
+        border-radius: 19px;
+        padding: 0 20px;
+        color: #0f2852;
+        background: linear-gradient(135deg, var(--gold), #ffd86c);
+        font-size: clamp(1.08rem, 3.8vw, 1.22rem);
+        font-weight: 900;
+        cursor: pointer;
+        box-shadow: 0 12px 24px rgba(247, 201, 72, 0.36);
+      }
+
+      .secondary-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: 11px;
+      }
+
+      .secondary {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 12px;
+        color: var(--blue);
+        background: white;
+        font-size: 0.88rem;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .message {
+        min-height: 19px;
+        margin: 13px 0 0;
+        color: var(--muted);
+        font-size: 0.88rem;
+        line-height: 1.4;
+        text-align: center;
+      }
+
+      @media (max-width: 560px) {
+        body {
+          align-items: start;
+          padding: 16px;
+        }
+
+        .pay-card {
+          width: 100%;
+          border-radius: 28px;
+        }
+
+        .detail-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .brand {
+          align-items: flex-start;
+        }
+
+        .secondary-row {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="pay-card">
+      <div class="brand">
+        <img src="./assets/gen-alpha-favicon-192.png" alt="Gen Alpha Cricket Academy" />
+        <div>
+          <p class="eyebrow">Gen Alpha Cricket Academy</p>
+          <h1>Secure UPI Payment</h1>
+        </div>
+      </div>
+
+      <section class="amount-box">
+        <p class="amount-label">Amount to pay</p>
+        <p class="amount" id="amountText">Rs 0</p>
+      </section>
+
+      <div class="detail-grid">
+        <div class="detail">
+          <span>For</span>
+          <strong id="playerText">Cricket fees</strong>
+        </div>
+        <div class="detail">
+          <span>UPI ID</span>
+          <strong id="upiText">Loading...</strong>
+        </div>
+      </div>
+
+      <button class="pay-button" id="payButton" type="button">Pay Now</button>
+      <div class="secondary-row">
+        <button class="secondary" id="copyUpiButton" type="button">Copy UPI</button>
+        <button class="secondary" id="copyAmountButton" type="button">Copy Amount</button>
+      </div>
+      <p class="message" id="messageText">Tap Pay Now to open your UPI app.</p>
+    </main>
+
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const config = window.GEN_ALPHA_PAYMENT_CONFIG || {};
+      const supabaseConfig = window.GEN_ALPHA_SUPABASE_CONFIG || {};
+      const upiId = String(config.upiId || "").trim();
+      const payeeName = String(config.payeeName || "Gen Alpha Cricket Academy").trim();
+      const amount = Number(params.get("a") || 0);
+      const player = String(params.get("name") || "Cricket fees").trim();
+      const plan = String(params.get("p") || "fees").trim();
+      const reminderEventId = String(params.get("e") || "").trim();
+      const amountText = document.getElementById("amountText");
+      const playerText = document.getElementById("playerText");
+      const upiText = document.getElementById("upiText");
+      const messageText = document.getElementById("messageText");
+
+      const formatAmount = (value) =>
+        Number.isFinite(value) && value > 0
+          ? `Rs ${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`
+          : "Enter amount in UPI app";
+
+      const encode = (value) => encodeURIComponent(String(value || ""));
+      const note = `Gen Alpha ${plan} fee - ${player}`;
+      const upiUri = [
+        `pa=${upiId}`,
+        `pn=${encode(payeeName)}`,
+        `tn=${encode(note)}`,
+        amount > 0 ? `am=${amount.toFixed(2)}` : "",
+        "cu=INR",
+      ]
+        .filter(Boolean)
+        .join("&");
+
+      amountText.textContent = formatAmount(amount);
+      playerText.textContent = player;
+      upiText.textContent = upiId || "Not configured";
+
+      const copyText = async (value, label) => {
+        try {
+          await navigator.clipboard.writeText(value);
+          messageText.textContent = `${label} copied.`;
+        } catch {
+          messageText.textContent = `Unable to copy ${label.toLowerCase()}.`;
+        }
+      };
+
+      const notifyPaymentAttempt = async () => {
+        if (!reminderEventId || !supabaseConfig.url) {
+          return;
+        }
+
+        const notifyKey = `gen-alpha-payment-attempt-${reminderEventId}`;
+        if (sessionStorage.getItem(notifyKey)) {
+          return;
+        }
+
+        const endpoint = `${String(supabaseConfig.url).replace(/\/+$/, "")}/functions/v1/whatsapp-reminder`;
+        const request = fetch(endpoint, {
+          method: "POST",
+          keepalive: true,
+          headers: {
+            "Content-Type": "application/json",
+            ...(supabaseConfig.anonKey ? { apikey: supabaseConfig.anonKey } : {}),
+          },
+          body: JSON.stringify({
+            action: "payment_attempted",
+            eventId: reminderEventId,
+          }),
+        }).then((response) => {
+          if (response.ok) {
+            sessionStorage.setItem(notifyKey, "1");
+          }
+        });
+
+        await Promise.race([
+          request.catch(() => {}),
+          new Promise((resolve) => window.setTimeout(resolve, 700)),
+        ]);
+      };
+
+      document.getElementById("payButton").addEventListener("click", async () => {
+        if (!upiId) {
+          messageText.textContent = "UPI payment is not configured. Please contact academy staff.";
+          return;
+        }
+        messageText.textContent = "Opening your UPI app...";
+        await notifyPaymentAttempt();
+        window.location.href = `upi://pay?${upiUri}`;
+        window.setTimeout(() => {
+          messageText.textContent = 'After payment, reply "Paid" on WhatsApp or send the payment screenshot.';
+        }, 1600);
+      });
+
+      document.getElementById("copyUpiButton").addEventListener("click", () => copyText(upiId, "UPI ID"));
+      document.getElementById("copyAmountButton").addEventListener("click", () => copyText(amount > 0 ? amount.toFixed(2) : "", "Amount"));
+    </script>
+  </body>
+</html>
