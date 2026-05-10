@@ -819,7 +819,6 @@ class SupabaseRepository(
             if (isJoiningFee) {
                 val updateBody = JSONObject()
                     .put("fees_paid", true)
-                    .put("payment_status", "paid")
                     .put("updated_by", managerEmail)
                 executeWriteRequest(
                     url = "$baseUrl/rest/v1/students?id=eq.${student.id}",
