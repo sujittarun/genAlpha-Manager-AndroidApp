@@ -4084,6 +4084,16 @@ private fun PlayerDetailSheet(
     val reminderOverdueDays = remember(student, payments) { reminderOverdueDays(student, payments) }
     val feeLabel = student.feeStatusLabel(paymentFollowUp, payments)
     val pendingFollowUp = paymentFollowUp?.takeIf { it.isPendingVerification() }
+        ?: if (student.isPaymentPendingVerification()) {
+            PaymentFollowUp(
+                studentId = student.id,
+                selectedPlan = "monthly",
+                amount = student.amountPaid ?: 3500.0,
+                monthsCovered = 1,
+                cycleStartDate = student.joinDate,
+                reminderType = "joining_fee"
+            )
+        } else null
     val pendingPlan = pendingFollowUp?.selectedPlan?.takeIf { it.isNotBlank() } ?: "monthly"
     val pendingMonths = pendingFollowUp?.monthsCovered?.takeIf { it > 0 } ?: when (pendingPlan) {
         "quarterly" -> 3

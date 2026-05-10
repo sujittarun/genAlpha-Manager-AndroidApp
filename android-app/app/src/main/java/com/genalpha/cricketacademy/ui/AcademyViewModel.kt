@@ -641,10 +641,11 @@ class AcademyViewModel(
         comment: String,
         cycleDateOverride: String? = null,
         proofPath: String = "",
+        isJoiningFee: Boolean = false,
     ): OperationResult {
         val payments = _uiState.value.payments
         val cycleDate = cycleDateOverride?.takeIf { it.isNotBlank() } ?: student.nextRenewalCycleDate(payments)
-        if (cycleDateOverride.isNullOrBlank() && !student.isRenewalPending(payments)) {
+        if (cycleDateOverride.isNullOrBlank() && !student.isRenewalPending(payments) && !isJoiningFee) {
             return OperationResult(false, "This player is not due for renewal yet.")
         }
         if (amount <= 0.0) {
@@ -654,12 +655,12 @@ class AcademyViewModel(
         var whatsappWarning: String? = null
         return try {
             val (session, insertedPayment) = withFreshSession { session ->
-                val payment = repository.recordRenewalPayment(student, session.email, session, planType, monthsCovered, amount, comment, cycleDate, proofPath)
+                val payment = repository.recordRenewalPayment(student, session.email, session, planType, monthsCovered, amount, comment, cycleDate, proofPath, isJoiningFee)
                 runCatching {
                     repository.sendRenewalVerifiedMessage(
                         student = student,
                         session = session,
-                        planLabel = renewalPlanLabel(planType),
+                        planLabel = if (isJoiningFee) "Joining Fee" else renewalPlanLabel(planType),
                         amount = amount,
                         fromDate = cycleDate,
                         toDate = addMonthsForPlan(cycleDate, monthsCovered),
@@ -669,12 +670,22 @@ class AcademyViewModel(
                 }
                 session to payment
             }
-            upsertLocalStudent(
-                student.copy(
-                    renewals = student.renewals + cycleDate,
-                    updatedBy = session.email,
+            if (isJoiningFee) {
+                upsertLocalStudent(
+                    student.copy(
+                        feesPaid = true,
+                        paymentStatus = "paid",
+                        updatedBy = session.email,
+                    )
                 )
-            )
+            } else {
+                upsertLocalStudent(
+                    student.copy(
+                        renewals = student.renewals + cycleDate,
+                        updatedBy = session.email,
+                    )
+                )
+            }
             upsertLocalPayment(insertedPayment)
             refreshFinanceInBackground()
             refreshInBackground()
@@ -687,30 +698,32 @@ class AcademyViewModel(
         }
     }
 
-    suspend fun confirmPendingPayment(student: Student, followUp: PaymentFollowUp): OperationResult {
-        if (!followUp.isPendingVerification()) {
+    suspend fun confirmPendingPayment(student: Student, followUp: PaymentFollowUp?): OperationResult {
+        val isJoiningFee = student.isPaymentPendingVerification() && followUp == null
+        if (followUp?.isPendingVerification() != true && !isJoiningFee) {
             return OperationResult(false, "No pending payment proof found for this player.")
         }
-        val planType = followUp.selectedPlan.takeIf { it in setOf("monthly", "quarterly", "halfyearly", "special", "custom") } ?: "monthly"
-        val monthsCovered = followUp.monthsCovered.takeIf { it > 0 } ?: when (planType) {
+        val planType = followUp?.selectedPlan?.takeIf { it in setOf("monthly", "quarterly", "halfyearly", "special", "custom") } ?: "monthly"
+        val monthsCovered = followUp?.monthsCovered?.takeIf { it > 0 } ?: when (planType) {
             "quarterly" -> 3
             "halfyearly" -> 6
             else -> 1
         }
-        val amount = followUp.amount.takeIf { it > 0.0 } ?: when (planType) {
+        val amount = followUp?.amount?.takeIf { it > 0.0 } ?: when (planType) {
             "quarterly" -> 9975.0
             "halfyearly" -> 18900.0
             "special" -> 10000.0
             else -> 3500.0
         }
-        val cycleDate = followUp.cycleStartDate.takeIf { it.isNotBlank() } ?: student.nextRenewalCycleDate(_uiState.value.payments)
+        val cycleDate = followUp?.cycleStartDate?.takeIf { it.isNotBlank() } ?: (if (isJoiningFee) student.joinDate else student.nextRenewalCycleDate(_uiState.value.payments))
         return recordRenewalPayment(
             student = student,
             planType = planType,
             monthsCovered = monthsCovered,
             amount = amount,
-            comment = "Confirmed from WhatsApp payment proof.",
+            comment = if (isJoiningFee) "Joining fee confirmed by manager." else "Confirmed from WhatsApp payment proof.",
             cycleDateOverride = cycleDate,
+            isJoiningFee = isJoiningFee,
         )
     }
 

@@ -792,11 +792,12 @@ class SupabaseRepository(
         comment: String,
         cycleDate: String,
         proofPath: String = "",
+        isJoiningFee: Boolean = false,
     ): StudentPayment {
         return withContext(Dispatchers.IO) {
             val body = JSONObject()
                 .put("student_id", student.id)
-                .put("payment_type", "renewal")
+                .put("payment_type", if (isJoiningFee) "joining" else "renewal")
                 .put("plan_type", planType)
                 .put("cycle_start_date", cycleDate)
                 .put("months_covered", monthsCovered)
@@ -813,9 +814,22 @@ class SupabaseRepository(
                 body = body,
             )
             val insertedPayment = paymentListAdapter.fromJson(responseBody).orEmpty().firstOrNull()
-                ?: throw SupabaseException(200, "Renewal payment was saved, but the payment row was not returned.")
+                ?: throw SupabaseException(200, "Payment was saved, but the payment row was not returned.")
 
-            renewStudent(student, managerEmail, session, cycleDate)
+            if (isJoiningFee) {
+                val updateBody = JSONObject()
+                    .put("fees_paid", true)
+                    .put("payment_status", "paid")
+                    .put("updated_by", managerEmail)
+                executeWriteRequest(
+                    url = "$baseUrl/rest/v1/students?id=eq.${student.id}",
+                    session = session,
+                    method = "PATCH",
+                    body = updateBody,
+                )
+            } else {
+                renewStudent(student, managerEmail, session, cycleDate)
+            }
             insertedPayment
         }
     }
