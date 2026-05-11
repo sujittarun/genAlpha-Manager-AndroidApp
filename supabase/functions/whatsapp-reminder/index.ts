@@ -1321,32 +1321,28 @@ async function handleAutoSchedule() {
   const todayIso = localIsoDate();
 
   // Fetch active students who haven't paid fees
-  const { data: students, error: studentsError } = await rest(
-    "students?discontinued=eq.false&fees_paid=eq.false&payment_status=neq.pending_verification",
+  const students = await rest(
+    "students?discontinued=eq.false&fees_paid=eq.false",
   );
-  if (studentsError) {
-    throw new Error(`Fetch students error: ${JSON.stringify(studentsError)}`);
-  }
 
   // Fetch payments to calculate next renewal date
-  const { data: payments, error: paymentsError } = await rest(
+  const payments = await rest(
     "student_payments?order=paid_on.desc",
   );
-  if (paymentsError) {
-    throw new Error(`Fetch payments error: ${JSON.stringify(paymentsError)}`);
-  }
 
   // Fetch recent follow-ups to deduplicate and check rules
-  const { data: followUps, error: followUpsError } = await rest(
+  const followUps = await rest(
     "reminder_events?order=created_at.desc&limit=1000",
   );
-  if (followUpsError) {
-    throw new Error(`Fetch follow-ups error: ${JSON.stringify(followUpsError)}`);
-  }
 
   const results = [];
 
   for (const student of students) {
+    // Skip if payment is pending verification
+    const amountPaid = Number(student.amount_paid || 0);
+    const paymentReference = String(student.payment_reference || "").trim();
+    if (amountPaid > 0 || paymentReference) continue;
+
     const isJoiningFee = student.fees_paid !== true &&
       student.fees_paid !== "yes";
     const dueDate = isJoiningFee
@@ -1436,6 +1432,8 @@ async function handleAutoSchedule() {
 
   return jsonResponse({ success: true, processed: results });
 }
+
+
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
