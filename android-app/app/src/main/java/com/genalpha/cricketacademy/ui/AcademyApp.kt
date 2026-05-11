@@ -81,6 +81,10 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
@@ -724,15 +728,39 @@ fun AcademyApp(viewModel: AcademyViewModel) {
             },
             floatingActionButton = {
                 if (selectedView == AppView.Manager && viewModel.canEdit()) {
-                    FloatingActionButton(
-                        onClick = {
-                            editingStudent = null
-                            showEditorSheet = true
-                        },
-                        containerColor = BrandGold,
-                        contentColor = BrandBlueDeep,
+                    val scope = rememberCoroutineScope()
+                    val showScrollTop = mainListState.firstVisibleItemIndex > 2
+                    Column(
+                        horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Icon(Icons.Outlined.Add, contentDescription = "Add player")
+                        AnimatedVisibility(
+                            visible = showScrollTop,
+                            enter = fadeIn(),
+                            exit = fadeOut(),
+                        ) {
+                            SmallFloatingActionButton(
+                                onClick = {
+                                    scope.launch { mainListState.animateScrollToItem(0) }
+                                },
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ) {
+                                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Scroll to top", modifier = Modifier.size(20.dp))
+                            }
+                        }
+                        SmallFloatingActionButton(
+                            onClick = {
+                                scope.launch {
+                                    viewModel.loadKids()
+                                    mainListState.animateScrollToItem(0)
+                                }
+                            },
+                            containerColor = BrandGold,
+                            contentColor = BrandBlueDeep,
+                        ) {
+                            Icon(Icons.Outlined.Refresh, contentDescription = "Refresh roster", modifier = Modifier.size(20.dp))
+                        }
                     }
                 }
             },
