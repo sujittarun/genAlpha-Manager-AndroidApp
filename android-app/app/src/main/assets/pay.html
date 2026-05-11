@@ -249,8 +249,8 @@
       const params = new URLSearchParams(window.location.search);
       const config = window.GEN_ALPHA_PAYMENT_CONFIG || {};
       const supabaseConfig = window.GEN_ALPHA_SUPABASE_CONFIG || {};
-      const upiId = String(config.upiId || "").trim();
-      const payeeName = String(config.payeeName || "Gen Alpha Cricket Academy").trim();
+      const upiId = String(params.get("upiId") || config.upiId || "").trim();
+      const payeeName = String(params.get("payeeName") || config.payeeName || "Gen Alpha Cricket Academy").trim();
       const amount = Number(params.get("a") || 0);
       const player = String(params.get("name") || "Cricket fees").trim();
       const plan = String(params.get("p") || "fees").trim();

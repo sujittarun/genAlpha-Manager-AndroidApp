@@ -6080,8 +6080,8 @@ private fun AdmissionFormSheet(
                                         settings.javaScriptEnabled = true
                                         settings.domStorageEnabled = true
                                         webViewClient = object : WebViewClient() {
-                                            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                                                val urlStr = request?.url?.toString() ?: return false
+                                            private fun handleUrl(urlStr: String?): Boolean {
+                                                urlStr ?: return false
                                                 if (urlStr.startsWith("upi://")) {
                                                     runCatching {
                                                         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(urlStr))
@@ -6091,13 +6091,27 @@ private fun AdmissionFormSheet(
                                                 }
                                                 return false
                                             }
+                                            
+                                            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                                return handleUrl(request?.url?.toString())
+                                            }
+                                            
+                                            @Deprecated("Deprecated in Java")
+                                            override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                                                return handleUrl(url)
+                                            }
                                         }
                                     }
                                 },
                                 update = { webView ->
                                     val safeName = Uri.encode(applicantName.ifBlank { "New player" })
-                                    val url = "file:///android_asset/pay.html?a=${upiAmount ?: 0}&name=$safeName&p=joining"
-                                    webView.loadUrl(url)
+                                    val safeUpiId = Uri.encode(upiId)
+                                    val safePayeeName = Uri.encode(upiName)
+                                    val safePlan = Uri.encode(feePlan)
+                                    val url = "file:///android_asset/pay.html?a=${upiAmount ?: 0}&name=$safeName&p=$safePlan&upiId=$safeUpiId&payeeName=$safePayeeName"
+                                    if (webView.url != url) {
+                                        webView.loadUrl(url)
+                                    }
                                 }
                             )
                         }
