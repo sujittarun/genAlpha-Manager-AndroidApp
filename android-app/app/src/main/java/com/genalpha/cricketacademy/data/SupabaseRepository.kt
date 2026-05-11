@@ -115,7 +115,7 @@ class SupabaseRepository(
     }
 
     suspend fun fetchPaymentFollowUps(accessToken: String): List<PaymentFollowUp> = withContext(Dispatchers.IO) {
-        val reminderRequest = baseRequest("$baseUrl/rest/v1/reminder_events?select=id,student_id,reminder_type,status,due_date,selected_plan,amount,created_at&order=created_at.desc&limit=300")
+        val reminderRequest = baseRequest("$baseUrl/rest/v1/reminder_events?select=id,student_id,reminder_type,status,due_date,selected_plan,amount,created_at,overdue_days&order=created_at.desc&limit=300")
             .header("Authorization", "Bearer $accessToken")
             .get()
             .build()
@@ -163,6 +163,7 @@ class SupabaseRepository(
                 monthsCovered = link?.optInt("months_covered", 0) ?: 0,
                 cycleStartDate = link?.optString("cycle_start_date").orEmpty().ifBlank { reminder?.optString("due_date").orEmpty() },
                 createdAt = link?.optString("created_at").orEmpty().ifBlank { reminder?.optString("created_at").orEmpty() },
+                overdueDays = reminder?.optInt("overdue_days", 0) ?: 0,
             )
         }
     }

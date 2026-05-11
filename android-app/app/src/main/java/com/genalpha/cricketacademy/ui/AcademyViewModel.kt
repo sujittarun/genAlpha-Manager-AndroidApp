@@ -165,6 +165,8 @@ class AcademyViewModel(
             loadFinance()
             startPlayersLiveSync()
             startAttendanceLiveSync()
+            
+            processAutoReminders()
         }
     }
 
@@ -757,6 +759,83 @@ class AcademyViewModel(
         } catch (error: Exception) {
             OperationResult(false, error.message ?: "Unable to log reminder.")
         }
+    }
+
+    private suspend fun processAutoReminders() {
+        val state = _uiState.value
+        val session = state.session ?: return
+
+        val reminderSettings = try {
+            repository.fetchReminderSettings(session)
+        } catch (e: Exception) {
+            return
+        }
+
+        if (!reminderSettings.whatsappRemindersEnabled) return
+
+        val todayIso = todayIsoDate()
+        val autoSendQueue = mutableListOf<Triple<Student, String, Int>>()
+        val payments = state.payments
+
+        for (student in state.kids) {
+            if (student.discontinued || student.feesPaid) continue
+            val followUpForCheck = state.paymentFollowUps.find { it.studentId == student.id }
+            if (followUpForCheck?.isPendingVerification() == true) continue
+
+            val isFeesPending = student.isFeesPending()
+            val isRenewalPending = student.isRenewalPending(payments)
+            if (!isFeesPending && !isRenewalPending) continue
+
+            val dueDate = if (isFeesPending) student.joinDate else student.nextRenewalCycleDate(payments)
+            val overdueDays = runCatching {
+                ChronoUnit.DAYS.between(LocalDate.parse(dueDate), LocalDate.now()).toInt().coerceAtLeast(0)
+            }.getOrDefault(0)
+
+            if (overdueDays != 5 && overdueDays != 7 && overdueDays <= 7) continue
+
+            val lastFollowUp = state.paymentFollowUps.find { it.studentId == student.id }
+            val sentToday = lastFollowUp != null && lastFollowUp.createdAt.take(10) == todayIso
+            if (sentToday) continue
+
+            var shouldSend = false
+            if (overdueDays == 5 || overdueDays == 6) {
+                val alreadySentWindow = lastFollowUp != null && lastFollowUp.overdueDays in 5..6
+                if (!alreadySentWindow) shouldSend = true
+            } else if (overdueDays == 7) {
+                val alreadySent7 = lastFollowUp != null && lastFollowUp.overdueDays == 7
+                if (!alreadySent7) shouldSend = true
+            } else if (overdueDays > 7) {
+                shouldSend = true
+            }
+
+            if (shouldSend) {
+                autoSendQueue.add(Triple(student, dueDate, overdueDays))
+            }
+        }
+
+        if (autoSendQueue.isEmpty()) return
+
+        for ((student, dueDate, overdueDays) in autoSendQueue) {
+            try {
+                val isJoining = student.isFeesPending()
+                val reminderType = if (isJoining) "joining_fee" else "renewal"
+                repository.logRenewalReminder(
+                    session = session,
+                    student = student,
+                    reminderType = reminderType,
+                    dueDate = dueDate,
+                    overdueDays = overdueDays,
+                    messagePreview = buildReminderPreview(student, dueDate, reminderSettings.managerPhone, isJoining),
+                    settings = reminderSettings,
+                )
+                kotlinx.coroutines.delay(1500)
+            } catch (e: Exception) {
+                // Ignore individual errors to continue queue
+            }
+        }
+
+        // Reload finance to get the new events
+        loadFinance()
     }
 
     suspend fun toggleStatus(student: Student): OperationResult {

@@ -205,6 +205,7 @@ data class PaymentFollowUp(
     val monthsCovered: Int = 0,
     val cycleStartDate: String = "",
     val createdAt: String = "",
+    val overdueDays: Int = 0,
 ) {
     fun isPendingVerification(): Boolean =
         reminderStatus in setOf("payment_pending_verification", "pending_verification") ||
