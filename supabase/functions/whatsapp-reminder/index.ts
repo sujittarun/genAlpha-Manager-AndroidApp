@@ -83,6 +83,82 @@ function whatsappTimestampToIso(value: unknown): string {
     : new Date().toISOString();
 }
 
+function toLocalIsoDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function addMonthsIso(dateValue: string, months: number): string {
+  const date = new Date(`${dateValue}T00:00:00`);
+  const originalDay = date.getDate();
+  date.setDate(1);
+  date.setMonth(date.getMonth() + months);
+  const daysInTargetMonth = new Date(
+    date.getFullYear(),
+    date.getMonth() + 1,
+    0,
+  ).getDate();
+  date.setDate(Math.min(originalDay, daysInTargetMonth));
+  return toLocalIsoDate(date);
+}
+
+function getDaysSinceDate(dateValue: string): number {
+  if (!dateValue) return 0;
+  const targetDate = new Date(`${dateValue}T00:00:00`);
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const diff = new Date().getTime() - targetDate.getTime();
+  return Math.floor(diff / msPerDay);
+}
+
+function maxIsoDate(d1: string, d2: string): string {
+  if (!d1) return d2;
+  if (!d2) return d1;
+  return d1 > d2 ? d1 : d2;
+}
+
+const ADMISSION_ONE_TIME_FEE = 2500;
+
+function getPaymentMonthsCovered(payment: any): number {
+  if (payment.months_covered || payment.monthsCovered) {
+    return Number(payment.months_covered || payment.monthsCovered);
+  }
+  const plan = payment.plan_type || payment.planType;
+  if (plan === "monthly") return 1;
+  if (plan === "quarterly") return 3;
+  if (plan === "halfyearly") return 6;
+
+  const amount = Math.round(Number(payment.amount || 0));
+  if (amount >= 18900) return 6;
+  if (amount >= 9975) return 3;
+  if (amount >= 3500) return 1;
+  return 0;
+}
+
+function getPaidThroughDate(student: any, payments: any[]): string {
+  let paidThrough = student.join_date || student.joinDate;
+  if (!paidThrough) return localIsoDate();
+
+  const studentPayments = payments.filter((p) => p.student_id === student.id);
+
+  studentPayments.forEach((payment) => {
+    const cycleStart = payment.cycle_start_date ||
+      payment.cycleStartDate ||
+      payment.paid_on ||
+      payment.paidOn;
+    const monthsCovered = getPaymentMonthsCovered(payment);
+    if (cycleStart) {
+      paidThrough = maxIsoDate(
+        paidThrough,
+        addMonthsIso(cycleStart, monthsCovered),
+      );
+    }
+  });
+
+  return paidThrough;
+}
+
 function encodeUpiValue(value: string): string {
   return encodeURIComponent(value).replace(
     /[!'()*]/g,
@@ -1236,6 +1312,131 @@ async function handleWebhook(payload: any) {
   return jsonResponse({ success: true });
 }
 
+async function handleAutoSchedule() {
+  const settings = await loadSettings();
+  if (!settings.whatsappRemindersEnabled) {
+    return jsonResponse({ success: true, message: "Auto-reminders disabled." });
+  }
+
+  const todayIso = localIsoDate();
+
+  // Fetch active students who haven't paid fees
+  const { data: students, error: studentsError } = await rest(
+    "students?discontinued=eq.false&fees_paid=eq.false&payment_status=neq.pending_verification",
+  );
+  if (studentsError) {
+    throw new Error(`Fetch students error: ${JSON.stringify(studentsError)}`);
+  }
+
+  // Fetch payments to calculate next renewal date
+  const { data: payments, error: paymentsError } = await rest(
+    "student_payments?order=paid_on.desc",
+  );
+  if (paymentsError) {
+    throw new Error(`Fetch payments error: ${JSON.stringify(paymentsError)}`);
+  }
+
+  // Fetch recent follow-ups to deduplicate and check rules
+  const { data: followUps, error: followUpsError } = await rest(
+    "reminder_events?order=created_at.desc&limit=1000",
+  );
+  if (followUpsError) {
+    throw new Error(`Fetch follow-ups error: ${JSON.stringify(followUpsError)}`);
+  }
+
+  const results = [];
+
+  for (const student of students) {
+    const isJoiningFee = student.fees_paid !== true &&
+      student.fees_paid !== "yes";
+    const dueDate = isJoiningFee
+      ? student.join_date
+      : getPaidThroughDate(student, payments);
+    const overdueDays = Math.max(0, getDaysSinceDate(dueDate));
+
+    // Logic: 5 days once, 7 days once, >7 days everyday
+    if (overdueDays !== 5 && overdueDays !== 7 && overdueDays <= 7) continue;
+
+    const lastFollowUp = followUps.find((f: any) => f.student_id === student.id);
+    const sentToday = lastFollowUp &&
+      lastFollowUp.created_at.slice(0, 10) === todayIso;
+    if (sentToday) continue;
+
+    let shouldSend = false;
+    if (overdueDays === 5 || overdueDays === 6) {
+      // Catch 5 days overdue (or 6 if they missed 5). Check if we already sent for the 5-6 day window.
+      const alreadySentWindow = lastFollowUp?.overdue_days >= 5 &&
+        lastFollowUp?.overdue_days < 7;
+      if (!alreadySentWindow) shouldSend = true;
+    } else if (overdueDays === 7) {
+      const alreadySent7 = lastFollowUp?.overdue_days === 7;
+      if (!alreadySent7) shouldSend = true;
+    } else if (overdueDays > 7) {
+      shouldSend = true;
+    }
+
+    if (shouldSend) {
+      const reminderType = isJoiningFee ? "joining_fee" : "renewal";
+      const dryRun = settings.dryRunMode;
+      const parentPhone = String(student.parent_contact_no || "").replace(
+        /\D/g,
+        "",
+      ).slice(-10);
+
+      try {
+        const event = await insertReminderEvent({
+          student_id: student.id,
+          reminder_type: reminderType,
+          channel: "whatsapp",
+          status: dryRun ? "dry_run" : "queued",
+          dry_run: dryRun,
+          due_date: dueDate,
+          overdue_days: overdueDays,
+          plan_options: PLAN_OPTIONS,
+          parent_phone: parentPhone,
+          manager_phone: settings.managerPhone,
+          message_preview: buildReminderPreview(
+            student,
+            dueDate,
+            settings,
+            reminderType,
+          ),
+          created_by: "system_auto",
+        });
+
+        if (!dryRun) {
+          const to = normalizePhone(parentPhone);
+          if (to) {
+            const metaResponse = await sendTemplateMessage(
+              to,
+              event.id,
+              student,
+              dueDate,
+              reminderType,
+            );
+            const whatsappMessageId = String(
+              metaResponse?.messages?.[0]?.id || "",
+            );
+            await updateReminderEvent(event.id, {
+              status: whatsappMessageId ? "accepted" : "sent",
+              whatsapp_message_id: whatsappMessageId,
+              accepted_at: new Date().toISOString(),
+            });
+          }
+        }
+
+        results.push({ student: student.name, overdueDays, status: "sent" });
+        // Small delay to respect WhatsApp API rate limits
+        await new Promise((r) => setTimeout(r, 1500));
+      } catch (e) {
+        results.push({ student: student.name, error: (e as Error).message });
+      }
+    }
+  }
+
+  return jsonResponse({ success: true, processed: results });
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -1271,6 +1472,9 @@ Deno.serve(async (request) => {
     }
     if (payload?.action === "payment_attempted") {
       return await handlePaymentAttempted(payload);
+    }
+    if (payload?.action === "auto_schedule") {
+      return await handleAutoSchedule();
     }
     return await handleWebhook(payload);
   } catch (error) {
