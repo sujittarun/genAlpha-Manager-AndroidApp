@@ -428,20 +428,32 @@ fun Student.isActive(): Boolean = !discontinued
 
 fun Student.isFeesPending(): Boolean = isActive() && !feesPaid
 
-fun Student.latestRenewal(): String? = renewals.lastOrNull()
-
-fun Student.cardTimelineLabel(): String? = when {
-    discontinued -> discontinuedAt?.let { "Discontinued ${displayDate(it)}" } ?: "Discontinued"
-    renewals.isNotEmpty() -> latestRenewal()?.let { "Renewed ${displayDate(it)}" }
-    else -> null
+fun Student.latestRenewal(payments: List<StudentPayment>): String? {
+    val legacy = renewals.lastOrNull()
+    val fromLedger = payments
+        .filter { it.studentId == id && it.paymentType == "renewal" }
+        .maxByOrNull { it.paidOn }?.paidOn
+    return if (fromLedger != null && legacy != null) {
+        if (fromLedger > legacy) fromLedger else legacy
+    } else fromLedger ?: legacy
 }
 
-fun Student.trackingCaption(): String = if (discontinued) {
+
+fun Student.cardTimelineLabel(payments: List<StudentPayment>): String? = when {
+    discontinued -> discontinuedAt?.let { "Discontinued ${displayDate(it)}" } ?: "Discontinued"
+    else -> latestRenewal(payments)?.let { "Renewed ${displayDate(it)}" }
+}
+
+
+fun Student.trackingCaption(payments: List<StudentPayment>): String = if (discontinued) {
     discontinuedAt?.let { "Discontinued on ${displayDate(it)}. Renewal tracking paused." }
         ?: "Removed from active renewal tracking."
 } else {
-    "Tracking from ${displayDate(referenceDate())}. ${renewals.size} renewal${if (renewals.size == 1) "" else "s"} recorded."
+    val ledgerCount = payments.count { it.studentId == id && it.paymentType == "renewal" }
+    val totalRenewals = renewals.size + ledgerCount
+    "Tracking from ${displayDate(referenceDate())}. $totalRenewals renewal${if (totalRenewals == 1) "" else "s"} recorded."
 }
+
 
 fun buildStats(students: List<Student>): DashboardStats {
     val active = students.filter { it.isActive() }

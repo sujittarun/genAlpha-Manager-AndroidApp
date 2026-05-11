@@ -4004,7 +4004,7 @@ private fun RosterRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                student.cardTimelineLabel()?.let { timeline ->
+                student.cardTimelineLabel(payments)?.let { timeline ->
                     Text(
                         text = timeline,
                         color = if (student.discontinued) {
@@ -4281,7 +4281,7 @@ private fun PlayerDetailSheet(
                     DataTileContent(
                         modifier = Modifier.weight(1f),
                         label = if (student.discontinued) "Discontinued" else "Latest Renewal",
-                        value = if (student.discontinued) displayDate(student.discontinuedAt) else displayDate(student.latestRenewal()),
+                        value = if (student.discontinued) displayDate(student.discontinuedAt) else displayDate(student.latestRenewal(payments)),
                         accent = MaterialTheme.colorScheme.onSurface,
                     )
                     DataTileContent(
@@ -4296,7 +4296,7 @@ private fun PlayerDetailSheet(
                     )
                 }
                 Text(
-                    text = student.trackingCaption(),
+                    text = student.trackingCaption(payments),
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
                     fontSize = 11.sp,
                     lineHeight = 16.sp,

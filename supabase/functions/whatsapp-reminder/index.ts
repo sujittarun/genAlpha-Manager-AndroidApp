@@ -73,7 +73,12 @@ function normalizePhone(value: string): string {
 }
 
 function localIsoDate(date = new Date()): string {
-  return date.toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(date);
 }
 
 function whatsappTimestampToIso(value: unknown): string {
@@ -84,10 +89,7 @@ function whatsappTimestampToIso(value: unknown): string {
 }
 
 function toLocalIsoDate(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  return localIsoDate(date);
 }
 
 function addMonthsIso(dateValue: string, months: number): string {
@@ -136,8 +138,36 @@ function getPaymentMonthsCovered(payment: any): number {
   return 0;
 }
 
+function getInitialCoverageMonths(student: any): number {
+  if (
+    (student.fees_paid !== true && student.fees_paid !== "yes") ||
+    Number(student.amount_paid || 0) <= 0
+  ) return 0;
+  const amount = Number(student.amount_paid || 0);
+  const withoutAdmissionFee = Math.max(amount - ADMISSION_ONE_TIME_FEE, 0);
+  const roundedAmount = Math.round(amount);
+
+  if (
+    withoutAdmissionFee >= 18900 ||
+    [18900, 19400, 20000, 20500, 21000].includes(roundedAmount)
+  ) return 6;
+  if (
+    [9000, 9500, 9975, 10475, 10500, 11000].includes(roundedAmount) ||
+    withoutAdmissionFee >= 9975
+  ) return 3;
+  if (
+    [3500, 4000, 6000, 6500].includes(roundedAmount) ||
+    withoutAdmissionFee >= 3500
+  ) return 1;
+  return 1; // Default to 1 month for any joining payment
+}
+
 function getPaidThroughDate(student: any, payments: any[]): string {
-  let paidThrough = student.join_date || student.joinDate;
+  const isPaid = student.fees_paid === true || student.fees_paid === "yes";
+  let paidThrough = isPaid
+    ? addMonthsIso(student.join_date, getInitialCoverageMonths(student))
+    : student.join_date;
+
   if (!paidThrough) return localIsoDate();
 
   const studentPayments = payments.filter((p) => p.student_id === student.id);
@@ -1320,9 +1350,9 @@ async function handleAutoSchedule() {
 
   const todayIso = localIsoDate();
 
-  // Fetch active students who haven't paid fees
+  // Fetch all active students
   const students = await rest(
-    "students?discontinued=eq.false&fees_paid=eq.false",
+    "students?discontinued=eq.false",
   );
 
   // Fetch payments to calculate next renewal date
@@ -1338,13 +1368,13 @@ async function handleAutoSchedule() {
   const results = [];
 
   for (const student of students) {
-    // Skip if payment is pending verification
-    const amountPaid = Number(student.amount_paid || 0);
-    const paymentReference = String(student.payment_reference || "").trim();
-    if (amountPaid > 0 || paymentReference) continue;
-
     const isJoiningFee = student.fees_paid !== true &&
       student.fees_paid !== "yes";
+
+    // Skip if initial joining payment is pending verification
+    const amountPaid = Number(student.amount_paid || 0);
+    const paymentReference = String(student.payment_reference || "").trim();
+    if (isJoiningFee && (amountPaid > 0 || paymentReference)) continue;
     const dueDate = isJoiningFee
       ? student.join_date
       : getPaidThroughDate(student, payments);
