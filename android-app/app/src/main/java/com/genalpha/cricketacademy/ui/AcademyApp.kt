@@ -2012,7 +2012,10 @@ private fun paymentPlanLabel(planType: String?, months: Int): String = when (pla
 
 private fun buildPlayerPaymentRows(student: Student, payments: List<StudentPayment>): List<PlayerPaymentLine> {
     val rows = mutableListOf<PlayerPaymentLine>()
-    if (student.feesPaid && student.amountPaid > 0.0) {
+    val studentPayments = payments.filter { it.studentId == student.id }
+    val hasJoiningPayment = studentPayments.any { it.paymentType == "joining" }
+
+    if (student.feesPaid && student.amountPaid > 0.0 && !hasJoiningPayment) {
         val months = initialCoverageMonthsForAmount(student.amountPaid, student.feesPaid)
         rows += PlayerPaymentLine(
             date = student.joinDate,
@@ -2022,7 +2025,7 @@ private fun buildPlayerPaymentRows(student: Student, payments: List<StudentPayme
             amount = student.amountPaid,
         )
     }
-    payments.filter { it.studentId == student.id }.forEach { payment ->
+    studentPayments.forEach { payment ->
         val months = paymentMonthsCovered(payment)
         rows += PlayerPaymentLine(
             date = payment.paidOn,
