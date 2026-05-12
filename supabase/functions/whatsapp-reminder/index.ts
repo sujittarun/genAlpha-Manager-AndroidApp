@@ -88,9 +88,6 @@ function whatsappTimestampToIso(value: unknown): string {
     : new Date().toISOString();
 }
 
-function toLocalIsoDate(date: Date): string {
-  return localIsoDate(date);
-}
 
 function addMonthsIso(dateValue: string, months: number): string {
   const date = new Date(`${dateValue}T00:00:00`);
@@ -103,7 +100,7 @@ function addMonthsIso(dateValue: string, months: number): string {
     0,
   ).getDate();
   date.setDate(Math.min(originalDay, daysInTargetMonth));
-  return toLocalIsoDate(date);
+  return localIsoDate(date);
 }
 
 function getDaysSinceDate(dateValue: string): number {
@@ -138,11 +135,107 @@ function getPaymentMonthsCovered(payment: any): number {
   return 0;
 }
 
+function toCsv(headers: string[], rows: any[]): string {
+  const headerRow = headers.join(",");
+  const bodyRows = rows.map((row) =>
+    headers
+      .map((header) => {
+        const val = row[header] ?? "";
+        const escaped = String(val).replace(/"/g, '""');
+        return `"${escaped}"`;
+      })
+      .join(",")
+  );
+  return [headerRow, ...bodyRows].join("\n");
+}
+
+async function sendResendEmail(
+  to: string | string[],
+  subject: string,
+  html: string,
+  attachments: { filename: string; content: string }[],
+) {
+  const apiKey = env("RESEND_API_KEY");
+  if (!apiKey) throw new Error("RESEND_API_KEY not configured.");
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      from: "Gen Alpha Backup <onboarding@resend.dev>",
+      to,
+      subject,
+      html,
+      attachments: attachments.map((a) => ({
+        filename: a.filename,
+        content: btoa(a.content),
+      })),
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Resend API error: ${error}`);
+  }
+
+  return await response.json();
+}
+
+async function handleAutoBackup(payload: any) {
+  const targetEmail = payload?.email || ["tarun.sujit@gmail.com", "genalphacricketacademy@gmail.com"];
+  
+  // 1. Fetch data
+  const [students, payments, expenses, attendance] = await Promise.all([
+    rest("students?order=name.asc"),
+    rest("student_payments?order=paid_on.desc"),
+    rest("academy_expenses?order=expense_date.desc"),
+    rest("attendance?order=attendance_date.desc&limit=2000"),
+  ]);
+
+  // 2. Convert to CSV
+  const studentCsv = students.length > 0 ? toCsv(Object.keys(students[0]), students) : "No data";
+  const paymentsCsv = payments.length > 0 ? toCsv(Object.keys(payments[0]), payments) : "No data";
+  const expensesCsv = expenses.length > 0 ? toCsv(Object.keys(expenses[0]), expenses) : "No data";
+  const attendanceCsv = attendance.length > 0 ? toCsv(Object.keys(attendance[0]), attendance) : "No data";
+
+  const today = localIsoDate();
+
+  // 3. Send Email
+  await sendResendEmail(
+    targetEmail,
+    `Gen Alpha Academy Backup - ${today}`,
+    `
+      <h2>Gen Alpha Cricket Academy Data Backup</h2>
+      <p>Automated backup performed on <strong>${today}</strong>.</p>
+      <p>Please find the attached CSV files for:</p>
+      <ul>
+        <li>Registered Students</li>
+        <li>Payment Ledger</li>
+        <li>Expense Records</li>
+        <li>Recent Attendance</li>
+      </ul>
+      <p><em>This is an automated system backup.</em></p>
+    `,
+    [
+      { filename: `students_${today}.csv`, content: studentCsv },
+      { filename: `payments_${today}.csv`, content: paymentsCsv },
+      { filename: `expenses_${today}.csv`, content: expensesCsv },
+      { filename: `attendance_${today}.csv`, content: attendanceCsv },
+    ],
+  );
+
+  return jsonResponse({ success: true, message: `Backup sent to ${targetEmail}` });
+}
+
 function getInitialCoverageMonths(student: any): number {
-  if (
-    (student.fees_paid !== true && student.fees_paid !== "yes") ||
-    Number(student.amount_paid || 0) <= 0
-  ) return 0;
+  const isPaid = student.fees_paid === true || 
+                 String(student.fees_paid).toLowerCase() === "true" || 
+                 String(student.fees_paid).toLowerCase() === "yes";
+                 
+  if (!isPaid || Number(student.amount_paid || 0) <= 0) return 0;
   const amount = Number(student.amount_paid || 0);
   const withoutAdmissionFee = Math.max(amount - ADMISSION_ONE_TIME_FEE, 0);
   const roundedAmount = Math.round(amount);
@@ -249,7 +342,7 @@ function paymentContactDetails(): string {
 }
 
 const AFTER_PAY_NOW_FOLLOWUP =
-  'After payment, just reply here with "Paid" or send the payment screenshot.';
+  "✅ Once payment is complete, please *send the screenshot* here. This helps our manager verify and update your kid's status immediately.";
 
 const PAYMENT_CONFIRMATION_REPLY =
   "Once the academy confirms the payment, we’ll update your renewal. Thank You!";
@@ -283,11 +376,6 @@ function normalizeSelectedPlan(value: unknown): string {
   return "";
 }
 
-function daysSince(dateValue: string): number {
-  const due = new Date(`${dateValue}T00:00:00+05:30`);
-  const now = new Date();
-  return Math.floor((now.getTime() - due.getTime()) / 86400000);
-}
 
 function parseBoolean(value: unknown, fallback: boolean): boolean {
   if (typeof value === "boolean") return value;
@@ -295,9 +383,6 @@ function parseBoolean(value: unknown, fallback: boolean): boolean {
   return fallback;
 }
 
-function parseText(value: unknown, fallback: string): string {
-  return typeof value === "string" && value.trim() ? value.trim() : fallback;
-}
 
 async function rest(path: string, init: RequestInit = {}) {
   const baseUrl = env("SUPABASE_URL").replace(/\/+$/, "");
@@ -483,10 +568,12 @@ function buildReminderPreview(
   reminderType: string,
 ) {
   const choices = PLAN_OPTIONS.map((option) => PLAN_LABELS[option]).join(" / ");
-  const dueText = reminderType === "joining_fee"
-    ? `joining fee from ${dueDate}`
+  const isJoining = reminderType === "joining_fee";
+  const dueText = isJoining
+    ? `admission & 1st cycle (Joined: ${dueDate})`
     : `renewal due ${dueDate}`;
-  return `Gen Alpha Cricket Academy reminder for ${student.name}: ${dueText}. Parent can choose ${choices}. Manager help: ${settings.managerPhone}.`;
+  const amountNote = isJoining ? " [Incl. Rs 500 Admission Fee]" : "";
+  return `Gen Alpha Academy reminder for ${student.name}: ${dueText}.${amountNote} Parent can choose ${choices}. Help: ${settings.managerPhone}.`;
 }
 
 function ordinalDay(day: number): string {
@@ -498,7 +585,7 @@ function ordinalDay(day: number): string {
   return `${day}th`;
 }
 
-function buildReminderDueText(_reminderType: string, dueDate: string) {
+function buildReminderDueText(reminderType: string, dueDate: string) {
   const [year, month, day] = String(dueDate || "").split("-").map(Number);
   if (!year || !month || !day) return String(dueDate || "");
 
@@ -517,7 +604,13 @@ function buildReminderDueText(_reminderType: string, dueDate: string) {
     "December",
   ][month - 1];
 
-  return monthName ? `${ordinalDay(day)} ${monthName}` : String(dueDate || "");
+  const dateFormatted = monthName ? `${ordinalDay(day)} ${monthName}` : String(dueDate || "");
+  
+  if (reminderType === "joining_fee") {
+    return `${dateFormatted} (Admission + 1st Month)`;
+  }
+  
+  return dateFormatted;
 }
 
 function displayDate(value: string): string {
@@ -770,7 +863,9 @@ async function createUpiPaymentLink(
   settings: ReminderSettings,
 ) {
   const dryRun = settings.dryRunMode || !settings.paymentLinksEnabled;
-  const amount = PLAN_AMOUNTS[plan] || 0;
+  const isJoining = reminderEvent.reminder_type === "joining_fee";
+  const baseAmount = PLAN_AMOUNTS[plan] || 0;
+  const amount = isJoining ? (baseAmount + 500) : baseAmount;
   const months = PLAN_MONTHS[plan] || 0;
 
   if (dryRun) {
@@ -965,7 +1060,7 @@ async function handleSendReminder(request: Request, payload: any) {
     inputDueDate ||
       (reminderType === "joining_fee" ? student.join_date : localIsoDate()),
   );
-  const overdueDays = Math.max(0, daysSince(dueDate));
+  const overdueDays = Math.max(0, getDaysSinceDate(dueDate));
   const dryRun = settings.dryRunMode || !settings.whatsappRemindersEnabled;
   const parentPhone = String(student.parent_contact_no || "").replace(/\D/g, "")
     .slice(-10);
@@ -1131,13 +1226,21 @@ async function handleRenewalVerified(request: Request, payload: any) {
   const fromDate = String(payload.fromDate || payload.cycleStartDate || "");
   const toDate = String(payload.toDate || "");
   const planLabel = String(payload.planLabel || "renewal");
+  const isJoining = payload.isJoiningFee === true || planLabel.toLowerCase().includes("joining") || planLabel.toLowerCase().includes("admission");
+  
   const amount = Number(payload.amount || 0);
   const amountText = Number.isFinite(amount) && amount > 0
     ? ` Amount received: Rs ${amount.toLocaleString("en-IN")}.`
     : "";
-  const message = `${student.name || "Player"}'s ${planLabel} has been renewed from ${
+
+  const actionText = isJoining ? "admission and first cycle" : planLabel;
+  const happyMessage = isJoining
+    ? "Welcome to the Gen Alpha family! We are thrilled to start this journey with your child and help them develop their skills on the field. 🏏"
+    : "Great to see the commitment! We are excited to continue working with your child and watching them grow into a finer cricketer every day. Let's keep the game going! 🏏";
+
+  const message = `*Payment Confirmed!* 🏏\n\n*${student.name || "Player"}'s ${actionText} status is now updated from ${
     displayDate(fromDate)
-  } to ${displayDate(toDate)}.${amountText} Thank you!`;
+  } to ${displayDate(toDate)}.*\n\n*Amount received: Rs ${amount.toLocaleString("en-IN")}.*\n\n${happyMessage}`;
 
   const metaResponse = await sendTextMessage(to, message);
 
@@ -1329,11 +1432,10 @@ async function handleWebhook(payload: any) {
           );
         }
         if (!linkRequest.dry_run && linkRequest.payment_link_url) {
+          const finalAmount = isJoining ? (PLAN_AMOUNTS[plan] + 500) : PLAN_AMOUNTS[plan];
           await sendTextMessage(
             from,
-            `Gen Alpha ${PLAN_LABELS[plan]} fee: Rs ${
-              PLAN_AMOUNTS[plan]
-            }.\n\nPay here: ${linkRequest.payment_link_url}\n\n${paymentContactDetails()}`,
+            `🏏 *Gen Alpha Cricket Academy - Payment Request*\n*Amount: Rs ${finalAmount.toLocaleString("en-IN")}*\n\n*Pay here: ${linkRequest.payment_link_url}*\n\n${paymentContactDetails()}`,
           );
         }
       }
@@ -1409,58 +1511,62 @@ async function handleAutoSchedule() {
         "",
       ).slice(-10);
 
-      try {
-        const event = await insertReminderEvent({
-          student_id: student.id,
-          reminder_type: reminderType,
-          channel: "whatsapp",
-          status: dryRun ? "dry_run" : "queued",
-          dry_run: dryRun,
-          due_date: dueDate,
-          overdue_days: overdueDays,
-          plan_options: PLAN_OPTIONS,
-          parent_phone: parentPhone,
-          manager_phone: settings.managerPhone,
-          message_preview: buildReminderPreview(
-            student,
-            dueDate,
-            settings,
-            reminderType,
-          ),
-          created_by: "system_auto",
-        });
-
-        if (!dryRun) {
-          const to = normalizePhone(parentPhone);
-          if (to) {
-            const metaResponse = await sendTemplateMessage(
-              to,
-              event.id,
+      const sendTask = (async () => {
+        try {
+          const event = await insertReminderEvent({
+            student_id: student.id,
+            reminder_type: reminderType,
+            channel: "whatsapp",
+            status: dryRun ? "dry_run" : "queued",
+            dry_run: dryRun,
+            due_date: dueDate,
+            overdue_days: overdueDays,
+            plan_options: PLAN_OPTIONS,
+            parent_phone: parentPhone,
+            manager_phone: settings.managerPhone,
+            message_preview: buildReminderPreview(
               student,
               dueDate,
+              settings,
               reminderType,
-            );
-            const whatsappMessageId = String(
-              metaResponse?.messages?.[0]?.id || "",
-            );
-            await updateReminderEvent(event.id, {
-              status: whatsappMessageId ? "accepted" : "sent",
-              whatsapp_message_id: whatsappMessageId,
-              accepted_at: new Date().toISOString(),
-            });
-          }
-        }
+            ),
+            created_by: "system_auto",
+          });
 
-        results.push({ student: student.name, overdueDays, status: "sent" });
-        // Small delay to respect WhatsApp API rate limits
-        await new Promise((r) => setTimeout(r, 1500));
-      } catch (e) {
-        results.push({ student: student.name, error: (e as Error).message });
-      }
+          if (!dryRun) {
+            const to = normalizePhone(parentPhone);
+            if (to) {
+              const metaResponse = await sendTemplateMessage(
+                to,
+                event.id,
+                student,
+                dueDate,
+                reminderType,
+              );
+              const whatsappMessageId = String(
+                metaResponse?.messages?.[0]?.id || "",
+              );
+              await updateReminderEvent(event.id, {
+                status: whatsappMessageId ? "accepted" : "sent",
+                whatsapp_message_id: whatsappMessageId,
+                accepted_at: new Date().toISOString(),
+              });
+            }
+          }
+          return { student: student.name, status: "sent" };
+        } catch (e) {
+          return { student: student.name, error: (e as Error).message };
+        }
+      })();
+      
+      results.push(sendTask);
+      // Small stagger to not hit Meta all at once, but don't await the whole thing
+      await new Promise((r) => setTimeout(r, 200)); 
     }
   }
 
-  return jsonResponse({ success: true, processed: results });
+  const processed = await Promise.all(results);
+  return jsonResponse({ success: true, processed });
 }
 
 
@@ -1503,6 +1609,9 @@ Deno.serve(async (request) => {
     }
     if (payload?.action === "auto_schedule") {
       return await handleAutoSchedule();
+    }
+    if (payload?.action === "auto_backup") {
+      return await handleAutoBackup(payload);
     }
     return await handleWebhook(payload);
   } catch (error) {

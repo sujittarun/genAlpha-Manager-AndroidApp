@@ -305,36 +305,6 @@ private enum class AppView(val label: String) {
 }
 
 @OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun ViewSwitcherSection(
-    selectedView: AppView,
-    onSelected: (AppView) -> Unit,
-) {
-    Card(
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    ) {
-        FlowRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            AppView.entries.forEach { view ->
-                FilterChip(
-                    selected = selectedView == view,
-                    onClick = { onSelected(view) },
-                    label = { Text(view.label) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = BrandBlue,
-                        selectedLabelColor = Color.White,
-                    ),
-                )
-            }
-        }
-    }
-}
 
 @Composable
 private fun PublicViewHeader(
@@ -5410,6 +5380,7 @@ private fun PlayerEditorSheet(
 
             TimeSlotSelector(selected = timeSlot, onSelected = { timeSlot = it })
 
+            val hasRenewals = editingStudent?.renewals?.isNotEmpty() == true
             OutlinedTextField(
                 value = joinDate,
                 onValueChange = {},
@@ -5419,10 +5390,16 @@ private fun PlayerEditorSheet(
                 label = { Text("Join date") },
                 readOnly = true,
                 trailingIcon = {
-                    TextButton(onClick = { openDatePicker.value.invoke() }) {
-                        Text("Pick")
+                    TextButton(
+                        onClick = { openDatePicker.value.invoke() },
+                        enabled = !hasRenewals
+                    ) {
+                        Text(if (hasRenewals) "Locked" else "Pick")
                     }
                 },
+                supportingText = if (hasRenewals) {
+                    { Text("Join date is locked because renewals are already recorded.") }
+                } else null
             )
 
             Row(
@@ -6489,15 +6466,6 @@ private fun TimeSlotSelector(
     }
 }
 
-private fun splitAdmissionDateParts(date: String): Triple<String, String, String> {
-    val parts = date.split("-")
-    if (parts.size != 3) return Triple("", "", "")
-
-    val year = parts[0].takeIf { it.length == 4 }.orEmpty()
-    val month = parts[1].toIntOrNull()?.let { AdmissionMonths.getOrNull(it - 1) }.orEmpty()
-    val day = parts[2].toIntOrNull()?.toString().orEmpty()
-    return Triple(day, month, year)
-}
 
 private fun Context.sharePlainText(title: String, text: String) {
     val sendIntent = Intent(Intent.ACTION_SEND).apply {
@@ -6564,14 +6532,6 @@ private fun Context.shareReceiptPdf(receipt: ReceiptPdfData) {
     }
 }
 
-private fun normalizeWhatsappPhone(phone: String): String {
-    val digits = phone.filter { it.isDigit() }
-    return when {
-        digits.length == 10 -> "91$digits"
-        digits.length == 12 && digits.startsWith("91") -> digits
-        else -> digits
-    }
-}
 
 private fun formatRupees(value: Double): String = "Rs ${String.format(Locale.US, "%,.0f", value)}"
 
@@ -6840,23 +6800,6 @@ private fun Context.createReceiptPdf(receipt: ReceiptPdfData): Uri? {
     }
 }
 
-private fun drawReceiptCell(
-    canvas: android.graphics.Canvas,
-    row: ReceiptPdfRow,
-    x: Float,
-    y: Float,
-    width: Float,
-    labelPaint: Paint,
-    valuePaint: Paint,
-    fillPaint: Paint,
-    strokePaint: Paint,
-) {
-    fillPaint.color = 0xFFFFFFFF.toInt()
-    canvas.drawRoundRect(RectF(x, y, x + width, y + 58f), 14f, 14f, fillPaint)
-    canvas.drawRoundRect(RectF(x, y, x + width, y + 58f), 14f, 14f, strokePaint)
-    canvas.drawText(row.label.uppercase(Locale.getDefault()), x + 14f, y + 21f, labelPaint)
-    drawWrappedText(canvas, row.value.ifBlank { "-" }, x + 14f, y + 42f, valuePaint, width - 28f, 15f, 2)
-}
 
 private fun drawReceiptLine(
     canvas: android.graphics.Canvas,

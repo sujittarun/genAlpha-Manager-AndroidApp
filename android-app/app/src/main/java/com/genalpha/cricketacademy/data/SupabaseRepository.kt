@@ -772,6 +772,8 @@ class SupabaseRepository(
             val renewals = JSONArray(student.renewals + cycleDate)
             val body = JSONObject()
                 .put("renewals", renewals)
+                .put("discontinued", false)
+                .put("discontinued_at", JSONObject.NULL)
                 .put("updated_by", managerEmail)
 
             executeWriteRequest(
@@ -820,6 +822,8 @@ class SupabaseRepository(
             if (isJoiningFee) {
                 val updateBody = JSONObject()
                     .put("fees_paid", true)
+                    .put("discontinued", false)
+                    .put("discontinued_at", JSONObject.NULL)
                     .put("updated_by", managerEmail)
                 executeWriteRequest(
                     url = "$baseUrl/rest/v1/students?id=eq.${student.id}",

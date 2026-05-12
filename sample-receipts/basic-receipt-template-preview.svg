@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="794" height="1123" viewBox="0 0 794 1123">
+  <rect width="794" height="1123" fill="#f3f6fb"/>
+  <rect x="92" y="76" width="610" height="970" rx="8" fill="#ffffff" stroke="#d8e1ee" stroke-width="2"/>
+  <rect x="92" y="76" width="610" height="12" fill="#0d2d66"/>
+  <rect x="92" y="88" width="610" height="4" fill="#f4be2e"/>
+
+  <image href="../android-app/app/src/main/res/drawable/gen_alpha_badge_transparent.png" x="122" y="110" width="72" height="96" preserveAspectRatio="xMidYMid meet"/>
+  <text x="214" y="142" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="1.5" fill="#1f5fbf">GEN ALPHA CRICKET ACADEMY</text>
+  <text x="214" y="174" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" fill="#10264f">Fee Receipt</text>
+  <text x="214" y="198" font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#66748c">Official payment confirmation</text>
+
+  <rect x="586" y="126" width="76" height="34" rx="17" fill="#178553"/>
+  <text x="624" y="148" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#ffffff">PAID</text>
+
+  <line x1="122" y1="238" x2="672" y2="238" stroke="#d8e1ee" stroke-width="2"/>
+
+  <text x="122" y="288" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" letter-spacing="1.2" fill="#66748c">RECEIPT NO</text>
+  <text x="122" y="315" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" fill="#10264f">GACA-1007-20260428</text>
+  <text x="474" y="288" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" letter-spacing="1.2" fill="#66748c">DATE</text>
+  <text x="474" y="315" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" fill="#10264f">28 Apr 2026</text>
+
+  <rect x="122" y="360" width="550" height="82" rx="6" fill="#f8fbff" stroke="#e2e9f5"/>
+  <text x="146" y="392" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" letter-spacing="1.2" fill="#66748c">RECEIVED FROM</text>
+  <text x="146" y="421" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700" fill="#10264f">Vihaan C.</text>
+  <text x="528" y="392" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" letter-spacing="1.2" fill="#66748c">REG NO</text>
+  <text x="528" y="421" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#10264f">1007</text>
+
+  <text x="122" y="500" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" letter-spacing="1.2" fill="#0d2d66">PAYMENT DETAILS</text>
+  <rect x="122" y="526" width="550" height="54" fill="#ffffff" stroke="#e2e9f5"/>
+  <text x="146" y="559" font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#66748c">Payment Type</text>
+  <text x="650" y="559" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#10264f">Joining Fee</text>
+
+  <rect x="122" y="580" width="550" height="54" fill="#f8fbff" stroke="#e2e9f5"/>
+  <text x="146" y="613" font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#66748c">Time Slot</text>
+  <text x="650" y="613" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#10264f">7:30AM</text>
+
+  <rect x="122" y="634" width="550" height="54" fill="#ffffff" stroke="#e2e9f5"/>
+  <text x="146" y="667" font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#66748c">Jersey</text>
+  <text x="650" y="667" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#10264f">Size 28, 1 pair</text>
+
+  <rect x="122" y="712" width="550" height="76" rx="6" fill="#fff7dc" stroke="#f0df9b"/>
+  <text x="146" y="747" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" letter-spacing="1.2" fill="#66748c">AMOUNT PAID</text>
+  <text x="650" y="762" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" fill="#0d2d66">Rs 4,000</text>
+
+  <line x1="122" y1="854" x2="672" y2="854" stroke="#d8e1ee" stroke-width="2"/>
+  <text x="122" y="896" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#66748c">Fees once paid are recorded against the player profile.</text>
+  <text x="122" y="920" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#66748c">Please keep this receipt for academy reference.</text>
+
+  <text x="672" y="932" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#10264f">Thank you</text>
+</svg>
