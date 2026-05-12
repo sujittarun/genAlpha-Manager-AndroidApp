@@ -1305,7 +1305,12 @@ async function handleSendAdmissionReminder(request: Request, payload: any) {
 
   const metaResponse = await sendTextMessage(to, message);
 
-  // Record the attempt in timeline or comments if possible, but for now just send
+  // Update last_nudge_at to ensure automated schedule respects manual nudges
+  await rest(`admissions?id=eq.${admission.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ last_nudge_at: new Date().toISOString() })
+  });
+
   return jsonResponse({
     success: true,
     message: `Reminder sent to ${admission.applicant_name}'s parent.`,
@@ -1602,33 +1607,54 @@ async function handleAutoSchedule() {
   for (const admission of pendingAdmissions) {
     const createdDate = admission.created_at.slice(0, 10);
     const daysSince = getDaysSinceDate(createdDate);
+    const lastNudgeAt = admission.last_nudge_at ? new Date(admission.last_nudge_at) : null;
+    const isRecentlyNudged = lastNudgeAt && (new Date().getTime() - lastNudgeAt.getTime() < 24 * 60 * 60 * 1000);
+
+    if (isRecentlyNudged) {
+      console.log(`Skipping automated nudge for ${admission.applicant_name} (recently nudged at ${admission.last_nudge_at})`);
+      continue;
+    }
     
     // Nudge exactly on Day 4
     if (daysSince === 4) {
-      const to = normalizePhone(String(admission.parent_contact_no || admission.alternate_contact_no || ""));
+      const to = normalizePhone(String(admission.parent_contact_no || admission.emergency_contact_no || ""));
       if (!to) continue;
 
-      const amount = Number(admission.admission_fee_total || 4000);
-      const plan = String(admission.fee_plan || "monthly");
-      const paymentPageUrl = `${PAYMENT_PAGE_URL}?a=${amount}&name=${encodeURIComponent(admission.applicant_name)}&p=${encodeURIComponent(plan)}`;
+      const amount = Number(admission.amount_paid > 0 ? admission.amount_paid : 4000);
+      const plan = "monthly";
+      const paymentPageUrl = `${PAYMENT_PAGE_URL}?a=${amount}&name=${encodeURIComponent(admission.applicant_name)}&p=${encodeURIComponent(plan)}&id=${admission.id}`;
       
       const message = `🏏 *Gen Alpha Cricket Academy - Registration Reminder*\n\nHi! Just a friendly nudge regarding *${admission.applicant_name}'s* registration. The form is received, but the spot in the *${admission.time_slot}* slot is only confirmed after payment.\n\n*Amount: Rs ${amount.toLocaleString("en-IN")}*\n\n*Pay here: ${paymentPageUrl}*\n\nWe'd love to see them on the field! 🏏`;
 
-      results.push(sendTextMessage(to, message));
+      results.push((async () => {
+        const res = await sendTextMessage(to, message);
+        await rest(`admissions?id=eq.${admission.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ last_nudge_at: new Date().toISOString() })
+        });
+        return res;
+      })());
     }
 
     // Nudge exactly on Day 7
     if (daysSince === 7) {
-      const to = normalizePhone(String(admission.parent_contact_no || admission.alternate_contact_no || ""));
+      const to = normalizePhone(String(admission.parent_contact_no || admission.emergency_contact_no || ""));
       if (!to) continue;
 
-      const amount = Number(admission.admission_fee_total || 4000);
-      const plan = String(admission.fee_plan || "monthly");
-      const paymentPageUrl = `${PAYMENT_PAGE_URL}?a=${amount}&name=${encodeURIComponent(admission.applicant_name)}&p=${encodeURIComponent(plan)}`;
+      const amount = Number(admission.amount_paid > 0 ? admission.amount_paid : 4000);
+      const plan = "monthly";
+      const paymentPageUrl = `${PAYMENT_PAGE_URL}?a=${amount}&name=${encodeURIComponent(admission.applicant_name)}&p=${encodeURIComponent(plan)}&id=${admission.id}`;
       
       const message = `🏏 *Gen Alpha Cricket Academy - Final Reminder*\n\nHi! We noticed *${admission.applicant_name}'s* registration is still pending. We can only hold the *${admission.time_slot}* spot for another 48 hours before releasing it.\n\nIf you're still interested, please complete the payment here to secure their spot:\n\n*Pay here: ${paymentPageUrl}*\n\nLooking forward to having you with us! 🏏`;
 
-      results.push(sendTextMessage(to, message));
+      results.push((async () => {
+        const res = await sendTextMessage(to, message);
+        await rest(`admissions?id=eq.${admission.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ last_nudge_at: new Date().toISOString() })
+        });
+        return res;
+      })());
     }
   }
 
