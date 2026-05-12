@@ -314,11 +314,12 @@ class SupabaseRepository(
     suspend fun rollbackPayment(paymentId: String, student: Student, session: ManagerSession) {
         withContext(Dispatchers.IO) {
             // 1. Get the payment details to find the cycle date
-            val paymentJson = executeReadRequest(
+            val paymentJson: String = executeReadRequest(
                 url = "$baseUrl/rest/v1/payments?id=eq.$paymentId&select=*",
                 session = session
             )
-            val payment = paymentListAdapter.fromJson(paymentJson).orEmpty().firstOrNull() ?: return@withContext
+            val payments = paymentListAdapter.fromJson(paymentJson).orEmpty()
+            val payment = payments.firstOrNull() ?: return@withContext
 
             // 2. Delete the payment record
             executeWriteRequest(
@@ -329,20 +330,18 @@ class SupabaseRepository(
             )
 
             // 3. Roll back the student's renewals array
-            val cycleDate = payment.cycleStartDate?.takeIf { it.isNotBlank() }
-            if (cycleDate != null) {
-                val updatedRenewals = student.renewals.filter { it != cycleDate }
-                val updateBody = JSONObject()
-                    .put("renewals", JSONArray(updatedRenewals))
-                    .put("updated_by", session.email)
-                
-                executeWriteRequest(
-                    url = "$baseUrl/rest/v1/students?id=eq.${student.id}",
-                    session = session,
-                    method = "PATCH",
-                    body = updateBody,
-                )
-            }
+            val dateToRollback = payment.cycleStartDate?.takeIf { it.isNotBlank() } ?: payment.paidOn
+            val updatedRenewals = student.renewals.filter { it != dateToRollback }
+            val updateBody = JSONObject()
+                .put("renewals", JSONArray(updatedRenewals))
+                .put("updated_by", session.email)
+            
+            executeWriteRequest(
+                url = "$baseUrl/rest/v1/students?id=eq.${student.id}",
+                session = session,
+                method = "PATCH",
+                body = updateBody,
+            )
         }
     }
 
@@ -1020,6 +1019,24 @@ class SupabaseRepository(
         }
 
         client.newCall(builder.build()).execute().use { response ->
+            val responseBody = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw SupabaseException(response.code, parseError(responseBody))
+            }
+            return responseBody
+        }
+    }
+
+    private fun executeReadRequest(
+        url: String,
+        session: ManagerSession,
+    ): String {
+        val request = baseRequest(url)
+            .header("Authorization", "Bearer ${session.accessToken}")
+            .get()
+            .build()
+
+        client.newCall(request).execute().use { response ->
             val responseBody = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
                 throw SupabaseException(response.code, parseError(responseBody))

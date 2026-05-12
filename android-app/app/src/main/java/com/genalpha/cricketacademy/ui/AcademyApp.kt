@@ -531,7 +531,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     val stats = remember(uiState.kids) { viewModel.stats() }
     val slotSummary = remember(uiState.kids, uiState.selectedSlotFilter) { viewModel.slotSummary() }
     val alertKids = remember(uiState.kids, uiState.payments) { viewModel.alertKids() }
-    val rosterSections = remember(filteredKids) { buildRosterSections(filteredKids) }
+    val rosterSections = remember(filteredKids, uiState.rosterSortKey) { buildRosterSections(filteredKids, uiState.rosterSortKey) }
     val activePlayers = remember(uiState.kids) { uiState.kids.filter { it.isActive() } }
 
     var selectedView by rememberSaveable { mutableStateOf(AppView.Admission) }
@@ -5057,11 +5057,18 @@ private fun rosterLazyListIndexForStudent(
     return null
 }
 
-private fun buildRosterSections(students: List<Student>): List<RosterSection> {
-    val slotOrder = listOf("6AM", "7:30AM", "4PM", "5:30PM", "7PM")
+private fun buildRosterSections(students: List<Student>, sortKey: String): List<RosterSection> {
     val sections = mutableListOf<RosterSection>()
+    
+    // If sorting by nextDue or name (not slot), show a flat list or special sections
+    if (sortKey == "nextDue") {
+        if (students.isNotEmpty()) {
+            sections += RosterSection("all", "All Players (Sorted by Due Date)", students)
+        }
+        return sections
+    }
 
-    slotOrder.forEach { slot ->
+    val slotOrder = listOf("6AM", "7:30AM", "4PM", "5:30PM", "7PM")
         val matches = students
             .filter { it.isActive() && it.timeSlot == slot }
         if (matches.isNotEmpty()) {
