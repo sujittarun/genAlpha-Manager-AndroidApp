@@ -1235,6 +1235,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                 selectedStudent = null
                             }
                             scope.launch { snackbarHostState.showSnackbar(result.message) }
+                            result
                         },
                     )
                 }
@@ -2678,12 +2679,13 @@ private fun RenewalPaymentDialog(
     student: Student,
     payments: List<StudentPayment>,
     onDismiss: () -> Unit,
-    onSubmit: suspend (String, Int, Double, String) -> Unit,
+    onSubmit: suspend (String, Int, Double, String) -> OperationResult,
 ) {
     var plan by rememberSaveable(student.id) { mutableStateOf("monthly") }
     var amount by rememberSaveable(student.id) { mutableStateOf("3500") }
     var comment by rememberSaveable(student.id) { mutableStateOf("") }
     var isSaving by rememberSaveable(student.id) { mutableStateOf(false) }
+    var inlineMessage by rememberSaveable(student.id) { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     val planInfo = when (plan) {
         "quarterly" -> Triple("3 months - 5% off", 3, 9975.0)
@@ -2750,13 +2752,30 @@ private fun RenewalPaymentDialog(
                 label = "Comment",
                 singleLine = true,
             )
+            if (inlineMessage.isNotBlank()) {
+                Text(
+                    text = inlineMessage,
+                    color = BrandRed,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                )
+            }
             Button(
                 enabled = !isSaving,
                 onClick = {
                     scope.launch {
                         try {
                             isSaving = true
-                            onSubmit(plan, planInfo.second, amount.toDoubleOrNull() ?: 0.0, comment)
+                            inlineMessage = ""
+                            val finalAmount = if (plan == "custom") {
+                                amount.toDoubleOrNull() ?: 0.0
+                            } else {
+                                planInfo.third
+                            }
+                            val result = onSubmit(plan, planInfo.second, finalAmount, comment)
+                            if (!result.success) {
+                                inlineMessage = result.message
+                            }
                         } finally {
                             isSaving = false
                         }
