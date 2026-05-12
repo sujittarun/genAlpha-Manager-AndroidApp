@@ -612,13 +612,10 @@ class SupabaseRepository(
         session: ManagerSession,
     ) = withContext(Dispatchers.IO) {
         executeWriteRequest(
-            url = "$baseUrl/rest/v1/rpc/reject_admission",
+            url = "$baseUrl/rest/v1/admissions?id=eq.$admissionId",
             session = session,
-            method = "POST",
-            body = JSONObject()
-                .put("p_admission_id", admissionId)
-                .put("p_reviewed_by", reviewedBy)
-                .put("p_review_notes", ""),
+            method = "DELETE",
+            body = null,
         )
     }
 
