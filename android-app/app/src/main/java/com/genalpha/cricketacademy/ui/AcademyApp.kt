@@ -172,6 +172,7 @@ import com.genalpha.cricketacademy.data.daysSince
 import com.genalpha.cricketacademy.data.displayDate
 import com.genalpha.cricketacademy.data.feeStatusLabel
 import com.genalpha.cricketacademy.data.isActive
+import com.genalpha.cricketacademy.data.isSpecialTraining
 import com.genalpha.cricketacademy.data.isFeesPending
 import com.genalpha.cricketacademy.data.isPaymentPendingVerification
 import com.genalpha.cricketacademy.data.isRenewalPending
@@ -1132,6 +1133,12 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                 scope.launch {
                                     snackbarHostState.showSnackbar(result.message)
                                 }
+                            }
+                        },
+                        onDeletePayment = { paymentId ->
+                            val result = viewModel.deletePayment(paymentId)
+                            scope.launch {
+                                snackbarHostState.showSnackbar(result.message)
                             }
                         },
                         onRenew = {
@@ -4129,6 +4136,7 @@ private fun PlayerDetailSheet(
     onShowAttendanceHistory: () -> Unit,
     onEdit: () -> Unit,
     onDelete: suspend () -> Unit,
+    onDeletePayment: suspend (String) -> Unit,
     onRenew: suspend () -> Unit,
     onSendReminder: suspend () -> Unit,
     onConfirmPayment: suspend () -> Unit,
@@ -4412,6 +4420,25 @@ private fun PlayerDetailSheet(
                                 )
                             }
                             Text("Rs ${String.format(Locale.US, "%,.0f", row.amount)}", color = BrandGreen, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+                            if (isManager && row.id.isNotBlank()) {
+                                IconButton(
+                                    onClick = {
+                                        scope.launch {
+                                            actionInProgress = "delete-payment-${row.id}"
+                                            onDeletePayment(row.id)
+                                            actionInProgress = null
+                                        }
+                                    },
+                                    modifier = Modifier.size(32.dp),
+                                    enabled = actionInProgress == null
+                                ) {
+                                    if (actionInProgress == "delete-payment-${row.id}") {
+                                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = BrandRed)
+                                    } else {
+                                        Icon(Icons.Outlined.Close, contentDescription = "Delete payment", tint = BrandRed.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            }
                         }
                     }
                 }

@@ -395,6 +395,22 @@ class AcademyViewModel(
         }
     }
 
+    suspend fun deletePayment(paymentId: String): OperationResult {
+        if (paymentId.isBlank()) return OperationResult(false, "Payment record not found.")
+
+        return try {
+            withFreshSession { session ->
+                repository.deletePayment(paymentId, session)
+            }
+            _uiState.update { state ->
+                state.copy(payments = state.payments.filterNot { it.id == paymentId })
+            }
+            OperationResult(true, "Payment deleted.")
+        } catch (error: Exception) {
+            OperationResult(false, error.message ?: "Unable to delete payment.")
+        }
+    }
+
     suspend fun loadAttendanceCounts() {
         try {
             val attendanceCounts = repository.fetchAttendanceCounts()

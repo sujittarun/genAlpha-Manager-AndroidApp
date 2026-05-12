@@ -311,6 +311,17 @@ class SupabaseRepository(
         }
     }
 
+    suspend fun deletePayment(paymentId: String, session: ManagerSession) {
+        withContext(Dispatchers.IO) {
+            executeWriteRequest(
+                url = "$baseUrl/rest/v1/payments?id=eq.$paymentId",
+                session = session,
+                method = "DELETE",
+                body = null,
+            )
+        }
+    }
+
     suspend fun signIn(email: String, password: String): ManagerSession = withContext(Dispatchers.IO) {
         val body = JSONObject()
             .put("email", email)
