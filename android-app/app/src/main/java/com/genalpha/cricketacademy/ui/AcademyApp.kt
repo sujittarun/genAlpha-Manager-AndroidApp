@@ -2720,6 +2720,7 @@ private fun RenewalPaymentDialog(
                 onValueChange = { amount = it.filter { char -> char.isDigit() || char == '.' } },
                 label = "Amount paid",
                 singleLine = true,
+                enabled = plan == "custom",
             )
             AdmissionTextField(
                 value = comment,
@@ -6577,14 +6578,7 @@ private fun Context.shareReceiptPdf(receipt: ReceiptPdfData) {
         putExtra(Intent.EXTRA_TEXT, receipt.toShareText())
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
-
-    val whatsappIntent = Intent(sendIntent).setPackage("com.whatsapp")
-    val businessIntent = Intent(sendIntent).setPackage("com.whatsapp.w4b")
-    when {
-        whatsappIntent.resolveActivity(packageManager) != null -> startActivity(whatsappIntent)
-        businessIntent.resolveActivity(packageManager) != null -> startActivity(businessIntent)
-        else -> startActivity(Intent.createChooser(sendIntent, "Share receipt PDF"))
-    }
+    startActivity(Intent.createChooser(sendIntent, "Share receipt PDF"))
 }
 
 

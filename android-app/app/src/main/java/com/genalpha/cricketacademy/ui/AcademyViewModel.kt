@@ -667,17 +667,22 @@ class AcademyViewModel(
         return try {
             val (session, insertedPayment) = withFreshSession { session ->
                 val payment = repository.recordRenewalPayment(student, session.email, session, planType, monthsCovered, amount, comment, cycleDate, proofPath, isJoiningFee)
-                runCatching {
-                    repository.sendRenewalVerifiedMessage(
-                        student = student,
-                        session = session,
-                        planLabel = if (isJoiningFee) "Joining Fee" else renewalPlanLabel(planType),
-                        amount = amount,
-                        fromDate = cycleDate,
-                        toDate = addMonthsForPlan(cycleDate, monthsCovered),
-                    )
-                }.onFailure { error ->
-                    whatsappWarning = error.message ?: "WhatsApp confirmation was not sent."
+                
+                // Run slow WhatsApp trigger in background
+                viewModelScope.launch {
+                    try {
+                        repository.sendRenewalVerifiedMessage(
+                            student = student,
+                            session = session,
+                            planLabel = if (isJoiningFee) "Joining Fee" else renewalPlanLabel(planType),
+                            amount = amount,
+                            fromDate = cycleDate,
+                            toDate = addMonthsForPlan(cycleDate, monthsCovered),
+                        )
+                    } catch (e: Exception) {
+                        // Background failure - log but don't block
+                        println("Background WhatsApp trigger failed: ${e.message}")
+                    }
                 }
                 session to payment
             }
