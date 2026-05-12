@@ -329,18 +329,25 @@ class SupabaseRepository(
                 body = null,
             )
 
-            // 3. Roll back the student's renewals array
-            val dateToRollback = payment.cycleStartDate?.takeIf { it.isNotBlank() } ?: payment.paidOn
-            val updatedRenewals = student.renewals.filter { it != dateToRollback }
+            // 3. Roll back student state
+            val dateToRollback = (payment.cycleStartDate?.takeIf { it.isNotBlank() } ?: payment.paidOn)
+            val isJoiningFee = payment.paymentType == "joining"
+            
+            val updatedRenewals = (student.renewals ?: emptyList()).filter { it != dateToRollback }
             val updateBody = JSONObject()
                 .put("renewals", JSONArray(updatedRenewals))
                 .put("updated_by", session.email)
+            
+            if (isJoiningFee) {
+                updateBody.put("fees_paid", false)
+                updateBody.put("amount_paid", 0)
+            }
             
             executeWriteRequest(
                 url = "$baseUrl/rest/v1/students?id=eq.${student.id}",
                 session = session,
                 method = "PATCH",
-                body = updateBody,
+                body = updateBody.toString(),
             )
         }
     }
