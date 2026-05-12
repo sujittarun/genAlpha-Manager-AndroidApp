@@ -610,7 +610,9 @@ function buildReminderDueText(reminderType: string, dueDate: string) {
     return `${dateFormatted} (Admission + 1st Month)`;
   }
   
-  return dateFormatted;
+  if (reminderType === "renewal_day") {
+    return `today, ${dateFormatted}`;
+  }
 }
 
 function displayDate(value: string): string {
@@ -1517,10 +1519,11 @@ async function handleAutoSchedule() {
     const rawDaysSince = getDaysSinceDate(dueDate);
     const overdueDays = Math.max(0, rawDaysSince);
 
-    // Logic: -2 days soft heads-up, 5 days once, 7 days once, >7 days everyday
+    // Logic: -2 days soft heads-up, 0 days formal reminder, 5 days once, 7 days once, >7 days everyday
     let isHeadsUp = rawDaysSince === -2 && !isJoiningFee;
+    let isRenewalDay = rawDaysSince === 0 && !isJoiningFee;
     
-    if (!isHeadsUp && overdueDays !== 5 && overdueDays !== 7 && overdueDays <= 7) continue;
+    if (!isHeadsUp && !isRenewalDay && overdueDays !== 5 && overdueDays !== 7 && overdueDays <= 7) continue;
 
     const lastFollowUp = followUps.find((f: any) => f.student_id === student.id);
     const sentToday = lastFollowUp &&
@@ -1533,6 +1536,11 @@ async function handleAutoSchedule() {
       const alreadySentHeadsUp = lastFollowUp?.reminder_type === "heads_up" && 
                                lastFollowUp?.due_date === dueDate;
       if (!alreadySentHeadsUp) shouldSend = true;
+    } else if (isRenewalDay) {
+      // Check if we already sent a renewal_day reminder for this cycle
+      const alreadySentRenewalDay = lastFollowUp?.reminder_type === "renewal_day" && 
+                                  lastFollowUp?.due_date === dueDate;
+      if (!alreadySentRenewalDay) shouldSend = true;
     } else if (overdueDays === 5 || overdueDays === 6) {
       // Catch 5 days overdue (or 6 if they missed 5). Check if we already sent for the 5-6 day window.
       const alreadySentWindow = lastFollowUp?.overdue_days >= 5 &&
@@ -1546,7 +1554,7 @@ async function handleAutoSchedule() {
     }
 
     if (shouldSend) {
-      const reminderType = isHeadsUp ? "heads_up" : (isJoiningFee ? "joining_fee" : "renewal");
+      const reminderType = isHeadsUp ? "heads_up" : (isRenewalDay ? "renewal_day" : (isJoiningFee ? "joining_fee" : "renewal"));
       const dryRun = settings.dryRunMode;
       const parentPhone = String(student.parent_contact_no || "").replace(
         /\D/g,
