@@ -5069,6 +5069,7 @@ private fun buildRosterSections(students: List<Student>, sortKey: String): List<
     }
 
     val slotOrder = listOf("6AM", "7:30AM", "4PM", "5:30PM", "7PM")
+    slotOrder.forEach { slot ->
         val matches = students
             .filter { it.isActive() && it.timeSlot == slot }
         if (matches.isNotEmpty()) {

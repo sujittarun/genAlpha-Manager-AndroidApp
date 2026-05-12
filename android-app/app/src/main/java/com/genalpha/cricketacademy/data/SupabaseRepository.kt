@@ -315,7 +315,7 @@ class SupabaseRepository(
         withContext(Dispatchers.IO) {
             // 1. Get the payment details to find the cycle date
             val paymentJson: String = executeReadRequest(
-                url = "$baseUrl/rest/v1/payments?id=eq.$paymentId&select=*",
+                url = "$baseUrl/rest/v1/student_payments?id=eq.$paymentId&select=*",
                 session = session
             )
             val payments = paymentListAdapter.fromJson(paymentJson).orEmpty()
@@ -323,7 +323,7 @@ class SupabaseRepository(
 
             // 2. Delete the payment record
             executeWriteRequest(
-                url = "$baseUrl/rest/v1/payments?id=eq.$paymentId",
+                url = "$baseUrl/rest/v1/student_payments?id=eq.$paymentId",
                 session = session,
                 method = "DELETE",
                 body = null,
