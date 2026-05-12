@@ -347,7 +347,7 @@ class SupabaseRepository(
                 url = "$baseUrl/rest/v1/students?id=eq.${student.id}",
                 session = session,
                 method = "PATCH",
-                body = updateBody.toString(),
+                body = updateBody,
             )
         }
     }

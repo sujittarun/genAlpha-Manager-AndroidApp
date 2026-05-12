@@ -2454,8 +2454,9 @@ private fun FinanceMiniChart(
 }
 
 private fun buildFinanceRevenueLines(students: List<Student>, payments: List<StudentPayment>): List<FinanceRevenueLine> {
-    val joiningRows = students
-        .filter { it.feesPaid && it.amountPaid > 0.0 }
+    val studentIdsWithJoiningPayment = payments.filter { it.paymentType == "joining" }.map { it.studentId }.toSet()
+    val legacyJoiningRows = students
+        .filter { it.feesPaid && it.amountPaid > 0.0 && it.id !in studentIdsWithJoiningPayment }
         .map {
             FinanceRevenueLine(
                 studentName = it.name,
@@ -2464,7 +2465,7 @@ private fun buildFinanceRevenueLines(students: List<Student>, payments: List<Stu
                 amount = it.amountPaid,
             )
         }
-    val renewalRows = payments.map { payment ->
+    val ledgerRows = payments.map { payment ->
         val student = students.firstOrNull { it.id == payment.studentId }
         FinanceRevenueLine(
             studentName = student?.name ?: "Unknown player",
@@ -2473,7 +2474,7 @@ private fun buildFinanceRevenueLines(students: List<Student>, payments: List<Stu
             amount = payment.amount,
         )
     }
-    return joiningRows + renewalRows
+    return (legacyJoiningRows + ledgerRows).sortedByDescending { it.date }
 }
 
 @Composable
@@ -2489,7 +2490,7 @@ private fun FinanceMonthDetailDialog(
         buildFinanceRevenueLines(students, payments).filter { it.date.startsWith(monthKey) }
     }
     val expenseRows = remember(monthKey, expenses) {
-        expenses.filter { it.expenseDate.startsWith(monthKey) }
+        expenses.filter { it.expenseDate.startsWith(monthKey) }.sortedByDescending { it.expenseDate }
     }
     val revenueTotal = revenueRows.sumOf { it.amount }
     val joiningTotal = revenueRows.filter { it.type == "Joining" }.sumOf { it.amount }
