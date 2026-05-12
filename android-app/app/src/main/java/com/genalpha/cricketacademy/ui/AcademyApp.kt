@@ -1820,7 +1820,7 @@ private fun FinancePanel(
                         ) {
                             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                    Text(expense.expenseType, modifier = Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Text(expense.comment?.takeIf { it.isNotBlank() } ?: expense.expenseType, modifier = Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                     Text(formatCurrency(expense.amount), color = BrandRed, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
                                 }
                                 Text(
@@ -1828,9 +1828,6 @@ private fun FinancePanel(
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
                                 )
-                                if (!expense.comment.isNullOrBlank()) {
-                                    Text(expense.comment.orEmpty(), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f))
-                                }
                                 TextButton(
                                     enabled = deletingExpenseId != expense.id,
                                     onClick = {
@@ -2026,9 +2023,6 @@ private val FinanceRangeOptions = listOf(
     FinanceRangeOption("month", "1 month", 1L),
     FinanceRangeOption("lastmonth", "Last month", 0L, "lastmonth"),
     FinanceRangeOption("3months", "3 months", 3L),
-    FinanceRangeOption("6months", "6 months", 6L),
-    FinanceRangeOption("year", "1 year", 0L, "year"),
-    FinanceRangeOption("overall", "Overall", null),
 )
 
 private fun showLocalDatePicker(context: Context, currentValue: String, onSelected: (String) -> Unit) {
