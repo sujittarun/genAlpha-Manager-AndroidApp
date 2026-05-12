@@ -1284,6 +1284,35 @@ async function handleRenewalVerified(request: Request, payload: any) {
   });
 }
 
+async function handleSendAdmissionReminder(request: Request, payload: any) {
+  const managerEmail = await assertAuthenticated(request);
+  const admissionId = String(payload.admissionId || "");
+  if (!admissionId) return jsonResponse({ error: "admissionId is required." }, 400);
+
+  const admission = (await rest(`pending_admissions?id=eq.${encodeURIComponent(admissionId)}&limit=1`))?.[0];
+  if (!admission) return jsonResponse({ error: "Admission form not found." }, 404);
+
+  const to = normalizePhone(String(admission.parent_contact_no || admission.alternate_contact_no || ""));
+  if (!to) return jsonResponse({ error: "Parent contact number is missing." }, 400);
+
+  const amount = Number(admission.admission_fee_total || 4000);
+  const plan = String(admission.fee_plan || "monthly");
+  
+  // Build payment page URL
+  const paymentPageUrl = `${PAYMENT_PAGE_URL}?a=${amount}&name=${encodeURIComponent(admission.applicant_name)}&p=${encodeURIComponent(plan)}`;
+  
+  const message = `🏏 *Gen Alpha Cricket Academy - Admission Reminder*\n\nHi! We noticed you filled out the admission form for *${admission.applicant_name}* but the registration payment is still pending.\n\n*Amount: Rs ${amount.toLocaleString("en-IN")}*\n\n*Pay here: ${paymentPageUrl}*\n\nOnce paid, your child's spot will be confirmed in the *${admission.time_slot}* slot. Looking forward to having you on the field! 🏏`;
+
+  const metaResponse = await sendTextMessage(to, message);
+
+  // Record the attempt in timeline or comments if possible, but for now just send
+  return jsonResponse({
+    success: true,
+    message: `Reminder sent to ${admission.applicant_name}'s parent.`,
+    metaResponse
+  });
+}
+
 async function handleWebhook(payload: any) {
   for (const entry of payload?.entry || []) {
     for (const change of entry?.changes || []) {
@@ -1609,6 +1638,9 @@ Deno.serve(async (request) => {
     }
     if (payload?.action === "auto_schedule") {
       return await handleAutoSchedule();
+    }
+    if (payload?.action === "send_admission_reminder") {
+      return await handleSendAdmissionReminder(request, payload);
     }
     if (payload?.action === "auto_backup") {
       return await handleAutoBackup(payload);
