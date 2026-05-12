@@ -2499,7 +2499,9 @@ private fun FinanceMonthDetailDialog(
     onDismiss: () -> Unit,
 ) {
     val revenueRows = remember(monthKey, students, payments) {
-        buildFinanceRevenueLines(students, payments).filter { it.date.startsWith(monthKey) }
+        buildFinanceRevenueLines(students, payments)
+            .filter { it.date.startsWith(monthKey) }
+            .sortedByDescending { it.date }
     }
     val expenseRows = remember(monthKey, expenses) {
         expenses.filter { it.expenseDate.startsWith(monthKey) }.sortedByDescending { normalizeDateForSort(it.expenseDate) }
