@@ -540,6 +540,16 @@ class AcademyViewModel(
         }
     }
 
+    suspend fun sendAdmissionReminder(admission: PendingAdmission): OperationResult {
+        val session = _uiState.value.session ?: return OperationResult(false, "Login to send reminders.")
+        return try {
+            repository.sendAdmissionReminder(admission.id, session)
+            OperationResult(true, "Reminder sent to ${admission.applicantName}'s parent.")
+        } catch (error: Exception) {
+            OperationResult(false, error.message ?: "Unable to send admission reminder.")
+        }
+    }
+
     suspend fun saveStudent(draft: StudentDraft, editingStudent: Student?): OperationResult {
         val validation = validateDraft(draft)
         if (validation != null) {

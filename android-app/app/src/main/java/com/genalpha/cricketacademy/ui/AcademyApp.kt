@@ -803,6 +803,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                 isLoading = uiState.isAdmissionReviewLoading,
                                 onApprove = viewModel::approveAdmission,
                                 onReject = viewModel::rejectAdmission,
+                                onRemind = viewModel::sendAdmissionReminder,
                                 onMessage = { message ->
                                     scope.launch {
                                         snackbarHostState.showSnackbar(message)
@@ -2826,6 +2827,7 @@ private fun AdmissionReviewSection(
     isLoading: Boolean,
     onApprove: suspend (PendingAdmission) -> OperationResult,
     onReject: suspend (PendingAdmission) -> OperationResult,
+    onRemind: suspend (PendingAdmission) -> OperationResult,
     onMessage: (String) -> Unit,
 ) {
     Card(
@@ -2887,6 +2889,7 @@ private fun AdmissionReviewSection(
                     admission = admission,
                     onApprove = onApprove,
                     onReject = onReject,
+                    onRemind = onRemind,
                     onMessage = onMessage,
                 )
             }
@@ -2899,6 +2902,7 @@ private fun AdmissionReviewCard(
     admission: PendingAdmission,
     onApprove: suspend (PendingAdmission) -> OperationResult,
     onReject: suspend (PendingAdmission) -> OperationResult,
+    onRemind: suspend (PendingAdmission) -> OperationResult,
     onMessage: (String) -> Unit,
 ) {
     var actionInProgress by rememberSaveable(admission.id) { mutableStateOf<String?>(null) }
@@ -2981,11 +2985,11 @@ private fun AdmissionReviewCard(
                 )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     modifier = Modifier.weight(1f),
                     enabled = actionInProgress == null,
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(12.dp),
                     onClick = {
                         scope.launch {
                             actionInProgress = "approve"
@@ -2997,14 +3001,37 @@ private fun AdmissionReviewCard(
                 ) {
                     if (actionInProgress == "approve") {
                         CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Color.White)
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
                     }
-                    Text("Approve", maxLines = 1)
+                    Text("Approve", fontSize = 12.sp, maxLines = 1)
                 }
+
+                if (!admission.feesPaid && !paymentPending) {
+                    OutlinedButton(
+                        modifier = Modifier.weight(0.9f),
+                        enabled = actionInProgress == null,
+                        shape = RoundedCornerShape(12.dp),
+                        onClick = {
+                            scope.launch {
+                                actionInProgress = "remind"
+                                val result = onRemind(admission)
+                                onMessage(result.message)
+                                actionInProgress = null
+                            }
+                        },
+                    ) {
+                        if (actionInProgress == "remind") {
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                        }
+                        Text("Remind", fontSize = 12.sp, maxLines = 1)
+                    }
+                }
+
                 OutlinedButton(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(0.9f),
                     enabled = actionInProgress == null,
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(12.dp),
                     onClick = {
                         scope.launch {
                             actionInProgress = "reject"
@@ -3016,9 +3043,9 @@ private fun AdmissionReviewCard(
                 ) {
                     if (actionInProgress == "reject") {
                         CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
                     }
-                    Text("Reject", color = BrandRed, maxLines = 1)
+                    Text("Reject", color = BrandRed, fontSize = 12.sp, maxLines = 1)
                 }
             }
         }

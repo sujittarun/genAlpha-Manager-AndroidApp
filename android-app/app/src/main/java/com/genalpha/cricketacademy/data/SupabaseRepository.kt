@@ -580,6 +580,17 @@ class SupabaseRepository(
         )
     }
 
+    suspend fun sendAdmissionReminder(admissionId: String, session: ManagerSession) = withContext(Dispatchers.IO) {
+        executeWriteRequest(
+            url = "$baseUrl/functions/v1/whatsapp-reminder",
+            session = session,
+            method = "POST",
+            body = JSONObject()
+                .put("action", "send_admission_reminder")
+                .put("admissionId", admissionId),
+        )
+    }
+
     suspend fun fetchTodayAttendance(date: String = todayIsoDate()): Set<String> = withContext(Dispatchers.IO) {
         val request = baseRequest("$baseUrl/rest/v1/attendance?select=student_id&attendance_date=eq.$date")
             .header("Authorization", "Bearer $anonKey")
