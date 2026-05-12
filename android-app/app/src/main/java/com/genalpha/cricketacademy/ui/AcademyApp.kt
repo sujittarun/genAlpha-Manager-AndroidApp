@@ -2453,6 +2453,18 @@ private fun FinanceMiniChart(
     }
 }
 
+private fun normalizeDateForSort(date: String): String {
+    val parts = date.split("-", "/")
+    if (parts.size < 3) return date
+    // Try to handle both YYYY-MM-DD and DD-MM-YYYY if they exist
+    val (y, m, d) = if (parts[0].length == 4) {
+        Triple(parts[0], parts[1], parts[2])
+    } else {
+        Triple(parts[2], parts[1], parts[0])
+    }
+    return "%04d-%02d-%02d".format(Locale.US, y.toIntOrNull() ?: 0, m.toIntOrNull() ?: 0, d.toIntOrNull() ?: 0)
+}
+
 private fun buildFinanceRevenueLines(students: List<Student>, payments: List<StudentPayment>): List<FinanceRevenueLine> {
     val studentIdsWithJoiningPayment = payments.filter { it.paymentType == "joining" }.map { it.studentId }.toSet()
     val legacyJoiningRows = students
@@ -2474,7 +2486,7 @@ private fun buildFinanceRevenueLines(students: List<Student>, payments: List<Stu
             amount = payment.amount,
         )
     }
-    return (legacyJoiningRows + ledgerRows).sortedByDescending { it.date }
+    return (legacyJoiningRows + ledgerRows).sortedByDescending { normalizeDateForSort(it.date) }
 }
 
 @Composable
@@ -2490,7 +2502,7 @@ private fun FinanceMonthDetailDialog(
         buildFinanceRevenueLines(students, payments).filter { it.date.startsWith(monthKey) }
     }
     val expenseRows = remember(monthKey, expenses) {
-        expenses.filter { it.expenseDate.startsWith(monthKey) }.sortedByDescending { it.expenseDate }
+        expenses.filter { it.expenseDate.startsWith(monthKey) }.sortedByDescending { normalizeDateForSort(it.expenseDate) }
     }
     val revenueTotal = revenueRows.sumOf { it.amount }
     val joiningTotal = revenueRows.filter { it.type == "Joining" }.sumOf { it.amount }
