@@ -1553,7 +1553,7 @@ async function handleAutoSchedule() {
         shouldSend = true;
       }
     } else if (rawDaysSince === 0) {
-      // Formal reminder on due day
+      // Formal reminder on due day (for both joining and renewal)
       const alreadySentRenewalDay = lastFollowUp?.reminder_type === "renewal_day" && lastFollowUp?.due_date === dueDate;
       if (!alreadySentRenewalDay) {
         isRenewalDay = true;
@@ -1634,8 +1634,6 @@ async function handleAutoSchedule() {
       await new Promise((r) => setTimeout(r, 200)); 
     }
   }
-
-  // --- Automatic Admission Reminders (2-Day Nudge) ---
   const pendingAdmissions = await rest(
     "admissions?review_status=eq.pending&fees_paid=is.false",
   );
@@ -1644,61 +1642,52 @@ async function handleAutoSchedule() {
     const createdDate = admission.created_at.slice(0, 10);
     const daysSince = getDaysSinceDate(createdDate);
     const lastNudgeAt = admission.last_nudge_at ? new Date(admission.last_nudge_at) : null;
-    const isRecentlyNudged = lastNudgeAt && (new Date().getTime() - lastNudgeAt.getTime() < 24 * 60 * 60 * 1000);
+    const isRecentlyNudged = lastNudgeAt && (new Date().getTime() - lastNudgeAt.getTime() < 48 * 60 * 60 * 1000);
 
-    if (isRecentlyNudged) {
-      console.log(`Skipping automated nudge for ${admission.applicant_name} (recently nudged at ${admission.last_nudge_at})`);
-      continue;
-    }
+    if (isRecentlyNudged) continue;
     
-    // Nudge exactly on Day 4
-    if (daysSince === 4) {
-      const to = normalizePhone(String(admission.parent_contact_no || admission.emergency_contact_no || ""));
-      if (!to) continue;
+    let message = "";
+    let nudgeType = "";
 
+    if (daysSince >= 2 && daysSince < 5) {
+      nudgeType = "initial_nudge";
       const amount = Number(admission.amount_paid > 0 ? admission.amount_paid : 4000);
       const plan = "monthly";
       const paymentPageUrl = `${PAYMENT_PAGE_URL}?a=${amount}&name=${encodeURIComponent(admission.applicant_name)}&p=${encodeURIComponent(plan)}&id=${admission.id}`;
-      
-      const message = `🏏 *Gen Alpha Cricket Academy - Registration Reminder*\n\nHi! Just a friendly nudge from Gen Alpha regarding *${admission.applicant_name}'s* registration. We'd love to have *${admission.applicant_name}* join the academy! The spot in the *${admission.time_slot}* slot is confirmed once the registration fee is paid here: ${paymentPageUrl}\n\nSee you on the field! 🏏`;
+      message = `🏏 *Gen Alpha Cricket Academy - Registration Reminder*\n\nHi! Just a friendly nudge from Gen Alpha regarding *${admission.applicant_name}'s* registration. We'd love to have *${admission.applicant_name}* join the academy! The spot in the *${admission.time_slot}* slot is confirmed once the registration fee is paid here: ${paymentPageUrl}\n\nSee you on the field! 🏏`;
+    } else if (daysSince >= 5 && daysSince < 8) {
+      nudgeType = "followup_nudge";
+      const amount = Number(admission.amount_paid > 0 ? admission.amount_paid : 4000);
+      const plan = "monthly";
+      const paymentPageUrl = `${PAYMENT_PAGE_URL}?a=${amount}&name=${encodeURIComponent(admission.applicant_name)}&p=${encodeURIComponent(plan)}&id=${admission.id}`;
+      message = `🏏 *Gen Alpha Cricket Academy - Follow up*\n\nHi! Coach here—just following up on *${admission.applicant_name}'s* admission. We're excited to start training! Please complete the payment to secure the spot: ${paymentPageUrl}\n\nLet us know if you have any questions!`;
+    } else if (daysSince >= 8) {
+      nudgeType = "final_nudge";
+      const amount = Number(admission.amount_paid > 0 ? admission.amount_paid : 4000);
+      const plan = "monthly";
+      const paymentPageUrl = `${PAYMENT_PAGE_URL}?a=${amount}&name=${encodeURIComponent(admission.applicant_name)}&p=${encodeURIComponent(plan)}&id=${admission.id}`;
+      message = `🏏 *Gen Alpha Cricket Academy - Final Reminder*\n\nHi! We noticed *${admission.applicant_name}'s* registration is still pending. We can only hold the spot for a bit longer. If you're still interested, please complete the payment here: ${paymentPageUrl}\n\nLooking forward to having you! 🏏`;
+    }
 
+    if (message) {
       results.push((async () => {
         try {
-          const res = await sendTextMessage(to, message);
+          await sendTextMessage(normalizePhone(String(admission.parent_contact_no || admission.emergency_contact_no || "")), message);
           await rest(`admissions?id=eq.${admission.id}`, {
             method: "PATCH",
-            body: JSON.stringify({ last_nudge_at: new Date().toISOString() })
+            body: JSON.stringify({ 
+              last_nudge_at: new Date().toISOString(),
+              comments: (admission.comments || "") + `\n[Auto Nudge ${nudgeType} sent ${localIsoDate()}]`
+            })
           });
-          return { student: admission.applicant_name, status: "nudge_sent" };
+          return { student: admission.applicant_name, status: nudgeType };
         } catch (e) {
-          console.error(`Automated nudge failed for ${admission.applicant_name}:`, e);
           return { student: admission.applicant_name, error: (e as Error).message };
         }
       })());
     }
-
-    // Nudge exactly on Day 7
-    if (daysSince === 7) {
-      const to = normalizePhone(String(admission.parent_contact_no || admission.emergency_contact_no || ""));
-      if (!to) continue;
-
-      const amount = Number(admission.amount_paid > 0 ? admission.amount_paid : 4000);
-      const plan = "monthly";
-      const paymentPageUrl = `${PAYMENT_PAGE_URL}?a=${amount}&name=${encodeURIComponent(admission.applicant_name)}&p=${encodeURIComponent(plan)}&id=${admission.id}`;
-      
-      const message = `🏏 *Gen Alpha Cricket Academy - Final Reminder*\n\nHi! We noticed *${admission.applicant_name}'s* registration is still pending. We can only hold the spot for another 48 hours before releasing it to the waitlist. If you're still interested in having *${admission.applicant_name}* join us, please complete the payment here: ${paymentPageUrl}\n\nLooking forward to having you with us! 🏏`;
-
-      results.push((async () => {
-        try {
-          const res = await sendTextMessage(to, message);
-          await rest(`admissions?id=eq.${admission.id}`, {
-            method: "PATCH",
-            body: JSON.stringify({ last_nudge_at: new Date().toISOString() })
-          });
-          return { student: admission.applicant_name, status: "final_nudge_sent" };
-        } catch (e) {
-          console.error(`Final nudge failed for ${admission.applicant_name}:`, e);
-          return { student: admission.applicant_name, error: (e as Error).message };
+  }
+essage };
         }
       })());
     }
