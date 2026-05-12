@@ -395,17 +395,19 @@ class AcademyViewModel(
         }
     }
 
-    suspend fun deletePayment(paymentId: String): OperationResult {
+    suspend fun deletePayment(paymentId: String, student: Student): OperationResult {
         if (paymentId.isBlank()) return OperationResult(false, "Payment record not found.")
 
         return try {
             withFreshSession { session ->
-                repository.deletePayment(paymentId, session)
+                repository.rollbackPayment(paymentId, student, session)
             }
             _uiState.update { state ->
                 state.copy(payments = state.payments.filterNot { it.id == paymentId })
             }
-            OperationResult(true, "Payment deleted.")
+            // Trigger a student refresh to get the updated renewals array
+            loadKids()
+            OperationResult(true, "Payment deleted and renewal date rolled back.")
         } catch (error: Exception) {
             OperationResult(false, error.message ?: "Unable to delete payment.")
         }

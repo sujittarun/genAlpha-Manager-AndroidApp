@@ -1136,7 +1136,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                             }
                         },
                         onDeletePayment = { paymentId ->
-                            val result = viewModel.deletePayment(paymentId)
+                            val result = viewModel.deletePayment(paymentId, selectedStudent!!)
                             scope.launch {
                                 snackbarHostState.showSnackbar(result.message)
                             }
@@ -1965,6 +1965,7 @@ private data class FinanceRevenueLine(
 )
 
 private data class PlayerPaymentLine(
+    val id: String = "",
     val date: String,
     val title: String,
     val plan: String,
@@ -2026,6 +2027,7 @@ private fun buildPlayerPaymentRows(student: Student, payments: List<StudentPayme
     studentPayments.forEach { payment ->
         val months = paymentMonthsCovered(payment)
         rows += PlayerPaymentLine(
+            id = payment.id,
             date = payment.paidOn,
             title = if (payment.paymentType == "joining") "Joining payment" else "Renewal payment",
             plan = paymentPlanLabel(payment.planType, months),

@@ -311,14 +311,38 @@ class SupabaseRepository(
         }
     }
 
-    suspend fun deletePayment(paymentId: String, session: ManagerSession) {
+    suspend fun rollbackPayment(paymentId: String, student: Student, session: ManagerSession) {
         withContext(Dispatchers.IO) {
+            // 1. Get the payment details to find the cycle date
+            val paymentJson = executeReadRequest(
+                url = "$baseUrl/rest/v1/payments?id=eq.$paymentId&select=*",
+                session = session
+            )
+            val payment = paymentListAdapter.fromJson(paymentJson).orEmpty().firstOrNull() ?: return@withContext
+
+            // 2. Delete the payment record
             executeWriteRequest(
                 url = "$baseUrl/rest/v1/payments?id=eq.$paymentId",
                 session = session,
                 method = "DELETE",
                 body = null,
             )
+
+            // 3. Roll back the student's renewals array
+            val cycleDate = payment.cycleStartDate?.takeIf { it.isNotBlank() }
+            if (cycleDate != null) {
+                val updatedRenewals = student.renewals.filter { it != cycleDate }
+                val updateBody = JSONObject()
+                    .put("renewals", JSONArray(updatedRenewals))
+                    .put("updated_by", session.email)
+                
+                executeWriteRequest(
+                    url = "$baseUrl/rest/v1/students?id=eq.${student.id}",
+                    session = session,
+                    method = "PATCH",
+                    body = updateBody,
+                )
+            }
         }
     }
 
