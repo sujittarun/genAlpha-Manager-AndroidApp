@@ -15,10 +15,12 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 
 ## 2026-05-12
 
-### Automated Reminders Cadence Fix
+### Automated Reminders Robustness & Joining Fees
 - Fixed aggressive reminder logic in `whatsapp-reminder` Edge Function.
 - Strict schedule enforced: Day -2 (Heads-up), Day 0 (Renewal), Day 5 (Follow-up), Day 7 (Follow-up), and every day after Day 7.
-- Messages now correctly include formatted due dates for all follow-up cycles.
+- **Improved Admission Nudges**: Moved from brittle "Day 4 only" logic to milestone windows (Day 2-5, 5-8, 8+) with a 48-hour deduplication check.
+- **Joining Fee Alignment**: Joining Fee reminders (for unpaid roster students) now follow the same Day 0, 5, 7+ cadence as renewals.
+- **Visibility**: Automated admission nudges are now logged in the admission's **Comments** field for better manager visibility.
 - Cleared backlog of stale `queued` reminder events and cancelled old `awaiting_parent_choice` payment link requests.
 - Deployed updated function to production.
 
