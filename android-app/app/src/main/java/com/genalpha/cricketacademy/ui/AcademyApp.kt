@@ -2754,9 +2754,12 @@ private fun RenewalPaymentDialog(
                 enabled = !isSaving,
                 onClick = {
                     scope.launch {
-                        isSaving = true
-                        onSubmit(plan, planInfo.second, amount.toDoubleOrNull() ?: 0.0, comment)
-                        isSaving = false
+                        try {
+                            isSaving = true
+                            onSubmit(plan, planInfo.second, amount.toDoubleOrNull() ?: 0.0, comment)
+                        } finally {
+                            isSaving = false
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -6737,8 +6740,8 @@ private fun buildAndroidPlayerPaidReceipt(student: Student, draft: StudentDraft)
 }
 
 private fun renewalPlanLabel(plan: String): String = when (plan) {
-    "three_months" -> "3 Months"
-    "six_months" -> "6 Months"
+    "quarterly" -> "3 Months (Quarterly)"
+    "halfyearly" -> "6 Months (Half-yearly)"
     "special" -> "Special Training"
     "custom" -> "Custom Renewal"
     else -> "Monthly"

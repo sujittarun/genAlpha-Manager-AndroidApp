@@ -674,9 +674,6 @@ class AcademyViewModel(
     ): OperationResult {
         val payments = _uiState.value.payments
         val cycleDate = cycleDateOverride?.takeIf { it.isNotBlank() } ?: student.nextRenewalCycleDate(payments)
-        if (cycleDateOverride.isNullOrBlank() && !student.isRenewalPending(payments) && !isJoiningFee) {
-            return OperationResult(false, "This player is not due for renewal yet.")
-        }
         if (amount <= 0.0) {
             return OperationResult(false, "Enter a valid renewal amount.")
         }
