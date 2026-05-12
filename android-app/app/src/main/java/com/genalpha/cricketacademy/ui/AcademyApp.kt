@@ -792,7 +792,6 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         StatsSection(
                             joined = stats.joinedCount,
                             active = stats.activeCount,
-                            paid = stats.paidCount,
                             returning = stats.returningCount,
                         )
                     }
@@ -2854,7 +2853,6 @@ private fun FormDialog(
 private fun StatsSection(
     joined: Int,
     active: Int,
-    paid: Int,
     returning: Int,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -2870,14 +2868,6 @@ private fun StatsSection(
                 title = "Active",
                 value = active,
                 accent = BrandGreen,
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            CompactStatCard(
-                modifier = Modifier.weight(1f),
-                title = "Fees Paid",
-                value = paid,
-                accent = BrandGold,
             )
             CompactStatCard(
                 modifier = Modifier.weight(1f),

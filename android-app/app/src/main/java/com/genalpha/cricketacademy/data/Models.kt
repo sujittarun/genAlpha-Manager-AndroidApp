@@ -166,7 +166,6 @@ data class StudentTimelineItem(
 data class DashboardStats(
     val joinedCount: Int,
     val activeCount: Int,
-    val paidCount: Int,
     val returningCount: Int,
 )
 
@@ -468,7 +467,6 @@ fun buildStats(students: List<Student>): DashboardStats {
     return DashboardStats(
         joinedCount = students.size,
         activeCount = active.size,
-        paidCount = active.count { it.feesPaid },
         returningCount = active.count { it.renewals.isNotEmpty() },
     )
 }

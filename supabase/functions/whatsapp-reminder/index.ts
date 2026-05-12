@@ -623,6 +623,8 @@ function buildReminderDueText(reminderType: string, dueDate: string) {
   if (reminderType === "renewal_day") {
     return `today, ${dateFormatted}`;
   }
+
+  return dateFormatted;
 }
 
 function displayDate(value: string): string {
@@ -1301,7 +1303,7 @@ async function handleSendAdmissionReminder(request: Request, payload: any) {
   const admissionId = String(payload.admissionId || "");
   if (!admissionId) return jsonResponse({ error: "admissionId is required." }, 400);
 
-  const admission = (await rest(`pending_admissions?id=eq.${encodeURIComponent(admissionId)}&limit=1`))?.[0];
+  const admission = (await rest(`admissions?id=eq.${encodeURIComponent(admissionId)}&review_status=eq.pending&limit=1`))?.[0];
   if (!admission) return jsonResponse({ error: "Admission form not found." }, 404);
 
   const to = normalizePhone(String(admission.parent_contact_no || admission.alternate_contact_no || ""));
@@ -1529,38 +1531,39 @@ async function handleAutoSchedule() {
       : getPaidThroughDate(student, payments);
     const rawDaysSince = getDaysSinceDate(dueDate);
     const overdueDays = Math.max(0, rawDaysSince);
+    let isHeadsUp = false;
+    let isRenewalDay = false;
 
-    // Logic: -2 days soft heads-up, 0 days formal reminder, 5 days once, 7 days once, >7 days everyday
-    let isHeadsUp = rawDaysSince === -2 && !isJoiningFee;
-    let isRenewalDay = rawDaysSince === 0 && !isJoiningFee;
-    
-    if (!isHeadsUp && !isRenewalDay && overdueDays !== 5 && overdueDays !== 7 && overdueDays <= 7) continue;
-
-    const lastFollowUp = followUps.find((f: any) => f.student_id === student.id);
-    const sentToday = lastFollowUp &&
-      lastFollowUp.created_at.slice(0, 10) === todayIso;
-    if (sentToday) continue;
+    console.log(`Checking student ${student.name}: dueDate=${dueDate}, overdueDays=${overdueDays}, isJoiningFee=${isJoiningFee}`);
 
     let shouldSend = false;
-    if (isHeadsUp) {
-      // Check if we already sent a heads-up for this cycle
-      const alreadySentHeadsUp = lastFollowUp?.reminder_type === "heads_up" && 
-                               lastFollowUp?.due_date === dueDate;
-      if (!alreadySentHeadsUp) shouldSend = true;
-    } else if (isRenewalDay) {
-      // Check if we already sent a renewal_day reminder for this cycle
-      const alreadySentRenewalDay = lastFollowUp?.reminder_type === "renewal_day" && 
-                                  lastFollowUp?.due_date === dueDate;
-      if (!alreadySentRenewalDay) shouldSend = true;
-    } else if (overdueDays === 5 || overdueDays === 6) {
-      // Catch 5 days overdue (or 6 if they missed 5). Check if we already sent for the 5-6 day window.
-      const alreadySentWindow = lastFollowUp?.overdue_days >= 5 &&
-        lastFollowUp?.overdue_days < 7;
-      if (!alreadySentWindow) shouldSend = true;
-    } else if (overdueDays === 7) {
-      const alreadySent7 = lastFollowUp?.overdue_days === 7;
-      if (!alreadySent7) shouldSend = true;
-    } else if (overdueDays > 7) {
+    const lastFollowUp = followUps.find((f: any) => f.student_id === student.id);
+    const sentToday = lastFollowUp && lastFollowUp.created_at.slice(0, 10) === todayIso;
+
+    if (sentToday) {
+      console.log(`Skipping ${student.name}: already sent a reminder today.`);
+      continue;
+    }
+
+    if (rawDaysSince === -2 && !isJoiningFee) {
+      // Soft heads-up 2 days before
+      const alreadySentHeadsUp = lastFollowUp?.reminder_type === "heads_up" && lastFollowUp?.due_date === dueDate;
+      if (!alreadySentHeadsUp) {
+        isHeadsUp = true;
+        shouldSend = true;
+      }
+    } else if (rawDaysSince === 0) {
+      // Formal reminder on due day
+      const alreadySentRenewalDay = lastFollowUp?.reminder_type === "renewal_day" && lastFollowUp?.due_date === dueDate;
+      if (!alreadySentRenewalDay) {
+        isRenewalDay = true;
+        shouldSend = true;
+      }
+    } else if (overdueDays === 5) {
+      // 5-day overdue nudge
+      shouldSend = true;
+    } else if (overdueDays >= 7) {
+      // Daily nudge from Day 7 onwards
       shouldSend = true;
     }
 
@@ -1634,7 +1637,7 @@ async function handleAutoSchedule() {
 
   // --- Automatic Admission Reminders (2-Day Nudge) ---
   const pendingAdmissions = await rest(
-    "pending_admissions?fees_paid=eq.false&status=eq.pending",
+    "admissions?review_status=eq.pending&fees_paid=is.false",
   );
   
   for (const admission of pendingAdmissions) {
@@ -1660,12 +1663,17 @@ async function handleAutoSchedule() {
       const message = `🏏 *Gen Alpha Cricket Academy - Registration Reminder*\n\nHi! Just a friendly nudge from Gen Alpha regarding *${admission.applicant_name}'s* registration. We'd love to have *${admission.applicant_name}* join the academy! The spot in the *${admission.time_slot}* slot is confirmed once the registration fee is paid here: ${paymentPageUrl}\n\nSee you on the field! 🏏`;
 
       results.push((async () => {
-        const res = await sendTextMessage(to, message);
-        await rest(`admissions?id=eq.${admission.id}`, {
-          method: "PATCH",
-          body: JSON.stringify({ last_nudge_at: new Date().toISOString() })
-        });
-        return res;
+        try {
+          const res = await sendTextMessage(to, message);
+          await rest(`admissions?id=eq.${admission.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ last_nudge_at: new Date().toISOString() })
+          });
+          return { student: admission.applicant_name, status: "nudge_sent" };
+        } catch (e) {
+          console.error(`Automated nudge failed for ${admission.applicant_name}:`, e);
+          return { student: admission.applicant_name, error: (e as Error).message };
+        }
       })());
     }
 
@@ -1681,17 +1689,23 @@ async function handleAutoSchedule() {
       const message = `🏏 *Gen Alpha Cricket Academy - Final Reminder*\n\nHi! We noticed *${admission.applicant_name}'s* registration is still pending. We can only hold the spot for another 48 hours before releasing it to the waitlist. If you're still interested in having *${admission.applicant_name}* join us, please complete the payment here: ${paymentPageUrl}\n\nLooking forward to having you with us! 🏏`;
 
       results.push((async () => {
-        const res = await sendTextMessage(to, message);
-        await rest(`admissions?id=eq.${admission.id}`, {
-          method: "PATCH",
-          body: JSON.stringify({ last_nudge_at: new Date().toISOString() })
-        });
-        return res;
+        try {
+          const res = await sendTextMessage(to, message);
+          await rest(`admissions?id=eq.${admission.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ last_nudge_at: new Date().toISOString() })
+          });
+          return { student: admission.applicant_name, status: "final_nudge_sent" };
+        } catch (e) {
+          console.error(`Final nudge failed for ${admission.applicant_name}:`, e);
+          return { student: admission.applicant_name, error: (e as Error).message };
+        }
       })());
     }
   }
 
   const processed = await Promise.all(results);
+  console.log(`Auto-schedule finished. Processed ${processed.length} tasks.`);
   return jsonResponse({ success: true, processed });
 }
 
