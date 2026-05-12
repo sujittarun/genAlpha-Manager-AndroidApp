@@ -1634,6 +1634,8 @@ async function handleAutoSchedule() {
       await new Promise((r) => setTimeout(r, 200)); 
     }
   }
+
+  // --- Automated Admission Reminders (Milestone Nudges) ---
   const pendingAdmissions = await rest(
     "admissions?review_status=eq.pending&fees_paid=is.false",
   );
@@ -1687,18 +1689,11 @@ async function handleAutoSchedule() {
       })());
     }
   }
-essage };
-        }
-      })());
-    }
-  }
 
   const processed = await Promise.all(results);
   console.log(`Auto-schedule finished. Processed ${processed.length} tasks.`);
   return jsonResponse({ success: true, processed });
 }
-
-
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
