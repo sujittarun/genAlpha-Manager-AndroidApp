@@ -1603,8 +1603,8 @@ async function handleAutoSchedule() {
     const createdDate = admission.created_at.slice(0, 10);
     const daysSince = getDaysSinceDate(createdDate);
     
-    // Nudge exactly on Day 2
-    if (daysSince === 2) {
+    // Nudge exactly on Day 4
+    if (daysSince === 4) {
       const to = normalizePhone(String(admission.parent_contact_no || admission.alternate_contact_no || ""));
       if (!to) continue;
 
