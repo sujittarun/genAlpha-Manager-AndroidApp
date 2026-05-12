@@ -1174,6 +1174,29 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                 }
                             }
                         },
+                        onSendAdmissionReminder = {
+                            selectedStudent?.let { activeStudent ->
+                                scope.launch {
+                                    val result = viewModel.sendAdmissionReminder(
+                                        PendingAdmission(
+                                            id = activeStudent.id,
+                                            regNo = activeStudent.regNo,
+                                            applicantName = activeStudent.name,
+                                            age = activeStudent.age,
+                                            joinDate = activeStudent.joinDate,
+                                            feesPaid = activeStudent.feesPaid,
+                                            amountPaid = activeStudent.amountPaid,
+                                            timeSlot = activeStudent.timeSlot,
+                                            parentContactNo = activeStudent.parentContactNo,
+                                            alternateContactNo = activeStudent.alternateContactNo,
+                                            fatherGuardianName = activeStudent.fatherGuardianName,
+                                            schoolCollege = activeStudent.schoolCollege
+                                        )
+                                    )
+                                    snackbarHostState.showSnackbar(result.message)
+                                }
+                            }
+                        }
                     )
                 }
 
@@ -4091,6 +4114,7 @@ private fun PlayerDetailSheet(
     onSendReminder: suspend () -> Unit,
     onConfirmPayment: suspend () -> Unit,
     onToggleStatus: suspend () -> Unit,
+    onSendAdmissionReminder: suspend () -> Unit,
 ) {
     var actionInProgress by rememberSaveable(student.id) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -4228,6 +4252,16 @@ private fun PlayerDetailSheet(
                             if (actionInProgress == "reminder") CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                             else Icon(Icons.Outlined.Notifications, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp)); Text("Send reminder")
+                        }
+                    }
+                    if (!student.feesPaid && student.isActive()) {
+                        OutlinedButton(
+                            enabled = actionInProgress == null,
+                            onClick = { scope.launch { actionInProgress = "joining_reminder"; onSendAdmissionReminder(); actionInProgress = null } },
+                        ) {
+                            if (actionInProgress == "joining_reminder") CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.Outlined.Notifications, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp)); Text("Remind joining fee")
                         }
                     }
                 }
