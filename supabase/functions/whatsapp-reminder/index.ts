@@ -1240,9 +1240,7 @@ async function handleRenewalVerified(request: Request, payload: any) {
     ? "Welcome to the Gen Alpha family! We are thrilled to start this journey with your child and help them develop their skills on the field. 🏏"
     : "Great to see the commitment! We are excited to continue working with your child and watching them grow into a finer cricketer every day. Let's keep the game going! 🏏";
 
-  const message = `*Payment Confirmed!* 🏏\n\n*${student.name || "Player"}'s ${actionText} status is now updated from ${
-    displayDate(fromDate)
-  } to ${displayDate(toDate)}.*\n\n*Amount received: Rs ${amount.toLocaleString("en-IN")}.*\n\n${happyMessage}`;
+  const message = `✅ *Payment Confirmed!* 🏏\n\nHi! We've successfully received the payment for *${student.name || "Player"}'s* *${actionText}*. Training status has been updated until *${displayDate(toDate)}*.\n\n*Amount received: Rs ${amount.toLocaleString("en-IN")}.*\n\n${happyMessage}\n\nThank you for being part of Gen Alpha Cricket Academy!`;
 
   const metaResponse = await sendTextMessage(to, message);
 
@@ -1303,7 +1301,7 @@ async function handleSendAdmissionReminder(request: Request, payload: any) {
   // Build payment page URL
   const paymentPageUrl = `${PAYMENT_PAGE_URL}?a=${amount}&name=${encodeURIComponent(admission.applicant_name)}&p=${encodeURIComponent(plan)}`;
   
-  const message = `🏏 *Gen Alpha Cricket Academy - Admission Reminder*\n\nHi! We noticed you filled out the admission form for *${admission.applicant_name}* but the registration payment is still pending.\n\n*Amount: Rs ${amount.toLocaleString("en-IN")}*\n\n*Pay here: ${paymentPageUrl}*\n\nOnce paid, your child's spot will be confirmed in the *${admission.time_slot}* slot. Looking forward to having you on the field! 🏏`;
+  const message = `🏏 *Gen Alpha Cricket Academy - Follow up*\n\nHi! Coach here from Gen Alpha—just following up on *${admission.applicant_name}'s* admission. We're excited to have him start training with us!\n\n*Amount: Rs ${amount.toLocaleString("en-IN")}*\n\n*Pay here: ${paymentPageUrl}*\n\nOnce paid, your child's spot will be confirmed in the *${admission.time_slot}* slot. Let us know if you have any questions! 🏏`;
 
   const metaResponse = await sendTextMessage(to, message);
 
