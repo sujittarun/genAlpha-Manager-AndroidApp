@@ -13,6 +13,26 @@ Use this file when:
 
 For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 
+## 2026-05-12
+
+### Automated Reminders Cadence Fix
+- Fixed aggressive reminder logic in `whatsapp-reminder` Edge Function.
+- Strict schedule enforced: Day -2 (Heads-up), Day 0 (Renewal), Day 5 (Follow-up), Day 7 (Follow-up), and every day after Day 7.
+- Messages now correctly include formatted due dates for all follow-up cycles.
+- Cleared backlog of stale `queued` reminder events and cancelled old `awaiting_parent_choice` payment link requests.
+- Deployed updated function to production.
+
+### Admission Form Grade Schema Fix
+- Added missing `grade` column to `public.admissions` table.
+- Updated `submit_admission_form` RPC to accept `p_grade` parameter.
+- Updated `sync_student_from_admission` trigger to correctly sync the grade field to the roster on approval.
+- Updated Android app (`SupabaseRepository`, `Models`, `AdmissionDraft`) to support the new field.
+
+### Roster UI Cleanup
+- Removed "Fees Paid" metric tile from both Android and Web roster dashboards.
+- Layout in Android `StatsSection` adjusted to a clean 3-card row (Joined, Active, Returning).
+- Web `script.js` updated to remove unused `paidCount` DOM update logic.
+
 ## 2026-05-09
 
 ### Payment Verification UI
