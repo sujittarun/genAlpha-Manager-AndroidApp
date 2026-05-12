@@ -438,6 +438,7 @@ class SupabaseRepository(
             .put("p_city", draft.city.trim())
             .put("p_address", draft.address.trim())
             .put("p_school_college", draft.schoolCollege.trim())
+            .put("p_grade", draft.grade.trim())
             .put("p_parent_aadhaar_no", draft.parentAadhaarNo.trim())
             .put("p_time_slot", draft.timeSlot)
             .put("p_join_date", draft.joinDate)

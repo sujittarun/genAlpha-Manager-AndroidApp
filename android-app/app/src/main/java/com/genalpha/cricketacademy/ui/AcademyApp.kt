@@ -5645,28 +5645,33 @@ private fun PlayerEditorSheet(
                     onClick = {
                         scope.launch {
                             isSaving = true
-                            val result = onSubmit(
-                                StudentDraft(
-                                    name = name,
-                                    age = age,
-                                    timeSlot = timeSlot,
-                                    joinDate = joinDate,
-                                    feesPaid = feesPaid,
-                                    amountPaid = amountPaid,
-                                    jerseySize = jerseySize,
-                                    jerseyPairs = jerseyPairs.ifBlank { "0" },
-                                    paymentMethod = editingStudent?.paymentMethod.orEmpty(),
-                                    paymentUpiId = editingStudent?.paymentUpiId.orEmpty(),
-                                    paymentReference = editingStudent?.paymentReference.orEmpty(),
-                                    comments = editingStudent?.comments.orEmpty(),
-                                    fatherGuardianName = fatherGuardianName,
-                                    parentContactNo = parentContactNo,
-                                    alternateContactNo = alternateContactNo,
-                                    schoolCollege = schoolCollege,
-                                    grade = grade,
-                                    address = address,
-                                )
-                            )
+                                    if (jerseySize.isNotBlank() && (jerseyPairs.isBlank() || jerseyPairs.toIntOrNull() ?: 0 < 1)) {
+                                        inlineMessage = "Please specify the number of jersey pairs."
+                                        isSaving = false
+                                        return@launch
+                                    }
+                                    val result = onSubmit(
+                                        StudentDraft(
+                                            name = name,
+                                            age = age,
+                                            timeSlot = timeSlot,
+                                            joinDate = joinDate,
+                                            feesPaid = feesPaid,
+                                            amountPaid = amountPaid,
+                                            jerseySize = jerseySize,
+                                            jerseyPairs = jerseyPairs.ifBlank { "0" },
+                                            paymentMethod = editingStudent?.paymentMethod.orEmpty(),
+                                            paymentUpiId = editingStudent?.paymentUpiId.orEmpty(),
+                                            paymentReference = editingStudent?.paymentReference.orEmpty(),
+                                            comments = editingStudent?.comments.orEmpty(),
+                                            fatherGuardianName = fatherGuardianName,
+                                            parentContactNo = parentContactNo,
+                                            alternateContactNo = alternateContactNo,
+                                            schoolCollege = schoolCollege,
+                                            grade = grade,
+                                            address = address,
+                                        )
+                                    )
                             if (!result.success) {
                                 inlineMessage = result.message
                             }
@@ -5719,6 +5724,7 @@ private fun AdmissionFormSheet(
     var alternateContactNo by rememberSaveable { mutableStateOf("") }
     var parentContactNo by rememberSaveable { mutableStateOf("") }
     var city by rememberSaveable { mutableStateOf("") }
+    var grade by rememberSaveable { mutableStateOf("") }
     var address by rememberSaveable { mutableStateOf("") }
     var schoolCollege by rememberSaveable { mutableStateOf("") }
     var parentAadhaarNo by rememberSaveable { mutableStateOf("") }
@@ -5946,12 +5952,21 @@ private fun AdmissionFormSheet(
                     singleLine = true,
                 )
                 AdmissionTextField(
+                    value = grade,
+                    onValueChange = { grade = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(rememberBringIntoViewOnFocusModifier()),
+                    label = "Grade",
+                    singleLine = true,
+                )
+                AdmissionTextField(
                     value = city,
                     onValueChange = { city = it },
                     modifier = Modifier
                         .fillMaxWidth()
                         .then(rememberBringIntoViewOnFocusModifier()),
-                    label = "Grade (optional)",
+                    label = "City (optional)",
                     singleLine = true,
                 )
                 AdmissionTextField(
@@ -6267,6 +6282,12 @@ private fun AdmissionFormSheet(
                         scope.launch {
                             isSubmitting = true
                             inlineMessage = ""
+                            if (jerseySize.isNotBlank() && (jerseyPairs.isBlank() || jerseyPairs.toIntOrNull() ?: 0 < 1)) {
+                                inlineMessage = "Please specify the number of jersey pairs."
+                                isSubmitting = false
+                                return@launch
+                            }
+
                             val draft = AdmissionDraft(
                                 applicantName = applicantName,
                                 filledBy = filledBy,
@@ -6277,6 +6298,7 @@ private fun AdmissionFormSheet(
                                 alternateContactNo = alternateContactNo,
                                 parentContactNo = parentContactNo,
                                 city = city,
+                                grade = grade,
                                 address = address,
                                 schoolCollege = schoolCollege,
                                 parentAadhaarNo = parentAadhaarNo,
