@@ -1594,6 +1594,30 @@ async function handleAutoSchedule() {
     }
   }
 
+  // --- Automatic Admission Reminders (2-Day Nudge) ---
+  const pendingAdmissions = await rest(
+    "pending_admissions?fees_paid=eq.false&status=eq.pending",
+  );
+  
+  for (const admission of pendingAdmissions) {
+    const createdDate = admission.created_at.slice(0, 10);
+    const daysSince = getDaysSinceDate(createdDate);
+    
+    // Nudge exactly on Day 2
+    if (daysSince === 2) {
+      const to = normalizePhone(String(admission.parent_contact_no || admission.alternate_contact_no || ""));
+      if (!to) continue;
+
+      const amount = Number(admission.admission_fee_total || 4000);
+      const plan = String(admission.fee_plan || "monthly");
+      const paymentPageUrl = `${PAYMENT_PAGE_URL}?a=${amount}&name=${encodeURIComponent(admission.applicant_name)}&p=${encodeURIComponent(plan)}`;
+      
+      const message = `🏏 *Gen Alpha Cricket Academy - Registration Reminder*\n\nHi! Just a friendly nudge regarding *${admission.applicant_name}'s* registration. The form is received, but the spot in the *${admission.time_slot}* slot is only confirmed after payment.\n\n*Amount: Rs ${amount.toLocaleString("en-IN")}*\n\n*Pay here: ${paymentPageUrl}*\n\nWe'd love to see them on the field! 🏏`;
+
+      results.push(sendTextMessage(to, message));
+    }
+  }
+
   const processed = await Promise.all(results);
   return jsonResponse({ success: true, processed });
 }
