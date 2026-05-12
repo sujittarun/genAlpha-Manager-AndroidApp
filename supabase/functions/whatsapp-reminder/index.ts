@@ -1580,7 +1580,7 @@ async function handleAutoSchedule() {
             if (to) {
               let metaResponse;
               if (reminderType === "heads_up") {
-                const headsUpMessage = `🏏 *Gen Alpha Cricket Academy - Upcoming Cycle*\n\nHi! Just a quick heads-up that *${student.name}'s* next training cycle starts in 2 days (on ${displayDate(dueDate)}). We're excited to have them continue their progress on the field! 🏏\n\n(If you've already paid, please ignore this message.)`;
+                const headsUpMessage = `Hi! Just a quick heads-up that *${student.name}'s* next month starts in 2 days. Hope they're enjoying the sessions! 🏏`;
                 metaResponse = await sendTextMessage(to, headsUpMessage);
               } else {
                 metaResponse = await sendTemplateMessage(
