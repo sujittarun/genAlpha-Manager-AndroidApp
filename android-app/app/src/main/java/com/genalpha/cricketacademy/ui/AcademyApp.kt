@@ -2689,12 +2689,12 @@ private fun RenewalPaymentDialog(
             AdmissionDropdownField(
                 label = "Plan",
                 value = planInfo.first,
-                options = listOf("Monthly", "3 months - 5% off", "6 months - 10% off", "Special training", "Custom amount"),
+                options = listOf("Monthly", "3 months - 5% off", "6 months - 10% off", "Special training (1 month)", "Custom amount"),
                 onSelect = { selected ->
                     plan = when (selected) {
                         "3 months - 5% off" -> "quarterly"
                         "6 months - 10% off" -> "halfyearly"
-                        "Special training" -> "special"
+                        "Special training (1 month)" -> "special"
                         "Custom amount" -> "custom"
                         else -> "monthly"
                     }
@@ -3994,13 +3994,31 @@ private fun RosterRow(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Text(
-                    text = student.name,
-                    fontSize = 18.sp,
-                    lineHeight = 20.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = student.name,
+                        fontSize = 18.sp,
+                        lineHeight = 20.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (student.isSpecialTraining(payments)) {
+                        Surface(
+                            color = Color(0xFFFFF9E6),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, Color(0xFFF4BE2E))
+                        ) {
+                            Text(
+                                text = "★ SPECIAL",
+                                color = Color(0xFF8F6500),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
                 Text(
                     text = "Age ${student.age}  •  ${student.tenureBadgeLabel()} with academy  •  Joined ${displayDate(student.joinDate)}",
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),

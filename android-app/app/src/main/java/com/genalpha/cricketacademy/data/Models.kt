@@ -352,7 +352,13 @@ fun PendingAdmission.isPaymentPendingVerification(): Boolean =
 
 fun Student.referenceDate(): String = renewals.lastOrNull() ?: joinDate
 
-fun Student.nextRenewalCycleDate(payments: List<StudentPayment>): String = paidThroughDate(payments)
+fun Student.isSpecialTraining(payments: List<StudentPayment>): Boolean {
+    val latest = payments.filter { it.studentId == id && it.paymentType == "renewal" }
+        .maxByOrNull { it.cycleStartDate }
+    return latest?.planType == "special"
+}
+
+fun Student.nextRenewalDate(payments: List<StudentPayment>): String = paidThroughDate(payments)
 
 fun Student.paidThroughDate(payments: List<StudentPayment>): String {
     var paidUntil = if (feesPaid) {
