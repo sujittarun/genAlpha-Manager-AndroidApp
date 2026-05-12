@@ -1616,6 +1616,20 @@ async function handleAutoSchedule() {
 
       results.push(sendTextMessage(to, message));
     }
+
+    // Nudge exactly on Day 7
+    if (daysSince === 7) {
+      const to = normalizePhone(String(admission.parent_contact_no || admission.alternate_contact_no || ""));
+      if (!to) continue;
+
+      const amount = Number(admission.admission_fee_total || 4000);
+      const plan = String(admission.fee_plan || "monthly");
+      const paymentPageUrl = `${PAYMENT_PAGE_URL}?a=${amount}&name=${encodeURIComponent(admission.applicant_name)}&p=${encodeURIComponent(plan)}`;
+      
+      const message = `🏏 *Gen Alpha Cricket Academy - Final Reminder*\n\nHi! We noticed *${admission.applicant_name}'s* registration is still pending. We can only hold the *${admission.time_slot}* spot for another 48 hours before releasing it.\n\nIf you're still interested, please complete the payment here to secure their spot:\n\n*Pay here: ${paymentPageUrl}*\n\nLooking forward to having you with us! 🏏`;
+
+      results.push(sendTextMessage(to, message));
+    }
   }
 
   const processed = await Promise.all(results);
