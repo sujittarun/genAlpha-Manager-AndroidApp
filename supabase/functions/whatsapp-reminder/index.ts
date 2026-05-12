@@ -1514,10 +1514,13 @@ async function handleAutoSchedule() {
     const dueDate = isJoiningFee
       ? student.join_date
       : getPaidThroughDate(student, payments);
-    const overdueDays = Math.max(0, getDaysSinceDate(dueDate));
+    const rawDaysSince = getDaysSinceDate(dueDate);
+    const overdueDays = Math.max(0, rawDaysSince);
 
-    // Logic: 5 days once, 7 days once, >7 days everyday
-    if (overdueDays !== 5 && overdueDays !== 7 && overdueDays <= 7) continue;
+    // Logic: -2 days soft heads-up, 5 days once, 7 days once, >7 days everyday
+    let isHeadsUp = rawDaysSince === -2 && !isJoiningFee;
+    
+    if (!isHeadsUp && overdueDays !== 5 && overdueDays !== 7 && overdueDays <= 7) continue;
 
     const lastFollowUp = followUps.find((f: any) => f.student_id === student.id);
     const sentToday = lastFollowUp &&
@@ -1525,7 +1528,12 @@ async function handleAutoSchedule() {
     if (sentToday) continue;
 
     let shouldSend = false;
-    if (overdueDays === 5 || overdueDays === 6) {
+    if (isHeadsUp) {
+      // Check if we already sent a heads-up for this cycle
+      const alreadySentHeadsUp = lastFollowUp?.reminder_type === "heads_up" && 
+                               lastFollowUp?.due_date === dueDate;
+      if (!alreadySentHeadsUp) shouldSend = true;
+    } else if (overdueDays === 5 || overdueDays === 6) {
       // Catch 5 days overdue (or 6 if they missed 5). Check if we already sent for the 5-6 day window.
       const alreadySentWindow = lastFollowUp?.overdue_days >= 5 &&
         lastFollowUp?.overdue_days < 7;
@@ -1538,7 +1546,7 @@ async function handleAutoSchedule() {
     }
 
     if (shouldSend) {
-      const reminderType = isJoiningFee ? "joining_fee" : "renewal";
+      const reminderType = isHeadsUp ? "heads_up" : (isJoiningFee ? "joining_fee" : "renewal");
       const dryRun = settings.dryRunMode;
       const parentPhone = String(student.parent_contact_no || "").replace(
         /\D/g,
@@ -1570,13 +1578,19 @@ async function handleAutoSchedule() {
           if (!dryRun) {
             const to = normalizePhone(parentPhone);
             if (to) {
-              const metaResponse = await sendTemplateMessage(
-                to,
-                event.id,
-                student,
-                dueDate,
-                reminderType,
-              );
+              let metaResponse;
+              if (reminderType === "heads_up") {
+                const headsUpMessage = `🏏 *Gen Alpha Cricket Academy - Upcoming Cycle*\n\nHi! Just a quick heads-up that *${student.name}'s* next training cycle starts in 2 days (on ${displayDate(dueDate)}). We're excited to have them continue their progress on the field! 🏏\n\n(If you've already paid, please ignore this message.)`;
+                metaResponse = await sendTextMessage(to, headsUpMessage);
+              } else {
+                metaResponse = await sendTemplateMessage(
+                  to,
+                  event.id,
+                  student,
+                  dueDate,
+                  reminderType,
+                );
+              }
               const whatsappMessageId = String(
                 metaResponse?.messages?.[0]?.id || "",
               );
