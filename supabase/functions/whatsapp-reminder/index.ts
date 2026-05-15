@@ -514,6 +514,48 @@ async function insertStudentTimelineEvent(payload: Record<string, unknown>) {
   }
 }
 
+async function insertWhatsappFlowEvent(payload: Record<string, unknown>) {
+  try {
+    const rows = await rest("whatsapp_flow_events?select=*", {
+      method: "POST",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify(payload),
+    });
+    return rows?.[0] || null;
+  } catch (_error) {
+    // Audit logging must never block parent-facing WhatsApp/payment flows.
+    return null;
+  }
+}
+
+async function findWhatsappFlowEventByMessageId(messageId: string) {
+  if (!messageId) return null;
+  try {
+    const rows = await rest(
+      `whatsapp_flow_events?select=*&message_id=eq.${
+        encodeURIComponent(messageId)
+      }&order=created_at.desc&limit=1`,
+    );
+    return rows?.[0] || null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+async function updateWhatsappFlowEvent(
+  id: string,
+  payload: Record<string, unknown>,
+) {
+  try {
+    await rest(`whatsapp_flow_events?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  } catch (_error) {
+    // Audit status updates must never block Meta webhook processing.
+  }
+}
+
 async function updateReminderEvent(
   id: string,
   payload: Record<string, unknown>,
@@ -522,6 +564,15 @@ async function updateReminderEvent(
     method: "PATCH",
     body: JSON.stringify(payload),
   });
+}
+
+async function findReminderByAnyWhatsappMessageId(messageId: string) {
+  if (!messageId) return null;
+  const encoded = encodeURIComponent(messageId);
+  const rows = await rest(
+    `reminder_events?select=*&or=(whatsapp_message_id.eq.${encoded},confirmation_message_id.eq.${encoded})&limit=1`,
+  );
+  return rows?.[0] || null;
 }
 
 async function findReminderEvent(eventId: string) {
@@ -949,14 +1000,45 @@ async function handlePaymentAttempted(payload: any) {
 
   await updateReminderEvent(eventId, {
     status: "payment_attempted",
+    payment_attempted_at: new Date().toISOString(),
   });
   await updateLatestPaymentLinkRequest(eventId, {
     status: "payment_attempted",
+    payment_attempted_at: new Date().toISOString(),
+  });
+  await insertWhatsappFlowEvent({
+    student_id: reminderEvent.student_id,
+    reminder_event_id: reminderEvent.id,
+    event_type: "payment_attempted",
+    direction: "parent",
+    parent_phone: String(reminderEvent.parent_phone || ""),
+    message_kind: "pay_now_click",
+    status: "payment_attempted",
+    status_at: new Date().toISOString(),
+    payment_plan: String(reminderEvent.selected_plan || ""),
+    payment_amount: Number(reminderEvent.amount || 0) || null,
+    payment_from_date: reminderEvent.due_date || null,
+    created_by: "pay.html",
   });
 
   let metaResponse = null;
   if (shouldSendFollowup) {
     metaResponse = await sendTextMessage(to, AFTER_PAY_NOW_FOLLOWUP);
+    await insertWhatsappFlowEvent({
+      student_id: reminderEvent.student_id,
+      reminder_event_id: reminderEvent.id,
+      event_type: "payment_followup_message_sent",
+      direction: "outbound",
+      parent_phone: String(reminderEvent.parent_phone || ""),
+      message_kind: "text",
+      message_body: AFTER_PAY_NOW_FOLLOWUP,
+      message_id: String(metaResponse?.messages?.[0]?.id || ""),
+      status: String(metaResponse?.messages?.[0]?.id || "") ? "accepted" : "sent",
+      status_at: new Date().toISOString(),
+      sent_at: new Date().toISOString(),
+      provider_payload: metaResponse,
+      created_by: "pay.html",
+    });
   }
 
   return jsonResponse({
@@ -993,6 +1075,19 @@ async function handlePaymentConfirmationMessage(
 ) {
   const reminderEvent = await findLatestReminderByPhone(from);
   if (!reminderEvent) {
+    await insertWhatsappFlowEvent({
+      event_type: "payment_pending_verification",
+      direction: "parent",
+      parent_phone: from.slice(-10),
+      message_kind: String(message?.type || ""),
+      message_body: String(message?.text?.body || message?.image?.caption || message?.document?.caption || ""),
+      message_id: String(message.id || ""),
+      status: "no_matching_reminder",
+      status_at: new Date().toISOString(),
+      error_message: "Payment confirmation received but no matching reminder event found.",
+      provider_payload: message,
+      created_by: "WhatsApp",
+    });
     if (webhookLog?.id) {
       await rest(
         `whatsapp_webhook_events?id=eq.${encodeURIComponent(webhookLog.id)}`,
@@ -1022,6 +1117,7 @@ async function handlePaymentConfirmationMessage(
 
   await updateReminderEvent(reminderEvent.id, {
     status: "payment_pending_verification",
+    payment_pending_verification_at: new Date().toISOString(),
     meta_response: {
       ...(reminderEvent.meta_response || {}),
       payment_confirmation: paymentConfirmation,
@@ -1029,19 +1125,42 @@ async function handlePaymentConfirmationMessage(
   });
   await updateLatestPaymentLinkRequest(reminderEvent.id, {
     status: "payment_pending_verification",
+    payment_pending_verification_at: new Date().toISOString(),
   });
-  await insertStudentTimelineEvent({
+  const proofPath = String(proofMedia?.storage_path || "");
+  const auditRow = await insertWhatsappFlowEvent({
     student_id: reminderEvent.student_id,
     event_type: "payment_pending_verification",
-    event_date: new Date().toISOString().slice(0, 10),
-    title: "Parent payment proof received",
-    details: proofMedia?.storage_path
-      ? `Parent replied with ${paymentConfirmation.type}. Proof stored at ${proofMedia.storage_bucket}/${proofMedia.storage_path}.`
+    reminder_event_id: reminderEvent.id,
+    direction: "parent",
+    parent_phone: from.slice(-10),
+    message_kind: paymentConfirmation.type,
+    message_body: paymentConfirmation.text || paymentConfirmation.caption,
+    message_id: paymentConfirmation.message_id,
+    status: "payment_pending_verification",
+    status_at: new Date().toISOString(),
+    payment_plan: String(reminderEvent.selected_plan || ""),
+    payment_amount: Number(reminderEvent.amount || 0) || null,
+    payment_from_date: reminderEvent.due_date || null,
+    proof_bucket: String(proofMedia?.storage_bucket || ""),
+    proof_path: proofPath,
+    provider_payload: paymentConfirmation,
+    created_by: "WhatsApp",
+  });
+  if (!auditRow) {
+    await insertStudentTimelineEvent({
+      student_id: reminderEvent.student_id,
+      event_type: "payment_pending_verification",
+      event_date: new Date().toISOString().slice(0, 10),
+      title: "Parent payment proof received",
+      details: proofPath
+        ? `Parent replied with ${paymentConfirmation.type}. Proof stored at ${paymentConfirmation.proof_media?.storage_bucket || "payment-proofs"}/${proofPath}.`
       : `Parent replied with ${paymentConfirmation.type || "message"}${
         paymentConfirmation.text ? `: ${paymentConfirmation.text}` : ""
       }.`,
-    changed_by: "WhatsApp",
-  });
+      changed_by: "WhatsApp",
+    });
+  }
 
   if (webhookLog?.id) {
     await rest(
@@ -1057,7 +1176,22 @@ async function handlePaymentConfirmationMessage(
     );
   }
 
-  await sendTextMessage(from, PAYMENT_CONFIRMATION_REPLY);
+  const replyResponse = await sendTextMessage(from, PAYMENT_CONFIRMATION_REPLY);
+  await insertWhatsappFlowEvent({
+    student_id: reminderEvent.student_id,
+    reminder_event_id: reminderEvent.id,
+    event_type: "payment_verification_reply_sent",
+    direction: "outbound",
+    parent_phone: from.slice(-10),
+    message_kind: "text",
+    message_body: PAYMENT_CONFIRMATION_REPLY,
+    message_id: String(replyResponse?.messages?.[0]?.id || ""),
+    status: String(replyResponse?.messages?.[0]?.id || "") ? "accepted" : "sent",
+    status_at: new Date().toISOString(),
+    sent_at: new Date().toISOString(),
+    provider_payload: replyResponse,
+    created_by: "WhatsApp",
+  });
 }
 
 async function handleSendReminder(request: Request, payload: any) {
@@ -1097,9 +1231,22 @@ async function handleSendReminder(request: Request, payload: any) {
     ),
     created_by: managerEmail,
   });
+  await insertWhatsappFlowEvent({
+    student_id: student.id,
+    reminder_event_id: event.id,
+    event_type: "reminder_created",
+    direction: "outbound",
+    parent_phone: parentPhone,
+    message_kind: "template",
+    message_body: event.message_preview || "",
+    status: dryRun ? "dry_run" : "queued",
+    status_at: new Date().toISOString(),
+    payment_from_date: dueDate,
+    created_by: managerEmail,
+  });
 
   if (dryRun) {
-    await insertPaymentLinkRequest({
+    const dryRunLink = await insertPaymentLinkRequest({
       reminder_event_id: event.id,
       student_id: student.id,
       payment_type: reminderType === "joining_fee" ? "joining" : "renewal",
@@ -1112,6 +1259,19 @@ async function handleSendReminder(request: Request, payload: any) {
       dry_run: true,
       created_by: managerEmail,
     });
+    await insertWhatsappFlowEvent({
+      student_id: student.id,
+      reminder_event_id: event.id,
+      payment_link_request_id: dryRunLink?.id || null,
+      event_type: "payment_link_sent",
+      direction: "system",
+      parent_phone: parentPhone,
+      message_kind: "payment_link",
+      status: "dry_run",
+      status_at: new Date().toISOString(),
+      payment_from_date: dueDate,
+      created_by: managerEmail,
+    });
     return jsonResponse({
       success: true,
       dryRun: true,
@@ -1121,6 +1281,23 @@ async function handleSendReminder(request: Request, payload: any) {
 
   const to = normalizePhone(parentPhone);
   if (!to) {
+    await updateReminderEvent(event.id, {
+      status: "send_failed",
+      meta_error: { message: "Parent phone number is missing." },
+      failed_at: new Date().toISOString(),
+    });
+    await insertWhatsappFlowEvent({
+      student_id: student.id,
+      reminder_event_id: event.id,
+      event_type: "reminder_send_failed",
+      direction: "outbound",
+      parent_phone: parentPhone,
+      message_kind: "template",
+      status: "send_failed",
+      failed_at: new Date().toISOString(),
+      error_message: "Parent phone number is missing.",
+      created_by: managerEmail,
+    });
     return jsonResponse({ error: "Parent phone number is missing." }, 400);
   }
   let metaResponse;
@@ -1142,6 +1319,19 @@ async function handleSendReminder(request: Request, payload: any) {
       meta_error: errorPayload,
       failed_at: new Date().toISOString(),
     });
+    await insertWhatsappFlowEvent({
+      student_id: student.id,
+      reminder_event_id: event.id,
+      event_type: "reminder_send_failed",
+      direction: "outbound",
+      parent_phone: parentPhone,
+      message_kind: "template",
+      status: "send_failed",
+      failed_at: new Date().toISOString(),
+      error_message: errorPayload.message,
+      provider_payload: errorPayload,
+      created_by: managerEmail,
+    });
     const message = error instanceof Error
       ? error.message
       : "Meta WhatsApp send failed.";
@@ -1157,6 +1347,21 @@ async function handleSendReminder(request: Request, payload: any) {
     whatsapp_message_id: whatsappMessageId,
     meta_response: metaResponse,
     accepted_at: new Date().toISOString(),
+  });
+  await insertWhatsappFlowEvent({
+    student_id: student.id,
+    reminder_event_id: event.id,
+    event_type: "reminder_message_status",
+    direction: "outbound",
+    parent_phone: parentPhone,
+    message_kind: "template",
+    message_body: event.message_preview || "",
+    message_id: whatsappMessageId,
+    status: whatsappMessageId ? "accepted" : "sent",
+    status_at: new Date().toISOString(),
+    accepted_at: new Date().toISOString(),
+    provider_payload: metaResponse,
+    created_by: managerEmail,
   });
   return jsonResponse({
     success: true,
@@ -1257,11 +1462,17 @@ async function handleRenewalVerified(request: Request, payload: any) {
   const message = `✅ *Payment Confirmed!* 🏏\n\nHi! We've successfully received the payment for *${student.name || "Player"}'s* *${actionText}*. The training status has been updated until *${displayDate(toDate)}*.\n\n*Amount received: Rs ${amount.toLocaleString("en-IN")}.*\n\n${happyMessage}\n\nThank you for being part of Gen Alpha Cricket Academy!`;
 
   const metaResponse = await sendTextMessage(to, message);
+  const confirmationMessageId = String(metaResponse?.messages?.[0]?.id || "");
+  const confirmedAt = new Date().toISOString();
 
   const latestReminder = await findLatestReminderByPhone(to);
   if (latestReminder?.id && latestReminder.student_id === student.id) {
     await updateReminderEvent(latestReminder.id, {
       status: "payment_confirmed",
+      payment_confirmed_at: confirmedAt,
+      confirmation_message_id: confirmationMessageId,
+      confirmation_sent_at: confirmedAt,
+      confirmation_meta_response: metaResponse,
       meta_response: {
         ...(latestReminder.meta_response || {}),
         renewal_verified: {
@@ -1271,13 +1482,48 @@ async function handleRenewalVerified(request: Request, payload: any) {
           plan_label: planLabel,
           amount,
           sent_by: managerEmail,
-          sent_at: new Date().toISOString(),
+          sent_at: confirmedAt,
           meta_response: metaResponse,
         },
       },
     });
     await updateLatestPaymentLinkRequest(latestReminder.id, {
       status: "payment_confirmed",
+      payment_confirmed_at: confirmedAt,
+    });
+    await insertWhatsappFlowEvent({
+      student_id: student.id,
+      reminder_event_id: latestReminder.id,
+      event_type: "payment_confirmed",
+      direction: "manager",
+      parent_phone: String(student.parent_contact_no || "").slice(-10),
+      message_kind: "manager_confirmation",
+      status: "payment_confirmed",
+      status_at: confirmedAt,
+      payment_plan: planLabel,
+      payment_amount: amount,
+      payment_from_date: fromDate || null,
+      payment_to_date: toDate || null,
+      created_by: managerEmail,
+    });
+    await insertWhatsappFlowEvent({
+      student_id: student.id,
+      reminder_event_id: latestReminder.id,
+      event_type: "confirmation_message_sent",
+      direction: "outbound",
+      parent_phone: String(student.parent_contact_no || "").slice(-10),
+      message_kind: "confirmation_text",
+      message_body: message,
+      message_id: confirmationMessageId,
+      status: confirmationMessageId ? "accepted" : "sent",
+      status_at: confirmedAt,
+      sent_at: confirmedAt,
+      payment_plan: planLabel,
+      payment_amount: amount,
+      payment_from_date: fromDate || null,
+      payment_to_date: toDate || null,
+      provider_payload: metaResponse,
+      created_by: managerEmail,
     });
   }
   await insertStudentTimelineEvent({
@@ -1318,7 +1564,48 @@ async function handleSendAdmissionReminder(request: Request, payload: any) {
   
   const message = `🏏 *Gen Alpha Cricket Academy - Follow up*\n\nHi! Coach here from Gen Alpha—just following up on *${admission.applicant_name}'s* admission. We're excited to have *${admission.applicant_name}* start training with us!\n\n*Amount: Rs ${amount.toLocaleString("en-IN")}*\n\n*Pay here: ${paymentPageUrl}*\n\nOnce paid, the spot will be confirmed in the *${admission.time_slot}* slot. Let us know if you have any questions! 🏏`;
 
-  const metaResponse = await sendTextMessage(to, message);
+  let metaResponse;
+  try {
+    metaResponse = await sendTextMessage(to, message);
+  } catch (error) {
+    const errorPayload = error instanceof Error
+      ? { message: error.message }
+      : { message: String(error) };
+    await insertWhatsappFlowEvent({
+      admission_id: admission.id,
+      event_type: "admission_reminder_failed",
+      direction: "outbound",
+      parent_phone: to.slice(-10),
+      message_kind: "text",
+      message_body: message,
+      status: "send_failed",
+      failed_at: new Date().toISOString(),
+      error_message: errorPayload.message,
+      provider_payload: errorPayload,
+      created_by: managerEmail,
+    });
+    return jsonResponse({
+      success: false,
+      source: "meta_whatsapp",
+      error: `Meta WhatsApp send failed: ${errorPayload.message}`,
+    }, 502);
+  }
+  await insertWhatsappFlowEvent({
+    admission_id: admission.id,
+    event_type: "admission_reminder_sent",
+    direction: "outbound",
+    parent_phone: to.slice(-10),
+    message_kind: "text",
+    message_body: message,
+    message_id: String(metaResponse?.messages?.[0]?.id || ""),
+    status: String(metaResponse?.messages?.[0]?.id || "") ? "accepted" : "sent",
+    status_at: new Date().toISOString(),
+    sent_at: new Date().toISOString(),
+    payment_plan: plan,
+    payment_amount: amount,
+    provider_payload: metaResponse,
+    created_by: managerEmail,
+  });
 
   // Update last_nudge_at to ensure automated schedule respects manual nudges
   await rest(`admissions?id=eq.${admission.id}`, {
@@ -1342,20 +1629,110 @@ async function handleWebhook(payload: any) {
 
         const status = String(statusUpdate?.status || "unknown");
         const timestamp = whatsappTimestampToIso(statusUpdate?.timestamp);
-        const updatePayload: Record<string, unknown> = {
-          status,
-          meta_response: statusUpdate,
-        };
+        const trackedReminder = await findReminderByAnyWhatsappMessageId(
+          messageId,
+        );
+        const trackedFlowEvent = await findWhatsappFlowEventByMessageId(
+          messageId,
+        );
+        if (!trackedReminder?.id && !trackedFlowEvent?.id) continue;
 
-        if (status === "sent") updatePayload.accepted_at = timestamp;
-        if (status === "delivered") updatePayload.delivered_at = timestamp;
-        if (status === "read") updatePayload.read_at = timestamp;
+        const flowStatusPatch: Record<string, unknown> = {
+          status,
+          status_at: timestamp,
+        };
+        if (status === "sent") flowStatusPatch.sent_at = timestamp;
+        if (status === "delivered") flowStatusPatch.delivered_at = timestamp;
+        if (status === "read") flowStatusPatch.read_at = timestamp;
         if (status === "failed") {
-          updatePayload.failed_at = timestamp;
-          updatePayload.meta_error = statusUpdate;
+          flowStatusPatch.failed_at = timestamp;
+          flowStatusPatch.error_code = String(
+            statusUpdate?.errors?.[0]?.code || "",
+          );
+          flowStatusPatch.error_message = String(
+            statusUpdate?.errors?.[0]?.message || "",
+          );
+        }
+        if (trackedFlowEvent?.id) {
+          await updateWhatsappFlowEvent(trackedFlowEvent.id, flowStatusPatch);
         }
 
-        await updateReminderEventByWhatsappMessageId(messageId, updatePayload);
+        if (!trackedReminder?.id) {
+          await insertWhatsappFlowEvent({
+            student_id: trackedFlowEvent?.student_id || null,
+            admission_id: trackedFlowEvent?.admission_id || null,
+            reminder_event_id: trackedFlowEvent?.reminder_event_id || null,
+            payment_link_request_id:
+              trackedFlowEvent?.payment_link_request_id || null,
+            event_type: "whatsapp_message_status",
+            direction: "provider",
+            parent_phone: String(trackedFlowEvent?.parent_phone || ""),
+            message_kind: String(trackedFlowEvent?.message_kind || ""),
+            message_id: messageId,
+            status,
+            status_at: timestamp,
+            sent_at: status === "sent" ? timestamp : null,
+            delivered_at: status === "delivered" ? timestamp : null,
+            read_at: status === "read" ? timestamp : null,
+            failed_at: status === "failed" ? timestamp : null,
+            error_code: String(statusUpdate?.errors?.[0]?.code || ""),
+            error_message: String(statusUpdate?.errors?.[0]?.message || ""),
+            provider_payload: statusUpdate,
+            created_by: "Meta",
+          });
+          continue;
+        }
+
+        const isConfirmationMessage =
+          String(trackedReminder.confirmation_message_id || "") === messageId;
+        const updatePayload: Record<string, unknown> = isConfirmationMessage
+          ? {
+            confirmation_meta_response: statusUpdate,
+          }
+          : {
+            status,
+            meta_response: statusUpdate,
+          };
+
+        if (status === "sent") {
+          updatePayload[isConfirmationMessage ? "confirmation_sent_at" : "accepted_at"] = timestamp;
+        }
+        if (status === "delivered") {
+          updatePayload[isConfirmationMessage ? "confirmation_delivered_at" : "delivered_at"] = timestamp;
+        }
+        if (status === "read") {
+          updatePayload[isConfirmationMessage ? "confirmation_read_at" : "read_at"] = timestamp;
+        }
+        if (status === "failed") {
+          updatePayload[isConfirmationMessage ? "confirmation_failed_at" : "failed_at"] = timestamp;
+          updatePayload[isConfirmationMessage ? "confirmation_meta_error" : "meta_error"] = statusUpdate;
+        }
+
+        await updateReminderEvent(trackedReminder.id, updatePayload);
+        await insertWhatsappFlowEvent({
+          student_id: trackedReminder.student_id,
+          reminder_event_id: trackedReminder.id,
+          event_type: isConfirmationMessage
+            ? "confirmation_message_status"
+            : "reminder_message_status",
+          direction: "provider",
+          parent_phone: String(trackedReminder.parent_phone || ""),
+          message_kind: isConfirmationMessage ? "confirmation_text" : "template",
+          message_id: messageId,
+          status,
+          status_at: timestamp,
+          sent_at: status === "sent" ? timestamp : null,
+          accepted_at: status === "sent" && !isConfirmationMessage
+            ? timestamp
+            : null,
+          delivered_at: status === "delivered" ? timestamp : null,
+          read_at: status === "read" ? timestamp : null,
+          failed_at: status === "failed" ? timestamp : null,
+          error_code: String(statusUpdate?.errors?.[0]?.code || ""),
+          error_message: String(statusUpdate?.errors?.[0]?.message || ""),
+          provider_payload: statusUpdate,
+          created_by: "Meta",
+        });
       }
 
       for (const message of change?.value?.messages || []) {
@@ -1424,6 +1801,20 @@ async function handleWebhook(payload: any) {
             help_requested: true,
             status: "help_requested",
           });
+          await insertWhatsappFlowEvent({
+            student_id: reminderEvent.student_id,
+            reminder_event_id: reminderEvent.id,
+            event_type: "parent_help_requested",
+            direction: "parent",
+            parent_phone: from.slice(-10),
+            message_kind: String(message.type || "button"),
+            message_body: labelText || replyPayload,
+            message_id: String(message.id || ""),
+            status: "help_requested",
+            status_at: new Date().toISOString(),
+            provider_payload: message,
+            created_by: "WhatsApp",
+          });
           if (webhookLog?.id) {
             await rest(
               `whatsapp_webhook_events?id=eq.${
@@ -1439,10 +1830,26 @@ async function handleWebhook(payload: any) {
               },
             );
           }
-          await sendTextMessage(
-            from,
-            `Please contact Gen Alpha Cricket Academy manager: ${settings.managerPhone}`,
-          );
+          const helpMessage =
+            `Please contact Gen Alpha Cricket Academy manager: ${settings.managerPhone}`;
+          const helpResponse = await sendTextMessage(from, helpMessage);
+          await insertWhatsappFlowEvent({
+            student_id: reminderEvent.student_id,
+            reminder_event_id: reminderEvent.id,
+            event_type: "help_reply_sent",
+            direction: "outbound",
+            parent_phone: from.slice(-10),
+            message_kind: "text",
+            message_body: helpMessage,
+            message_id: String(helpResponse?.messages?.[0]?.id || ""),
+            status: String(helpResponse?.messages?.[0]?.id || "")
+              ? "accepted"
+              : "sent",
+            status_at: new Date().toISOString(),
+            sent_at: new Date().toISOString(),
+            provider_payload: helpResponse,
+            created_by: "whatsapp-webhook",
+          });
           continue;
         }
 
@@ -1453,6 +1860,25 @@ async function handleWebhook(payload: any) {
           reminderEvent,
           settings,
         );
+        await insertWhatsappFlowEvent({
+          student_id: reminderEvent.student_id,
+          reminder_event_id: reminderEvent.id,
+          payment_link_request_id: linkRequest?.id || null,
+          event_type: "parent_plan_selected",
+          direction: "parent",
+          parent_phone: from.slice(-10),
+          message_kind: String(message.type || "button"),
+          message_body: labelText || replyPayload,
+          message_id: String(message.id || ""),
+          status: "plan_selected",
+          status_at: new Date().toISOString(),
+          payment_plan: plan,
+          payment_amount: PLAN_AMOUNTS[plan],
+          payment_months: PLAN_MONTHS[plan],
+          payment_from_date: reminderEvent.due_date || null,
+          provider_payload: message,
+          created_by: "WhatsApp",
+        });
         await updateReminderEvent(reminderEvent.id, {
           selected_plan: plan,
           amount: PLAN_AMOUNTS[plan],
@@ -1462,6 +1888,10 @@ async function handleWebhook(payload: any) {
             ? "payment_link_dry_run"
             : "payment_link_sent",
           dry_run: Boolean(linkRequest.dry_run),
+          payment_link_sent_at: new Date().toISOString(),
+        });
+        await updateLatestPaymentLinkRequest(reminderEvent.id, {
+          payment_link_sent_at: new Date().toISOString(),
         });
         if (webhookLog?.id) {
           await rest(
@@ -1481,11 +1911,35 @@ async function handleWebhook(payload: any) {
           );
         }
         if (!linkRequest.dry_run && linkRequest.payment_link_url) {
+          const isJoining = reminderEvent.reminder_type === "joining_fee";
           const finalAmount = isJoining ? (PLAN_AMOUNTS[plan] + 500) : PLAN_AMOUNTS[plan];
-          await sendTextMessage(
+          const paymentMessage = `🏏 *Gen Alpha Cricket Academy - Payment Request*\n*Amount: Rs ${finalAmount.toLocaleString("en-IN")}*\n\n*Pay here: ${linkRequest.payment_link_url}*\n\n${paymentContactDetails()}`;
+          const paymentMessageResponse = await sendTextMessage(
             from,
-            `🏏 *Gen Alpha Cricket Academy - Payment Request*\n*Amount: Rs ${finalAmount.toLocaleString("en-IN")}*\n\n*Pay here: ${linkRequest.payment_link_url}*\n\n${paymentContactDetails()}`,
+            paymentMessage,
           );
+          await insertWhatsappFlowEvent({
+            student_id: reminderEvent.student_id,
+            reminder_event_id: reminderEvent.id,
+            payment_link_request_id: linkRequest?.id || null,
+            event_type: "payment_link_sent",
+            direction: "outbound",
+            parent_phone: from.slice(-10),
+            message_kind: "payment_link",
+            message_body: paymentMessage,
+            message_id: String(paymentMessageResponse?.messages?.[0]?.id || ""),
+            status: String(paymentMessageResponse?.messages?.[0]?.id || "")
+              ? "accepted"
+              : "sent",
+            status_at: new Date().toISOString(),
+            sent_at: new Date().toISOString(),
+            payment_plan: plan,
+            payment_amount: finalAmount,
+            payment_months: PLAN_MONTHS[plan],
+            payment_from_date: reminderEvent.due_date || null,
+            provider_payload: paymentMessageResponse,
+            created_by: "whatsapp-webhook",
+          });
         }
       }
     }
@@ -1576,8 +2030,9 @@ async function handleAutoSchedule() {
       ).slice(-10);
 
       const sendTask = (async () => {
+        let event: any = null;
         try {
-          const event = await insertReminderEvent({
+          event = await insertReminderEvent({
             student_id: student.id,
             reminder_type: reminderType,
             channel: "whatsapp",
@@ -1596,35 +2051,105 @@ async function handleAutoSchedule() {
             ),
             created_by: "system_auto",
           });
+          await insertWhatsappFlowEvent({
+            student_id: student.id,
+            reminder_event_id: event.id,
+            event_type: "reminder_created",
+            direction: "outbound",
+            parent_phone: parentPhone,
+            message_kind: reminderType === "heads_up" ? "text" : "template",
+            message_body: event.message_preview || "",
+            status: dryRun ? "dry_run" : "queued",
+            status_at: new Date().toISOString(),
+            payment_from_date: dueDate,
+            created_by: "system_auto",
+          });
 
           if (!dryRun) {
             const to = normalizePhone(parentPhone);
-            if (to) {
-              let metaResponse;
-              if (reminderType === "heads_up") {
-                const headsUpMessage = `Hi! Hope you're having a great week. Coach here from Gen Alpha—just a quick heads-up that *${student.name}'s* next training cycle starts in 2 days. We've seen some great progress lately, just wanted to let you know so you can plan ahead! 🏏`;
-                metaResponse = await sendTextMessage(to, headsUpMessage);
-              } else {
-                metaResponse = await sendTemplateMessage(
-                  to,
-                  event.id,
-                  student,
-                  dueDate,
-                  reminderType,
-                );
-              }
-              const whatsappMessageId = String(
-                metaResponse?.messages?.[0]?.id || "",
-              );
+            if (!to) {
               await updateReminderEvent(event.id, {
-                status: whatsappMessageId ? "accepted" : "sent",
-                whatsapp_message_id: whatsappMessageId,
-                accepted_at: new Date().toISOString(),
+                status: "send_failed",
+                meta_error: { message: "Parent phone number is missing." },
+                failed_at: new Date().toISOString(),
               });
+              await insertWhatsappFlowEvent({
+                student_id: student.id,
+                reminder_event_id: event.id,
+                event_type: "reminder_send_failed",
+                direction: "outbound",
+                parent_phone: parentPhone,
+                message_kind: reminderType === "heads_up" ? "text" : "template",
+                status: "send_failed",
+                failed_at: new Date().toISOString(),
+                error_message: "Parent phone number is missing.",
+                created_by: "system_auto",
+              });
+              return {
+                student: student.name,
+                error: "Parent phone number is missing.",
+              };
             }
+            let metaResponse;
+            let messageBody = event.message_preview || "";
+            if (reminderType === "heads_up") {
+              messageBody = `Hi! Hope you're having a great week. Coach here from Gen Alpha—just a quick heads-up that *${student.name}'s* next training cycle starts in 2 days. We've seen some great progress lately, just wanted to let you know so you can plan ahead! 🏏`;
+              metaResponse = await sendTextMessage(to, messageBody);
+            } else {
+              metaResponse = await sendTemplateMessage(
+                to,
+                event.id,
+                student,
+                dueDate,
+                reminderType,
+              );
+            }
+            const whatsappMessageId = String(
+              metaResponse?.messages?.[0]?.id || "",
+            );
+            await updateReminderEvent(event.id, {
+              status: whatsappMessageId ? "accepted" : "sent",
+              whatsapp_message_id: whatsappMessageId,
+              accepted_at: new Date().toISOString(),
+            });
+            await insertWhatsappFlowEvent({
+              student_id: student.id,
+              reminder_event_id: event.id,
+              event_type: "reminder_message_status",
+              direction: "outbound",
+              parent_phone: parentPhone,
+              message_kind: reminderType === "heads_up" ? "text" : "template",
+              message_body: messageBody,
+              message_id: whatsappMessageId,
+              status: whatsappMessageId ? "accepted" : "sent",
+              status_at: new Date().toISOString(),
+              accepted_at: new Date().toISOString(),
+              provider_payload: metaResponse,
+              created_by: "system_auto",
+            });
           }
           return { student: student.name, status: "sent" };
         } catch (e) {
+          if (event?.id) {
+            await updateReminderEvent(event.id, {
+              status: "send_failed",
+              meta_error: { message: (e as Error).message },
+              failed_at: new Date().toISOString(),
+            });
+            await insertWhatsappFlowEvent({
+              student_id: student.id,
+              reminder_event_id: event.id,
+              event_type: "reminder_send_failed",
+              direction: "outbound",
+              parent_phone: parentPhone,
+              message_kind: reminderType === "heads_up" ? "text" : "template",
+              status: "send_failed",
+              failed_at: new Date().toISOString(),
+              error_message: (e as Error).message,
+              provider_payload: { message: (e as Error).message },
+              created_by: "system_auto",
+            });
+          }
           return { student: student.name, error: (e as Error).message };
         }
       })();
@@ -1673,8 +2198,43 @@ async function handleAutoSchedule() {
 
     if (message) {
       results.push((async () => {
+        const to = normalizePhone(String(admission.parent_contact_no || admission.emergency_contact_no || ""));
         try {
-          await sendTextMessage(normalizePhone(String(admission.parent_contact_no || admission.emergency_contact_no || "")), message);
+          if (!to) {
+            await insertWhatsappFlowEvent({
+              admission_id: admission.id,
+              event_type: "admission_reminder_failed",
+              direction: "outbound",
+              parent_phone: "",
+              message_kind: "text",
+              message_body: message,
+              status: "send_failed",
+              failed_at: new Date().toISOString(),
+              error_message: "Parent contact number is missing.",
+              created_by: "system_auto",
+            });
+            return {
+              student: admission.applicant_name,
+              error: "Parent contact number is missing.",
+            };
+          }
+          const metaResponse = await sendTextMessage(to, message);
+          await insertWhatsappFlowEvent({
+            admission_id: admission.id,
+            event_type: "admission_reminder_sent",
+            direction: "outbound",
+            parent_phone: to.slice(-10),
+            message_kind: "text",
+            message_body: message,
+            message_id: String(metaResponse?.messages?.[0]?.id || ""),
+            status: String(metaResponse?.messages?.[0]?.id || "")
+              ? "accepted"
+              : "sent",
+            status_at: new Date().toISOString(),
+            sent_at: new Date().toISOString(),
+            provider_payload: metaResponse,
+            created_by: "system_auto",
+          });
           await rest(`admissions?id=eq.${admission.id}`, {
             method: "PATCH",
             body: JSON.stringify({ 
@@ -1684,6 +2244,19 @@ async function handleAutoSchedule() {
           });
           return { student: admission.applicant_name, status: nudgeType };
         } catch (e) {
+          await insertWhatsappFlowEvent({
+            admission_id: admission.id,
+            event_type: "admission_reminder_failed",
+            direction: "outbound",
+            parent_phone: to.slice(-10),
+            message_kind: "text",
+            message_body: message,
+            status: "send_failed",
+            failed_at: new Date().toISOString(),
+            error_message: (e as Error).message,
+            provider_payload: { message: (e as Error).message },
+            created_by: "system_auto",
+          });
           return { student: admission.applicant_name, error: (e as Error).message };
         }
       })());

@@ -83,6 +83,8 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.material3.Icon
@@ -126,6 +128,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.layout.ContentScale
@@ -134,6 +137,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -215,6 +219,12 @@ private val DarkDangerText = Color(0xFFFFB0BB)
 private val DarkMutedContainer = Color(0xFF273141)
 private val DarkMutedText = Color(0xFFBCC7DA)
 private val DarkAttentionCard = Color(0xFF211A12)
+
+private fun adaptiveSp(base: Float, fontScale: Float, minRatio: Float = 0.72f): TextUnit {
+    return (base / fontScale.coerceAtLeast(1f))
+        .coerceAtLeast(base * minRatio)
+        .sp
+}
 private val DarkAttentionBorder = Color(0x66D7A12B)
 private val AlertBlue = Color(0xFF2266C9)
 private const val MANAGER_VIEW_PIN = "290326"
@@ -918,6 +928,45 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                         selectedStudent = student
                                         showEditorSheet = true
                                     },
+                                    onRenew = if (student.isRenewalPending(uiState.payments) && student.isActive()) {
+                                        {
+                                            renewalStudent = student
+                                            selectedStudent = student
+                                        }
+                                    } else null,
+                                    onSendReminder = if ((student.isFeesPending() || student.isRenewalPending(uiState.payments)) && student.isActive()) {
+                                        {
+                                            scope.launch {
+                                                val result = if (student.isFeesPending()) {
+                                                    viewModel.sendAdmissionReminder(
+                                                        PendingAdmission(
+                                                            id = student.id,
+                                                            regNo = student.regNo,
+                                                            applicantName = student.name,
+                                                            age = student.age,
+                                                            joinDate = student.joinDate,
+                                                            feesPaid = student.feesPaid,
+                                                            amountPaid = student.amountPaid,
+                                                            timeSlot = student.timeSlot,
+                                                            parentContactNo = student.parentContactNo,
+                                                            alternateContactNo = student.alternateContactNo,
+                                                            fatherGuardianName = student.fatherGuardianName,
+                                                            schoolCollege = student.schoolCollege
+                                                        )
+                                                    )
+                                                } else {
+                                                    viewModel.sendRenewalReminder(student)
+                                                }
+                                                snackbarHostState.showSnackbar(result.message)
+                                            }
+                                        }
+                                    } else null,
+                                    onToggleStatus = {
+                                        scope.launch {
+                                            val result = viewModel.toggleStatus(student)
+                                            snackbarHostState.showSnackbar(result.message)
+                                        }
+                                    },
                                 )
                             }
                         }
@@ -1253,6 +1302,8 @@ private fun HeaderSection(
     onLogin: () -> Unit,
     onLogout: () -> Unit,
 ) {
+    val fontScale = LocalDensity.current.fontScale
+
     Card(
         shape = RoundedCornerShape(30.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
@@ -1281,24 +1332,24 @@ private fun HeaderSection(
                         Text(
                             text = "GEN ALPHA CRICKET ACADEMY",
                             color = Color.White.copy(alpha = 0.76f),
-                            fontSize = 11.sp,
+                            fontSize = adaptiveSp(11f, fontScale, minRatio = 0.78f),
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.1.sp,
                         )
                         Text(
                             text = "Staff Dashboard",
                             color = Color.White,
-                            fontSize = 24.sp,
+                            fontSize = adaptiveSp(24f, fontScale, minRatio = 0.72f),
                             fontWeight = FontWeight.ExtraBold,
-                            lineHeight = 27.sp,
+                            lineHeight = adaptiveSp(27f, fontScale, minRatio = 0.72f),
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
                             text = "Track admissions, fees, renewals, jersey orders, and coaching batches in one place.",
                             color = Color.White.copy(alpha = 0.86f),
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp,
+                            fontSize = adaptiveSp(14f, fontScale, minRatio = 0.72f),
+                            lineHeight = adaptiveSp(20f, fontScale, minRatio = 0.72f),
                         )
                     }
 
@@ -1360,13 +1411,13 @@ private fun HeaderSection(
                                     Text(
                                         text = "Staff signed in",
                                         color = Color.White.copy(alpha = 0.72f),
-                                        fontSize = 11.sp,
+                                        fontSize = adaptiveSp(11f, fontScale, minRatio = 0.78f),
                                         fontWeight = FontWeight.Bold,
                                     )
                                     Text(
                                         text = session.email,
                                         color = Color.White,
-                                        fontSize = 14.sp,
+                                        fontSize = adaptiveSp(14f, fontScale, minRatio = 0.74f),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
@@ -1382,7 +1433,7 @@ private fun HeaderSection(
                                     Text(
                                         "Logout",
                                         color = Color.White,
-                                        fontSize = 11.sp,
+                                        fontSize = adaptiveSp(11f, fontScale, minRatio = 0.78f),
                                         fontWeight = FontWeight.Bold,
                                         maxLines = 1,
                                     )
@@ -1846,37 +1897,73 @@ private fun FinancePanel(
                             modifier = Modifier
                                 .padding(horizontal = 12.dp, vertical = 6.dp)
                                 .fillMaxWidth(),
-                            shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
+                            shape = RoundedCornerShape(20.dp),
+                            color = MaterialTheme.colorScheme.background.copy(alpha = 0.80f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
                         ) {
-                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                    Text(expense.comment?.takeIf { it.isNotBlank() } ?: expense.expenseType, modifier = Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                    Text(formatCurrency(expense.amount), color = BrandRed, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
-                                }
-                                Text(
-                                    "${com.genalpha.cricketacademy.data.displayDate(expense.expenseDate)} • Paid by ${expense.paidBy}",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
-                                )
-                                TextButton(
-                                    enabled = deletingExpenseId != expense.id,
-                                    onClick = {
-                                        scope.launch {
-                                            deletingExpenseId = expense.id
-                                            val result = onDeleteExpense(expense.id)
-                                            expenseMessage = result.message
-                                            deletingExpenseId = null
-                                        }
-                                    },
-                                    modifier = Modifier.align(Alignment.End),
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(13.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(5.dp),
                                 ) {
-                                    if (deletingExpenseId == expense.id) {
-                                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Deleting", fontSize = 12.sp)
-                                    } else {
-                                        Text("Delete expense", color = BrandRed, fontSize = 12.sp)
+                                    Text(
+                                        text = expense.expenseType,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        text = expense.comment?.takeIf { it.isNotBlank() } ?: "No comment",
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        text = "${com.genalpha.cricketacademy.data.displayDate(expense.expenseDate)} • ${expense.paidBy}",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.52f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                Column(
+                                    horizontalAlignment = Alignment.End,
+                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    Text(
+                                        formatCurrency(expense.amount),
+                                        color = BrandRed,
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        maxLines = 1,
+                                    )
+                                    TextButton(
+                                        enabled = deletingExpenseId != expense.id,
+                                        onClick = {
+                                            scope.launch {
+                                                deletingExpenseId = expense.id
+                                                val result = onDeleteExpense(expense.id)
+                                                expenseMessage = result.message
+                                                deletingExpenseId = null
+                                            }
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                        modifier = Modifier.heightIn(min = 28.dp),
+                                    ) {
+                                        if (deletingExpenseId == expense.id) {
+                                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                        } else {
+                                            Text("Delete", color = BrandRed, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
                                     }
                                 }
                             }
@@ -3207,30 +3294,50 @@ private fun StudentMovementCard(
     maxValue: Int,
     onMovementClick: (StudentMovementMonth, String) -> Unit,
 ) {
+    val activeCount = (month.continuing + month.joined - month.discontinued).coerceAtLeast(0)
+
     Surface(
-        modifier = Modifier.width(148.dp),
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+        modifier = Modifier.width(156.dp),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.background.copy(alpha = 0.76f),
+        border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.10f)),
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(month.label, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(month.label, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = BrandBlue.copy(alpha = 0.10f),
+                ) {
+                    Text(
+                        text = "$activeCount active",
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        color = BrandBlue,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                    )
+                }
+            }
             Row(
                 modifier = Modifier
                     .height(76.dp)
                     .fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.Bottom,
             ) {
-                MovementBar(month.continuing, maxValue, BrandBlue)
-                MovementBar(month.joined, maxValue, BrandGreen)
+                MovementBar(month.joined, maxValue, BrandBlue)
+                MovementBar(month.continuing, maxValue, BrandGreen)
                 MovementBar(month.discontinued, maxValue, BrandRed)
             }
-            MovementLegendLine("Continuing", month.continuing, BrandBlue) { onMovementClick(month, "continuing") }
-            MovementLegendLine("Joined", month.joined, BrandGreen) { onMovementClick(month, "joined") }
+            MovementLegendLine("Joined", month.joined, BrandBlue) { onMovementClick(month, "joined") }
+            MovementLegendLine("Continuing", month.continuing, BrandGreen) { onMovementClick(month, "continuing") }
             MovementLegendLine("Left", month.discontinued, BrandRed) { onMovementClick(month, "left") }
         }
     }
@@ -3240,9 +3347,14 @@ private fun StudentMovementCard(
 private fun MovementBar(value: Int, maxValue: Int, color: Color) {
     Box(
         modifier = Modifier
-            .width(18.dp)
+            .width(20.dp)
             .height(((value.toFloat() / maxValue.toFloat()) * 68f).coerceAtLeast(8f).dp)
-            .background(color, RoundedCornerShape(topStart = 99.dp, topEnd = 99.dp, bottomStart = 5.dp, bottomEnd = 5.dp))
+            .background(
+                Brush.verticalGradient(
+                    listOf(color.copy(alpha = 0.92f), color)
+                ),
+                RoundedCornerShape(topStart = 99.dp, topEnd = 99.dp, bottomStart = 6.dp, bottomEnd = 6.dp)
+            )
     )
 }
 
@@ -3985,6 +4097,9 @@ private fun RosterRow(
     highlighted: Boolean = false,
     onOpen: () -> Unit,
     onEdit: () -> Unit,
+    onRenew: (() -> Unit)? = null,
+    onSendReminder: (() -> Unit)? = null,
+    onToggleStatus: (() -> Unit)? = null,
 ) {
     val needsAttention = student.isFeesPending() || student.isRenewalPending(payments)
     val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
@@ -4000,154 +4115,376 @@ private fun RosterRow(
     val renewalOkTone = themedBadgeTone(Color(0xFFEAF8F2), BrandGreen, DarkSuccessContainer, DarkSuccessText)
     val renewalPendingTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
     val feeLabel = student.feeStatusLabel(paymentFollowUp, payments)
+    val renewalStatusLabel = student.renewalStatus(payments)
+    var showingActions by rememberSaveable(student.id) { mutableStateOf(false) }
+    val rotation by animateFloatAsState(
+        targetValue = if (showingActions) 180f else 0f,
+        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+        label = "roster-card-flip",
+    )
+    val showBack = isManager && rotation > 90f
+    val density = LocalDensity.current
+    val baseContainer = when {
+        highlighted -> highlightedContainer
+        needsAttention && isDarkTheme -> DarkAttentionCard
+        needsAttention -> Color(0xFFFFFCF3)
+        else -> MaterialTheme.colorScheme.surface
+    }
+    val baseBorder = when {
+        highlighted -> BorderStroke(2.dp, highlightedBorder)
+        needsAttention -> BorderStroke(1.dp, if (isDarkTheme) DarkAttentionBorder else Color(0x33F4BE2E))
+        else -> BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.10f))
+    }
 
-    Card(
+    LaunchedEffect(isManager) {
+        if (!isManager) showingActions = false
+    }
+
+    Box(
         modifier = Modifier
-            .animateContentSize()
-            .clickable(onClick = onOpen),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = when {
-                highlighted -> highlightedContainer
-                needsAttention && isDarkTheme -> DarkAttentionCard
-                needsAttention -> Color(0xFFFFFAEC)
-                else -> MaterialTheme.colorScheme.surface
-            }
-        ),
-        border = when {
-            highlighted -> BorderStroke(2.dp, highlightedBorder)
-            needsAttention -> BorderStroke(1.dp, if (isDarkTheme) DarkAttentionBorder else Color(0x33F4BE2E))
-            else -> null
-        },
+            .fillMaxWidth()
+            .animateContentSize(),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+        if (showBack) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer {
+                        rotationY = rotation - 180f
+                        cameraDistance = 18f * density.density
+                    },
+                shape = RoundedCornerShape(26.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, BrandBlue.copy(alpha = if (isDarkTheme) 0.45f else 0.22f)),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = student.name,
-                        fontSize = 18.sp,
-                        lineHeight = 20.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    if (student.isSpecialTraining(payments)) {
-                        Surface(
-                            color = Color(0xFFFFF9E6),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, Color(0xFFF4BE2E))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.linearGradient(
+                                colors = listOf(
+                                    BrandBlue.copy(alpha = if (isDarkTheme) 0.22f else 0.10f),
+                                    BrandGold.copy(alpha = if (isDarkTheme) 0.10f else 0.06f),
+                                    MaterialTheme.colorScheme.surface,
+                                )
+                            )
+                        )
+                        .padding(16.dp),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Manage player",
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                )
+                                Text(
+                                    text = student.name,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            TextButton(onClick = { showingActions = false }) {
+                                Text("Back")
+                            }
+                        }
+
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            RosterActionButton(
+                                label = "Profile",
+                                tint = BrandBlue,
+                                onClick = {
+                                    showingActions = false
+                                    onOpen()
+                                },
+                            )
+                            RosterActionButton(
+                                label = "Edit details",
+                                tint = BrandBlue,
+                                onClick = {
+                                    showingActions = false
+                                    onEdit()
+                                },
+                            )
+                            onRenew?.let { renew ->
+                                RosterActionButton(
+                                    label = "Renew payment",
+                                    tint = BrandGreen,
+                                    onClick = {
+                                        showingActions = false
+                                        renew()
+                                    },
+                                )
+                            }
+                            onSendReminder?.let { sendReminder ->
+                                RosterActionButton(
+                                    label = "Send reminder",
+                                    tint = Color(0xFF9A6400),
+                                    onClick = {
+                                        showingActions = false
+                                        sendReminder()
+                                    },
+                                )
+                            }
+                            onToggleStatus?.let { toggle ->
+                                RosterActionButton(
+                                    label = if (student.discontinued) "Mark active" else "Discontinue",
+                                    tint = if (student.discontinued) BrandGreen else BrandRed,
+                                    onClick = {
+                                        showingActions = false
+                                        toggle()
+                                    },
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = "Delete stays inside the player profile so it cannot be tapped by mistake.",
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.56f),
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                        )
+                    }
+                }
+            }
+        } else {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer {
+                        rotationY = rotation
+                        cameraDistance = 18f * density.density
+                    }
+                    .clickable(onClick = onOpen),
+                shape = RoundedCornerShape(26.dp),
+                colors = CardDefaults.cardColors(containerColor = baseContainer),
+                border = baseBorder,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = student.name,
+                                    fontSize = 18.sp,
+                                    lineHeight = 21.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false),
+                                )
+                                if (student.isSpecialTraining(payments)) {
+                                    Surface(
+                                        color = Color(0xFFFFF9E6),
+                                        shape = RoundedCornerShape(999.dp),
+                                        border = BorderStroke(1.dp, Color(0xFFF4BE2E))
+                                    ) {
+                                        Text(
+                                            text = "SPECIAL",
+                                            color = Color(0xFF8F6500),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Black,
+                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                        )
+                                    }
+                                }
+                            }
                             Text(
-                                text = "★ SPECIAL",
-                                color = Color(0xFF8F6500),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Black,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                text = "${student.tenureBadgeLabel()} training  •  Joined ${displayDate(student.joinDate)}",
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Badge(
+                            label = if (student.discontinued) "Discontinued" else "Active",
+                            container = if (student.discontinued) discontinuedTone.container else activeTone.container,
+                            color = if (student.discontinued) discontinuedTone.text else activeTone.text,
+                        )
+                    }
+
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Badge(
+                            label = student.timeSlot.ifBlank { "Not set" },
+                            container = slotTone.container,
+                            color = slotTone.text,
+                        )
+                        Badge(
+                            label = feeLabel,
+                            container = when {
+                                feeLabel == "Reminder sent" -> feeReminderTone.container
+                                student.feesPaid -> feePaidTone.container
+                                feeLabel == "Pending verification" -> feeVerificationTone.container
+                                else -> feePendingTone.container
+                            },
+                            color = when {
+                                feeLabel == "Reminder sent" -> feeReminderTone.text
+                                student.feesPaid -> feePaidTone.text
+                                feeLabel == "Pending verification" -> feeVerificationTone.text
+                                else -> feePendingTone.text
+                            },
+                        )
+                        Badge(
+                            label = renewalStatusLabel,
+                            container = when {
+                                student.discontinued -> discontinuedTone.container
+                                student.isFeesPending() -> feePendingTone.container
+                                student.isRenewalPending(payments) -> renewalPendingTone.container
+                                else -> renewalOkTone.container
+                            },
+                            color = when {
+                                student.discontinued -> discontinuedTone.text
+                                student.isFeesPending() -> feePendingTone.text
+                                student.isRenewalPending(payments) -> renewalPendingTone.text
+                                else -> renewalOkTone.text
+                            },
+                        )
+                    }
+
+                    student.cardTimelineLabel(payments)?.let { timeline ->
+                        Text(
+                            text = timeline,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+
+                    if (onRenew != null && isManager) {
+                        OutlinedButton(
+                            onClick = {
+                                showingActions = false
+                                onRenew()
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 44.dp),
+                            shape = RoundedCornerShape(999.dp),
+                            border = BorderStroke(1.dp, BrandGreen.copy(alpha = 0.35f)),
+                            colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                                containerColor = BrandGreen.copy(alpha = if (isDarkTheme) 0.14f else 0.08f),
+                                contentColor = BrandGreen,
+                            ),
+                        ) {
+                            Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Renew Payment", fontWeight = FontWeight.ExtraBold)
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = if (student.jerseySize.isBlank() && student.jerseyPairs <= 0) {
+                                "Jersey not set"
+                            } else {
+                                "Jersey ${student.jerseySize.ifBlank { "TBD" }} • ${student.jerseyPairs} pair${if (student.jerseyPairs == 1) "" else "s"}"
+                            },
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.52f),
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (isManager) {
+                            Surface(
+                                onClick = { showingActions = true },
+                                shape = RoundedCornerShape(999.dp),
+                                color = BrandBlue.copy(alpha = if (isDarkTheme) 0.22f else 0.10f),
+                                border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.20f)),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(15.dp), tint = BrandBlue)
+                                    Text(
+                                        text = "Manage",
+                                        color = BrandBlue,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                    )
+                                }
+                            }
+                        } else {
+                            Text(
+                                text = "Tap for profile",
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
                             )
                         }
                     }
                 }
-                Text(
-                    text = "Age ${student.age}  •  ${student.tenureBadgeLabel()} with academy  •  Joined ${displayDate(student.joinDate)}",
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-                    fontSize = 13.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = if (student.jerseySize.isBlank() && student.jerseyPairs <= 0) {
-                        "Jersey not set"
-                    } else {
-                        "Jersey ${student.jerseySize.ifBlank { "TBD" }}  •  ${student.jerseyPairs} pair${if (student.jerseyPairs == 1) "" else "s"}"
-                    },
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                student.cardTimelineLabel(payments)?.let { timeline ->
-                    Text(
-                        text = timeline,
-                        color = if (student.discontinued) {
-                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        } else {
-                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.74f)
-                        },
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Badge(
-                        label = student.timeSlot.ifBlank { "Not set" },
-                        container = slotTone.container,
-                        color = slotTone.text,
-                    )
-                    Badge(
-                        label = if (student.discontinued) "Discontinued" else "Active",
-                        container = if (student.discontinued) discontinuedTone.container else activeTone.container,
-                        color = if (student.discontinued) discontinuedTone.text else activeTone.text,
-                    )
-                }
-            }
-
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Badge(
-                    label = feeLabel,
-                    container = when {
-                        feeLabel == "Reminder sent" -> feeReminderTone.container
-                        student.feesPaid -> feePaidTone.container
-                        feeLabel == "Pending verification" -> feeVerificationTone.container
-                        else -> feePendingTone.container
-                    },
-                    color = when {
-                        feeLabel == "Reminder sent" -> feeReminderTone.text
-                        student.feesPaid -> feePaidTone.text
-                        feeLabel == "Pending verification" -> feeVerificationTone.text
-                        else -> feePendingTone.text
-                    },
-                )
-                Badge(
-                    label = student.renewalStatus(payments),
-                    container = when {
-                        student.discontinued -> discontinuedTone.container
-                        student.isRenewalPending(payments) -> renewalPendingTone.container
-                        else -> renewalOkTone.container
-                    },
-                    color = when {
-                        student.discontinued -> discontinuedTone.text
-                        student.isRenewalPending(payments) -> renewalPendingTone.text
-                        else -> renewalOkTone.text
-                    },
-                )
-                if (isManager) {
-                    TextButton(
-                        onClick = onEdit,
-                        modifier = Modifier.heightIn(min = 34.dp),
-                    ) {
-                        Text("Edit")
-                    }
-                } else {
-                    Text(
-                        text = "Tap for details",
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                        fontSize = 12.sp,
-                    )
-                }
             }
         }
+    }
+}
+
+@Composable
+private fun RosterActionButton(
+    label: String,
+    tint: Color,
+    onClick: () -> Unit,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier
+            .heightIn(min = 46.dp)
+            .widthIn(min = 146.dp),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, tint.copy(alpha = 0.28f)),
+        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+            containerColor = tint.copy(alpha = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) 0.16f else 0.07f),
+            contentColor = tint,
+        ),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        Text(
+            text = label,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -4175,6 +4512,7 @@ private fun PlayerDetailSheet(
     var actionInProgress by rememberSaveable(student.id) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val fontScale = LocalDensity.current.fontScale
     val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val slotTone = themedBadgeTone(Color(0xFFEAF2FF), BrandBlueDeep, DarkInfoContainer, DarkInfoText)
     val newTone = themedBadgeTone(Color(0xFFEAF2FF), BrandBlueDeep, DarkInfoContainer, DarkInfoText)
@@ -4238,15 +4576,27 @@ private fun PlayerDetailSheet(
                 verticalAlignment = Alignment.Top,
             ) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Player Profile", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandBlue)
+                    Text(
+                        "Player Profile",
+                        fontSize = adaptiveSp(11f, fontScale, minRatio = 0.78f),
+                        fontWeight = FontWeight.Bold,
+                        color = BrandBlue,
+                    )
                     Text(
                         text = student.name,
-                        fontSize = 26.sp, lineHeight = 28.sp,
+                        fontSize = adaptiveSp(26f, fontScale, minRatio = 0.70f),
+                        lineHeight = adaptiveSp(29f, fontScale, minRatio = 0.70f),
                         fontWeight = FontWeight.ExtraBold,
                         color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     student.regNo?.let {
-                        Text("Reg #$it", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f))
+                        Text(
+                            "Reg #$it",
+                            fontSize = adaptiveSp(12f, fontScale, minRatio = 0.76f),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                        )
                     }
                 }
                 IconButton(onClick = onDismiss, modifier = Modifier.size(34.dp)) {
@@ -4371,6 +4721,7 @@ private fun PlayerDetailSheet(
                         value = student.renewalStatus(payments),
                         accent = when {
                             student.discontinued -> discontinuedTone.text
+                            student.isFeesPending() -> BrandRed
                             student.isRenewalPending(payments) -> BrandRed
                             else -> BrandGreen
                         },
@@ -4519,52 +4870,11 @@ private fun PlayerDetailSheet(
                 }
             }
 
-            // ── Timeline ──
             ProfileSectionCard(title = "Timeline") {
-                when {
-                    isTimelineLoading -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                        Text("Loading timeline…", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f), fontSize = 12.sp)
-                    }
-                    timeline.isEmpty() -> Text(
-                        "No timeline events recorded yet.",
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                        fontSize = 12.sp,
-                    )
-                    else -> timeline.take(12).forEach { item ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                            val dotColor = when (item.eventType) {
-                                "admission", "created" -> BrandBlue
-                                "renewal_paid" -> BrandGreen
-                                "fees_updated" -> BrandGold
-                                "discontinued" -> BrandRed
-                                "active" -> BrandGreen
-                                else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .padding(top = 5.dp)
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(dotColor)
-                            )
-                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(item.title, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, lineHeight = 15.sp)
-                                Text(
-                                    "${displayDate(item.eventDate)} • ${item.changedBy.orEmpty().ifBlank { "System" }}",
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.52f),
-                                    fontSize = 10.sp, lineHeight = 13.sp,
-                                )
-                                if (!item.details.isNullOrBlank()) {
-                                    Text(item.details, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f), fontSize = 10.sp, lineHeight = 13.sp)
-                                }
-                                if (item.proofUrl.isNotBlank()) {
-                                    PaymentProofThumbnail(url = item.proofUrl)
-                                }
-                            }
-                        }
-                    }
-                }
+                PlayerTimelineList(
+                    timeline = timeline.take(12),
+                    isLoading = isTimelineLoading,
+                )
             }
 
             // ── Footer ──
@@ -4598,6 +4908,148 @@ private fun PlayerDetailSheet(
 
             Spacer(modifier = Modifier.height(8.dp))
         }
+    }
+}
+
+@Composable
+private fun PlayerTimelineList(
+    timeline: List<StudentTimelineItem>,
+    isLoading: Boolean,
+) {
+    when {
+        isLoading -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+            Text("Loading timeline...", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f), fontSize = 12.sp)
+        }
+        timeline.isEmpty() -> Text(
+            "No timeline events recorded yet.",
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+            fontSize = 12.sp,
+        )
+        else -> Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            timeline.forEachIndexed { index, item ->
+                PlayerTimelineEvent(
+                    item = item,
+                    isLast = index == timeline.lastIndex,
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PlayerTimelineEvent(
+    item: StudentTimelineItem,
+    isLast: Boolean,
+) {
+    val eventText = "${item.eventType} ${item.title} ${item.details.orEmpty()}".lowercase()
+    val dotColor = when {
+        eventText.contains("failed") || eventText.contains("error") -> BrandRed
+        eventText.contains("confirmed") ||
+            eventText.contains("paid") ||
+            eventText.contains("payment") ||
+            eventText.contains("renew") -> BrandGreen
+        eventText.contains("reminder") ||
+            eventText.contains("whatsapp") ||
+            eventText.contains("message") -> BrandGold
+        item.eventType in listOf("admission", "created") -> BrandBlue
+        item.eventType == "discontinued" -> BrandRed
+        item.eventType == "active" -> BrandGreen
+        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f)
+    }
+    val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Column(
+            modifier = Modifier.width(18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(top = 12.dp)
+                    .size(12.dp)
+                    .background(dotColor.copy(alpha = 0.18f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .background(dotColor, CircleShape)
+                )
+            }
+            if (!isLast) {
+                Box(
+                    modifier = Modifier
+                        .width(2.dp)
+                        .height(58.dp)
+                        .background(dotColor.copy(alpha = if (isDarkTheme) 0.30f else 0.18f), RoundedCornerShape(99.dp))
+                )
+            }
+        }
+
+        Surface(
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(18.dp),
+            color = dotColor.copy(alpha = if (isDarkTheme) 0.13f else 0.07f),
+            border = BorderStroke(1.dp, dotColor.copy(alpha = if (isDarkTheme) 0.24f else 0.14f)),
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Text(
+                    item.title,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 13.sp,
+                    lineHeight = 16.sp,
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    TimelineMetaChip(displayDate(item.eventDate), dotColor)
+                    TimelineMetaChip(item.changedBy.orEmpty().ifBlank { "System" }, dotColor)
+                }
+                if (!item.details.isNullOrBlank()) {
+                    Text(
+                        item.details,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                    )
+                }
+                if (item.proofUrl.isNotBlank()) {
+                    PaymentProofThumbnail(url = item.proofUrl)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimelineMetaChip(
+    label: String,
+    tint: Color,
+) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = tint.copy(alpha = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) 0.16f else 0.09f),
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -4676,6 +5128,8 @@ private fun ProfileSectionCard(
     title: String,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val fontScale = LocalDensity.current.fontScale
+
     Surface(
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.background.copy(alpha = 0.84f),
@@ -4688,7 +5142,7 @@ private fun ProfileSectionCard(
                 text = title,
                 fontWeight = FontWeight.ExtraBold,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
-                fontSize = 12.sp,
+                fontSize = adaptiveSp(12f, fontScale, minRatio = 0.78f),
                 letterSpacing = 0.04.em,
             )
             content()
@@ -4699,6 +5153,7 @@ private fun ProfileSectionCard(
 @Composable
 private fun Badge(label: String, container: Color, color: Color) {
     val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val fontScale = LocalDensity.current.fontScale
     val resolvedContainer = if (isDarkTheme) {
         Color(container.red, container.green, container.blue, 0.22f)
     } else {
@@ -4714,8 +5169,10 @@ private fun Badge(label: String, container: Color, color: Color) {
             text = label,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             color = resolvedColor,
-            fontSize = 12.sp,
+            fontSize = adaptiveSp(12f, fontScale, minRatio = 0.78f),
             fontWeight = FontWeight.Bold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -4738,6 +5195,8 @@ private fun DataTileContent(
     accent: Color,
     onClick: (() -> Unit)? = null,
 ) {
+    val fontScale = LocalDensity.current.fontScale
+
     Surface(
         modifier = modifier.then(
             if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
@@ -4754,18 +5213,20 @@ private fun DataTileContent(
             Text(
                 text = if (onClick != null) "${label.uppercase(Locale.getDefault())} >" else label.uppercase(Locale.getDefault()),
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                fontSize = 11.sp,
+                fontSize = adaptiveSp(10.5f, fontScale, minRatio = 0.76f),
+                lineHeight = adaptiveSp(12.5f, fontScale, minRatio = 0.76f),
                 fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp,
-                maxLines = 1,
+                letterSpacing = 0.4.sp,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = value,
                 color = accent,
-                fontSize = 14.sp,
+                fontSize = adaptiveSp(15f, fontScale, minRatio = 0.72f),
+                lineHeight = adaptiveSp(18f, fontScale, minRatio = 0.72f),
                 fontWeight = FontWeight.Bold,
-                maxLines = 2,
+                maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
             )
         }

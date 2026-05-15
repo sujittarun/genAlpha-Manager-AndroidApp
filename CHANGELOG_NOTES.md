@@ -1,6 +1,6 @@
 # Gen Alpha Manager Changelog Notes
 
-Last updated: 2026-05-09
+Last updated: 2026-05-15
 
 This file records meaningful project changes and decisions so future Codex sessions can understand recent work without rereading the full chat. It is not a release changelog for users; it is a developer/manager memory log.
 
@@ -12,6 +12,32 @@ Use this file when:
 - A future agent needs to understand why a design or business rule exists.
 
 For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
+
+## 2026-05-15
+
+### WhatsApp Renewal Flow Audit Trail
+
+- Added `supabase/whatsapp-flow-audit.sql` to create `whatsapp_flow_events`, an append-only ledger for reminder/payment events with explicit SQL columns for message id, direction, status, sent/delivered/read/failed times, payment plan/amount/months/date range, proof storage path, and provider payload.
+- Extended `reminder_events` and `payment_link_requests` with timestamps for payment link sent, Pay Now clicked, pending verification, payment confirmed, and confirmation message delivery/read tracking.
+- Updated the `whatsapp-reminder` Edge Function to log manual reminders, auto reminders, parent plan button taps, payment link sends, Pay Now clicks, parent “Paid”/screenshot replies, verification replies, help replies, manager payment confirmations, Meta delivery/read/failure callbacks, and admission payment reminders.
+- Player timelines now receive mirrored WhatsApp flow events via DB trigger, and web/native timeline coloring treats failed/error events distinctly from payment/reminder/admission events.
+- Verification done:
+  - `deno check supabase/functions/whatsapp-reminder/index.ts`
+  - `node --check web-app-repo/script.js`
+  - `./gradlew assembleDebug`
+
+### Android Native Roster UI Upgrade
+
+- Reworked Android roster cards to feel more native and compact than the mobile browser version.
+- Player cards now show a clean front summary with status/fee chips, direct Renew Payment CTA when renewal is due, and a Manage chip for staff.
+- Staff Manage opens a Compose-native quick action face with Profile, Edit details, Renew payment, Send reminder, and Discontinue/Mark active actions; Delete remains inside the player profile to avoid accidental destructive taps.
+- Student movement cards now use the same color meaning as the browser chart: Joined blue, Continuing green, Left red, with improved active count and bar styling.
+- Player profile timeline was redesigned from a plain log list into colored event cards with a vertical rail, metadata chips, details text, and payment proof thumbnail support.
+- Android finance expense rows were compacted into modern finance cards with clearer type/comment/date/paid-by/amount/delete layout.
+- Verification done:
+  - `./gradlew assembleDebug`
+  - Installed the debug APK on `emulator-5554` and exercised Admission, Attendance, Staff login, Roster, Player Profile, and Finance in large-font mode.
+  - Confirmed relaunch returns to the public Admission view instead of silently keeping manager access unlocked.
 
 ## 2026-05-12
 
