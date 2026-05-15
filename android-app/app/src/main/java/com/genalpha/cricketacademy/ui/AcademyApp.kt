@@ -57,6 +57,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.AttachMoney
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Notifications
@@ -315,6 +316,28 @@ private enum class AppView(val label: String) {
     Finance("Finance"),
 }
 
+@Composable
+private fun appBackgroundBrush(): Brush {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    return if (isDark) {
+        Brush.verticalGradient(
+            listOf(
+                Color(0xFF050B16),
+                Color(0xFF0C1A2C),
+                Color(0xFF07101D),
+            )
+        )
+    } else {
+        Brush.verticalGradient(
+            listOf(
+                Color(0xFFEAF2FB),
+                Color(0xFFFFF7DD),
+                Color(0xFFF7FAFF),
+            )
+        )
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 
 @Composable
@@ -322,45 +345,74 @@ private fun PublicViewHeader(
     title: String,
     subtitle: String,
 ) {
-    Card(
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    val fontScale = LocalDensity.current.fontScale
+    val isAdmission = title.contains("Admission", ignoreCase = true)
+    val isFinance = title.contains("Finance", ignoreCase = true)
+    val accent = when {
+        isFinance -> BrandGreen
+        isAdmission -> BrandGold
+        else -> BrandBlue
+    }
+    Surface(
+        shape = RoundedCornerShape(30.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f)),
+        tonalElevation = 1.dp,
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(
+                    Brush.linearGradient(
+                        listOf(
+                            accent.copy(alpha = if (isAdmission) 0.16f else 0.10f),
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                        )
+                    )
+                )
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    Text(
+                        text = "GEN ALPHA CRICKET ACADEMY",
+                        color = BrandBlue,
+                        fontSize = adaptiveSp(10f, fontScale, minRatio = 0.78f),
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.0.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     Text(
                         text = title,
                         color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 22.sp,
-                        lineHeight = 25.sp,
+                        fontSize = adaptiveSp(24f, fontScale, minRatio = 0.72f),
+                        lineHeight = adaptiveSp(27f, fontScale, minRatio = 0.72f),
                         fontWeight = FontWeight.ExtraBold,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    Text(
+                        text = subtitle,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
+                        fontSize = adaptiveSp(13f, fontScale, minRatio = 0.76f),
+                        lineHeight = adaptiveSp(18f, fontScale, minRatio = 0.76f),
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
                 BrandPosterCard(
-                    modifier = Modifier.widthIn(min = 58.dp, max = 66.dp),
-                    imageModifier = Modifier.height(76.dp),
+                    modifier = Modifier.widthIn(min = 62.dp, max = 78.dp),
+                    imageModifier = Modifier.height(82.dp),
                 )
             }
-            Text(
-                text = subtitle,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-                fontSize = 13.sp,
-                lineHeight = 18.sp,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
     }
 }
@@ -372,81 +424,126 @@ private fun PlayerViewHeader(
     onRefresh: () -> Unit,
     isRefreshing: Boolean,
 ) {
-    Card(
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    val fontScale = LocalDensity.current.fontScale
+    val remaining = (totalCount - presentCount).coerceAtLeast(0)
+    Surface(
+        shape = RoundedCornerShape(30.dp),
+        color = Color.Transparent,
+        tonalElevation = 1.dp,
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(
+                    Brush.linearGradient(
+                        listOf(Color(0xFF0B2A5E), BrandBlue, Color(0xFF09204B))
+                    ),
+                    RoundedCornerShape(30.dp),
+                )
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top,
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = "Player Check-In",
-                        color = BrandBlue,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        text = "Today's attendance",
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 24.sp,
-                        lineHeight = 27.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                    )
-                }
-                Column(
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        Text(
+                            text = "PLAYER CHECK-IN",
+                            color = Color.White.copy(alpha = 0.72f),
+                            fontSize = adaptiveSp(10f, fontScale, minRatio = 0.78f),
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.0.sp,
+                        )
+                        Text(
+                            text = "Tap once. Done.",
+                            color = Color.White,
+                            fontSize = adaptiveSp(26f, fontScale, minRatio = 0.70f),
+                            lineHeight = adaptiveSp(28f, fontScale, minRatio = 0.70f),
+                            fontWeight = FontWeight.ExtraBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = "Young players can mark attendance safely with large cards below.",
+                            color = Color.White.copy(alpha = 0.78f),
+                            fontSize = adaptiveSp(12f, fontScale, minRatio = 0.78f),
+                            lineHeight = adaptiveSp(17f, fontScale, minRatio = 0.78f),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     FilledTonalIconButton(
                         onClick = onRefresh,
-                        modifier = Modifier.size(38.dp),
+                        modifier = Modifier.size(42.dp),
+                        shape = RoundedCornerShape(15.dp),
+                        colors = androidx.compose.material3.IconButtonDefaults.filledTonalIconButtonColors(
+                            containerColor = Color.White.copy(alpha = 0.14f),
+                            contentColor = Color.White,
+                        ),
                     ) {
                         if (isRefreshing) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
                         } else {
                             Icon(Icons.Outlined.Refresh, contentDescription = "Refresh attendance")
                         }
                     }
-                    BrandPosterCard(
-                        modifier = Modifier.widthIn(min = 62.dp, max = 70.dp),
-                        imageModifier = Modifier.height(76.dp),
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    AttendanceHeroMetric(
+                        modifier = Modifier.weight(1f),
+                        title = "Present",
+                        value = presentCount,
+                        accent = BrandGreen,
+                    )
+                    AttendanceHeroMetric(
+                        modifier = Modifier.weight(1f),
+                        title = "Pending",
+                        value = remaining,
+                        accent = BrandGold,
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AttendanceHeroMetric(
+    modifier: Modifier,
+    title: String,
+    value: Int,
+    accent: Color,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        color = Color.White.copy(alpha = 0.13f),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
-                text = "Tap your name once to mark present. The button turns green after today's check-in.",
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
+                title.uppercase(Locale.getDefault()),
+                color = Color.White.copy(alpha = 0.70f),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 1,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                CompactStatCard(
-                    modifier = Modifier.weight(1f),
-                    title = "Present",
-                    value = presentCount,
-                    accent = BrandGreen,
-                )
-                CompactStatCard(
-                    modifier = Modifier.weight(1f),
-                    title = "Remaining",
-                    value = (totalCount - presentCount).coerceAtLeast(0),
-                    accent = BrandGold,
-                )
-            }
+            Text(
+                value.toString(),
+                color = accent,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+            )
         }
     }
 }
@@ -604,6 +701,9 @@ fun AcademyApp(viewModel: AcademyViewModel) {
         if (selectedView == AppView.Player) {
             viewModel.loadTodayAttendance()
         }
+        if (!(selectedView == AppView.Manager && rosterScrollTargetId != null)) {
+            mainListState.scrollToItem(0)
+        }
     }
 
     LaunchedEffect(rosterScrollTargetId, selectedView, rosterSections, rosterMovementLabel) {
@@ -690,6 +790,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background),
+            containerColor = Color.Transparent,
             snackbarHost = { SnackbarHost(snackbarHostState) },
             bottomBar = {
                 AppBottomBar(
@@ -749,7 +850,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background)
+                    .background(appBackgroundBrush())
             ) {
                 LazyColumn(
                     state = mainListState,
@@ -758,12 +859,12 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         .statusBarsPadding()
                         .nestedScroll(financePullRefreshState.nestedScrollConnection),
                     contentPadding = PaddingValues(
-                        start = 16.dp,
-                        end = 16.dp,
-                        top = innerPadding.calculateTopPadding() + 12.dp,
-                        bottom = innerPadding.calculateBottomPadding() + 96.dp,
+                        start = 14.dp,
+                        end = 14.dp,
+                        top = innerPadding.calculateTopPadding() + 8.dp,
+                        bottom = innerPadding.calculateBottomPadding() + 196.dp,
                     ),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     if (selectedView == AppView.Manager) {
                     item {
@@ -1606,17 +1707,88 @@ private fun AlertNameSection(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AdmissionActionsSection(
     onOpen: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f)),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.linearGradient(
+                            listOf(
+                                BrandGold.copy(alpha = 0.15f),
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+                                BrandBlue.copy(alpha = 0.07f),
+                            )
+                        )
+                    )
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = BrandBlue.copy(alpha = 0.10f),
+                    ) {
+                        Icon(
+                            Icons.Outlined.PersonAddAlt1,
+                            contentDescription = null,
+                            tint = BrandBlue,
+                            modifier = Modifier.padding(14.dp).size(26.dp),
+                        )
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = "First-time admission",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 20.sp,
+                            lineHeight = 23.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = "Parent details, training slot, jersey info, consent, and optional UPI payment in one guided form.",
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    MiniPromiseChip("Reg no auto")
+                    MiniPromiseChip("Jersey size")
+                    MiniPromiseChip("Consent")
+                    MiniPromiseChip("UPI optional")
+                }
+            }
+        }
         Button(
             onClick = onOpen,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(60.dp),
-            shape = RoundedCornerShape(20.dp),
+                .heightIn(min = 62.dp),
+            shape = RoundedCornerShape(24.dp),
             colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                 containerColor = BrandGold,
                 contentColor = BrandBlueDeep,
@@ -1629,9 +1801,27 @@ private fun AdmissionActionsSection(
             ) {
                 Icon(Icons.Outlined.PersonAddAlt1, contentDescription = null)
                 Spacer(modifier = Modifier.size(10.dp))
-                Text("New Admission Form", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+                Text("Start Admission Form", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
+    }
+}
+
+@Composable
+private fun MiniPromiseChip(label: String) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = BrandBlue.copy(alpha = 0.08f),
+        border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.10f)),
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            color = BrandBlueDeep,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1,
+        )
     }
 }
 
@@ -1641,29 +1831,86 @@ private fun AppBottomBar(
     showFinance: Boolean,
     onSelected: (AppView) -> Unit,
 ) {
-    NavigationBar(
-        containerColor = MaterialTheme.colorScheme.surface,
-        modifier = Modifier.animateContentSize(animationSpec = tween(durationMillis = 320)),
+    val views = AppView.entries.filter { view -> view != AppView.Finance || showFinance }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .animateContentSize(animationSpec = tween(durationMillis = 320)),
+        contentAlignment = Alignment.Center,
     ) {
-        AppView.entries.filter { view -> view != AppView.Finance || showFinance }.forEach { view ->
-            val icon = when (view) {
-                AppView.Admission -> Icons.Outlined.Description
-                AppView.Player -> Icons.Outlined.Person
-                AppView.Manager -> Icons.Outlined.Lock
-                AppView.Finance -> Icons.Outlined.Add
-            }
-            NavigationBarItem(
-                selected = selectedView == view,
-                onClick = { onSelected(view) },
-                icon = { Icon(icon, contentDescription = view.label, modifier = Modifier.size(22.dp)) },
-                label = {
-                    Text(
-                        view.label,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(30.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+            tonalElevation = 8.dp,
+            shadowElevation = 10.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                views.forEach { view ->
+                    AppBottomNavItem(
+                        view = view,
+                        selected = selectedView == view,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onSelected(view) },
                     )
-                },
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppBottomNavItem(
+    view: AppView,
+    selected: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    val icon = when (view) {
+        AppView.Admission -> Icons.Outlined.Description
+        AppView.Player -> Icons.Outlined.Person
+        AppView.Manager -> Icons.Outlined.Lock
+        AppView.Finance -> Icons.Outlined.AttachMoney
+    }
+    val container = if (selected) {
+        if (view == AppView.Admission) BrandGold.copy(alpha = 0.24f) else BrandBlue.copy(alpha = 0.14f)
+    } else {
+        Color.Transparent
+    }
+    val content = when {
+        selected && view == AppView.Admission -> BrandBlueDeep
+        selected -> BrandBlue
+        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f)
+    }
+    Surface(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 48.dp),
+        shape = RoundedCornerShape(20.dp),
+        color = container,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 2.dp, vertical = 5.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Icon(icon, contentDescription = view.label, tint = content, modifier = Modifier.size(19.dp))
+            Spacer(modifier = Modifier.height(1.dp))
+            Text(
+                if (view == AppView.Player) "Attend" else view.label,
+                color = content,
+                fontSize = 9.sp,
+                fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -2180,8 +2427,8 @@ private fun FinanceRangeSelector(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
                 "Finance range",
@@ -2227,17 +2474,23 @@ private fun FinanceRangeSelector(
                     onClick = onPickCustomStart,
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(14.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 7.dp),
                 ) {
-                    Text("From ${displayDate(customStart)}", fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Column(horizontalAlignment = Alignment.Start) {
+                        Text("From", fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f))
+                        Text(displayDate(customStart), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
                 OutlinedButton(
                     onClick = onPickCustomEnd,
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(14.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 7.dp),
                 ) {
-                    Text("To ${displayDate(customEnd)}", fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Column(horizontalAlignment = Alignment.Start) {
+                        Text("To", fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f))
+                        Text(displayDate(customEnd), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
             }
         }
@@ -2470,6 +2723,7 @@ private fun FinanceAddExpenseCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FinanceMiniChart(
     months: List<FinanceMonthSummary>,
@@ -2519,24 +2773,60 @@ private fun FinanceMiniChart(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            Text(month.label, modifier = Modifier.width(42.dp), fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
-                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text("Fees ${formatCurrency(month.fees)}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), maxLines = 1)
-                                Text("Expense ${formatCurrency(month.expenses)}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), maxLines = 1)
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(5.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(month.label, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
+                                    Text(
+                                        formatCurrency(net),
+                                        color = if (net >= 0) BrandGreen else BrandRed,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    FinanceMiniPill("Fees", formatCurrency(month.fees), BrandBlue)
+                                    FinanceMiniPill("Expense", formatCurrency(month.expenses), BrandRed)
+                                }
                             }
-                            Text(
-                                formatCurrency(net),
-                                color = if (net >= 0) BrandGreen else BrandRed,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun FinanceMiniPill(
+    label: String,
+    value: String,
+    tint: Color,
+) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = tint.copy(alpha = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) 0.18f else 0.08f),
+    ) {
+        Text(
+            text = "$label $value",
+            color = tint,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        )
     }
 }
 
@@ -3218,9 +3508,11 @@ private fun CompactStatCard(
             Text(
                 text = title.uppercase(Locale.getDefault()),
                 color = accent,
-                fontSize = 10.sp,
+                fontSize = 8.5.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.9.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = value.toString(),
