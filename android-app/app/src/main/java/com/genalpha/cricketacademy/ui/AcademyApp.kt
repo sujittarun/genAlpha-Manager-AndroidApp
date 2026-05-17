@@ -229,6 +229,13 @@ private fun adaptiveSp(base: Float, fontScale: Float, minRatio: Float = 0.72f): 
 private val DarkAttentionBorder = Color(0x66D7A12B)
 private val AlertBlue = Color(0xFF2266C9)
 private const val MANAGER_VIEW_PIN = "290326"
+private const val CompactMaxFontScale = 0.90f
+
+private fun compactDensityScale(density: Density): Float = when {
+    density.density >= 3.2f -> 0.84f
+    density.density >= 2.8f -> 0.88f
+    else -> 0.92f
+}
 
 private data class SlotOption(
     val value: String,
@@ -779,8 +786,8 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     val density = LocalDensity.current
     val safeDensity = remember(density) {
         Density(
-            density = density.density,
-            fontScale = density.fontScale.coerceIn(0.92f, 1.0f),
+            density = density.density * compactDensityScale(density),
+            fontScale = density.fontScale.coerceAtMost(CompactMaxFontScale),
         )
     }
 
