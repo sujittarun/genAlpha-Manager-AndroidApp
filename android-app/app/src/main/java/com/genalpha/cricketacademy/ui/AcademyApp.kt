@@ -771,7 +771,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
         showEditorSheet = false
         viewModel.setSearchQuery("")
         viewModel.setSlotFilter("all")
-        viewModel.setRosterStatusFilter("all")
+        viewModel.setRosterStatusFilter("active")
         viewModel.setRosterJerseyFilter("all")
         viewModel.setRosterTypeFilter("all")
         viewModel.setRosterFeePaidFilter("all")
@@ -780,6 +780,11 @@ fun AcademyApp(viewModel: AcademyViewModel) {
         rosterMovementType = null
         highlightedRosterStudentId = student.id
         rosterScrollTargetId = student.id
+    }
+
+    fun resetStaffRosterFilters() {
+        viewModel.setRosterStatusFilter("active")
+        viewModel.setRosterFeePaidFilter("all")
     }
 
     val colorScheme = if (uiState.darkModeEnabled) AcademyDarkScheme else AcademyLightScheme
@@ -807,9 +812,13 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         if (view == AppView.Finance && uiState.session != null) {
                             selectedView = view
                         } else if (view == AppView.Manager && selectedView != view) {
+                            resetStaffRosterFilters()
                             pendingProtectedView = view
                             showManagerPinSheet = true
                         } else {
+                            if (view == AppView.Manager) {
+                                resetStaffRosterFilters()
+                            }
                             selectedView = view
                         }
                     },
@@ -937,7 +946,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                             onMovementClick = { month, type ->
                                 viewModel.setSearchQuery("")
                                 viewModel.setSlotFilter("all")
-                                viewModel.setRosterStatusFilter("all")
+                                viewModel.setRosterStatusFilter(if (type == "left") "all" else "active")
                                 viewModel.setRosterJerseyFilter("all")
                                 viewModel.setRosterTypeFilter("all")
                                 viewModel.setRosterFeePaidFilter("all")
@@ -975,7 +984,6 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                             statusFilter = uiState.rosterStatusFilter,
                             jerseyFilter = uiState.rosterJerseyFilter,
                             typeFilter = uiState.rosterTypeFilter,
-                            feePaidFilter = uiState.rosterFeePaidFilter,
                             feeDueFilter = uiState.rosterFeeDueFilter,
                             visibleCount = filteredKids.size,
                             totalCount = uiState.kids.size,
@@ -985,7 +993,6 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                             onStatusFilterChange = viewModel::setRosterStatusFilter,
                             onJerseyFilterChange = viewModel::setRosterJerseyFilter,
                             onTypeFilterChange = viewModel::setRosterTypeFilter,
-                            onFeePaidFilterChange = viewModel::setRosterFeePaidFilter,
                             onFeeDueFilterChange = viewModel::setRosterFeeDueFilter,
                             onRefresh = {
                                 scope.launch {
@@ -1199,6 +1206,9 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         onDismiss = { showManagerPinSheet = false },
                         onUnlock = { pin ->
                             if (pin == MANAGER_VIEW_PIN) {
+                                if (pendingProtectedView == AppView.Manager) {
+                                    resetStaffRosterFilters()
+                                }
                                 selectedView = pendingProtectedView
                                 showManagerPinSheet = false
                                 scope.launch {
@@ -1770,7 +1780,7 @@ private fun AdmissionActionsSection(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            text = "Parent details, training slot, jersey info, consent, and optional UPI payment in one guided form.",
+                            text = "Parent details, training slot, jersey info, consent, and payment info in one guided form.",
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
                             fontSize = 12.sp,
                             lineHeight = 17.sp,
@@ -1786,7 +1796,6 @@ private fun AdmissionActionsSection(
                     MiniPromiseChip("Reg no auto")
                     MiniPromiseChip("Jersey size")
                     MiniPromiseChip("Consent")
-                    MiniPromiseChip("UPI optional")
                 }
             }
         }
@@ -2032,200 +2041,37 @@ private fun FinancePanel(
             onMonthClick = { selectedMonthDetailKey = it },
         )
 
-        // Export academy record option hidden for now
-        // OutlinedButton(
-        //     onClick = {
-        //         context.sharePlainText(
-        //             title = "Share monthly finance backup",
-        //             text = buildAndroidMonthlyFinanceBackup(
-        //                 monthLabel = nowCalendar.getDisplayName(java.util.Calendar.MONTH, java.util.Calendar.LONG, Locale.US).orEmpty() +
-        //                     " ${nowCalendar.get(java.util.Calendar.YEAR)}",
-        //                 activeStudents = uiState.kids.count { it.isActive() },
-        //                 discontinuedStudents = uiState.kids.count { !it.isActive() },
-        //                 fees = monthFees,
-        //                 expenses = monthExpenses,
-        //                 net = monthNet,
-        //                 expenseRows = uiState.expenses.filter { it.expenseDate.startsWith(monthKey) },
-        //             ),
-        //         )
-        //     },
-        //     modifier = Modifier.fillMaxWidth(),
-        //     shape = RoundedCornerShape(18.dp),
-        // ) {
-        //     Icon(Icons.Outlined.Description, contentDescription = null)
-        //     Spacer(modifier = Modifier.size(8.dp))
-        //     Text("Share monthly backup")
-        // }
-
-        OutlinedButton(
-            onClick = {
+        FinanceRecentLedgerSection(
+            revenueRows = buildFinanceRevenueLines(uiState.kids, uiState.payments),
+            expenses = uiState.expenses,
+            searchQuery = searchQuery,
+            sortKey = sortKey,
+            sortAscending = sortAscending,
+            deletingExpenseId = deletingExpenseId,
+            message = expenseMessage,
+            formatCurrency = { value -> formatCurrency(value) },
+            onSearchChange = { searchQuery = it },
+            onSortChange = { key ->
+                if (sortKey == key) {
+                    sortAscending = !sortAscending
+                } else {
+                    sortKey = key
+                    sortAscending = key != "date"
+                }
+            },
+            onAddExpense = {
                 showExpenseForm = true
                 expenseMessage = null
             },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp),
-        ) {
-            Icon(Icons.Outlined.Add, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Add expense")
-        }
-
-        if (!showExpenseForm && !expenseMessage.isNullOrBlank()) {
-            Text(
-                expenseMessage.orEmpty(),
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-                fontSize = 12.sp,
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.End,
-            )
-        }
-
-        // Search
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Search by name or type...") },
-            singleLine = true,
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-            )
+            onDeleteExpense = { expense ->
+                scope.launch {
+                    deletingExpenseId = expense.id
+                    val result = onDeleteExpense(expense.id)
+                    expenseMessage = result.message
+                    deletingExpenseId = null
+                }
+            },
         )
-
-        // Expenses Table
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column {
-                FlowRow(
-                    modifier = Modifier.padding(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    listOf("date" to "Date", "amount" to "Amount", "type" to "Type", "paid_by" to "Paid by").forEach { (key, label) ->
-                        FilterChip(
-                            selected = sortKey == key,
-                            onClick = {
-                                if (sortKey == key) sortAscending = !sortAscending else {
-                                    sortKey = key
-                                    sortAscending = key != "date"
-                                }
-                            },
-                            label = { Text(if (sortKey == key) "$label ${if (sortAscending) "up" else "down"}" else label) },
-                        )
-                    }
-                }
-
-                val filteredAndSorted = uiState.expenses
-                    .filter {
-                        searchQuery.isEmpty() ||
-                        it.expenseType.contains(searchQuery, ignoreCase = true) ||
-                        it.paidBy.contains(searchQuery, ignoreCase = true)
-                    }
-                    .sortedWith { a, b ->
-                        val result = when (sortKey) {
-                            "type" -> a.expenseType.compareTo(b.expenseType)
-                            "amount" -> a.amount.compareTo(b.amount)
-                            "paid_by" -> a.paidBy.compareTo(b.paidBy)
-                            else -> a.expenseDate.compareTo(b.expenseDate)
-                        }
-                        if (sortAscending) result else -result
-                    }
-
-                if (filteredAndSorted.isEmpty()) {
-                    Text(
-                        "No expenses found.",
-                        modifier = Modifier.padding(24.dp).fillMaxWidth(),
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                } else {
-                    filteredAndSorted.forEach { expense ->
-                        Surface(
-                            modifier = Modifier
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
-                                .fillMaxWidth(),
-                            shape = RoundedCornerShape(20.dp),
-                            color = MaterialTheme.colorScheme.background.copy(alpha = 0.80f),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(13.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(
-                                    modifier = Modifier.weight(1f),
-                                    verticalArrangement = Arrangement.spacedBy(5.dp),
-                                ) {
-                                    Text(
-                                        text = expense.expenseType,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Text(
-                                        text = expense.comment?.takeIf { it.isNotBlank() } ?: "No comment",
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-                                        fontSize = 12.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Text(
-                                        text = "${com.genalpha.cricketacademy.data.displayDate(expense.expenseDate)} • ${expense.paidBy}",
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.52f),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                Column(
-                                    horizontalAlignment = Alignment.End,
-                                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                                ) {
-                                    Text(
-                                        formatCurrency(expense.amount),
-                                        color = BrandRed,
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        maxLines = 1,
-                                    )
-                                    TextButton(
-                                        enabled = deletingExpenseId != expense.id,
-                                        onClick = {
-                                            scope.launch {
-                                                deletingExpenseId = expense.id
-                                                val result = onDeleteExpense(expense.id)
-                                                expenseMessage = result.message
-                                                deletingExpenseId = null
-                                            }
-                                        },
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                        modifier = Modifier.heightIn(min = 28.dp),
-                                    ) {
-                                        if (deletingExpenseId == expense.id) {
-                                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                                        } else {
-                                            Text("Delete", color = BrandRed, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 
     if (showExpenseForm) {
@@ -2286,6 +2132,380 @@ private fun FinancePanel(
             expenses = uiState.expenses,
             formatCurrency = { value -> formatCurrency(value) },
             onDismiss = { selectedMonthDetailKey = null },
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FinanceRecentLedgerSection(
+    revenueRows: List<FinanceRevenueLine>,
+    expenses: List<AcademyExpense>,
+    searchQuery: String,
+    sortKey: String,
+    sortAscending: Boolean,
+    deletingExpenseId: String?,
+    message: String?,
+    formatCurrency: (Double) -> String,
+    onSearchChange: (String) -> Unit,
+    onSortChange: (String) -> Unit,
+    onAddExpense: () -> Unit,
+    onDeleteExpense: (AcademyExpense) -> Unit,
+) {
+    var selectedTab by rememberSaveable { mutableStateOf("revenue") }
+    val isRevenue = selectedTab == "revenue"
+    val effectiveSortKey = when {
+        isRevenue && sortKey == "paid_by" -> "date"
+        else -> sortKey
+    }
+    val query = searchQuery.trim()
+    val filteredRevenue = remember(revenueRows, query, effectiveSortKey, sortAscending) {
+        revenueRows
+            .filter {
+                query.isBlank() ||
+                    it.studentName.contains(query, ignoreCase = true) ||
+                    it.type.contains(query, ignoreCase = true)
+            }
+            .sortedWith { a, b ->
+                val result = when (effectiveSortKey) {
+                    "amount" -> a.amount.compareTo(b.amount)
+                    "type" -> a.type.compareTo(b.type)
+                    "player" -> a.studentName.compareTo(b.studentName)
+                    else -> normalizeDateForSort(a.date).compareTo(normalizeDateForSort(b.date))
+                }
+                if (sortAscending) result else -result
+            }
+    }
+    val filteredExpenses = remember(expenses, query, effectiveSortKey, sortAscending) {
+        expenses
+            .filter {
+                query.isBlank() ||
+                    it.expenseType.contains(query, ignoreCase = true) ||
+                    it.paidBy.contains(query, ignoreCase = true) ||
+                    (it.comment?.contains(query, ignoreCase = true) == true)
+            }
+            .sortedWith { a, b ->
+                val result = when (effectiveSortKey) {
+                    "type" -> a.expenseType.compareTo(b.expenseType)
+                    "amount" -> a.amount.compareTo(b.amount)
+                    "paid_by" -> a.paidBy.compareTo(b.paidBy)
+                    else -> normalizeDateForSort(a.expenseDate).compareTo(normalizeDateForSort(b.expenseDate))
+                }
+                if (sortAscending) result else -result
+            }
+    }
+    val sortOptions = if (isRevenue) {
+        listOf("date" to "Date", "amount" to "Amount", "type" to "Type", "player" to "Player")
+    } else {
+        listOf("date" to "Date", "amount" to "Amount", "type" to "Type", "paid_by" to "Paid by")
+    }
+
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        "Recent ledger",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                    )
+                    Text(
+                        if (isRevenue) "Latest parent payments" else "Latest academy expenses",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+                        fontSize = 12.sp,
+                    )
+                }
+                if (!isRevenue) {
+                    Button(
+                        onClick = onAddExpense,
+                        shape = RoundedCornerShape(16.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                    ) {
+                        Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Add", maxLines = 1)
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.70f), RoundedCornerShape(18.dp))
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                FinanceLedgerTab(
+                    label = "Revenue",
+                    selected = isRevenue,
+                    accent = BrandGreen,
+                    modifier = Modifier.weight(1f),
+                    onClick = { selectedTab = "revenue" },
+                )
+                FinanceLedgerTab(
+                    label = "Expenses",
+                    selected = !isRevenue,
+                    accent = BrandRed,
+                    modifier = Modifier.weight(1f),
+                    onClick = { selectedTab = "expenses" },
+                )
+            }
+
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = onSearchChange,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text(if (isRevenue) "Search player or payment type..." else "Search expense, paid by, comment...") },
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                shape = RoundedCornerShape(16.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                ),
+            )
+
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                sortOptions.forEach { (key, label) ->
+                    FilterChip(
+                        selected = effectiveSortKey == key,
+                        onClick = { onSortChange(key) },
+                        label = {
+                            Text(
+                                if (effectiveSortKey == key) "$label ${if (sortAscending) "up" else "down"}" else label,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                            )
+                        },
+                    )
+                }
+            }
+
+            if (!message.isNullOrBlank()) {
+                Text(
+                    message,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
+                    fontSize = 12.sp,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.End,
+                )
+            }
+
+            if (isRevenue) {
+                if (filteredRevenue.isEmpty()) {
+                    FinanceEmptyLedgerMessage("No revenue found.")
+                } else {
+                    filteredRevenue.take(30).forEach { row ->
+                        FinanceRevenueCard(row = row, formatCurrency = formatCurrency)
+                    }
+                }
+            } else {
+                if (filteredExpenses.isEmpty()) {
+                    FinanceEmptyLedgerMessage("No expenses found.")
+                } else {
+                    filteredExpenses.take(30).forEach { expense ->
+                        FinanceExpenseCard(
+                            expense = expense,
+                            isDeleting = deletingExpenseId == expense.id,
+                            formatCurrency = formatCurrency,
+                            onDelete = { onDeleteExpense(expense) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FinanceLedgerTab(
+    label: String,
+    selected: Boolean,
+    accent: Color,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(15.dp),
+        color = if (selected) accent.copy(alpha = 0.14f) else Color.Transparent,
+    ) {
+        Text(
+            label,
+            modifier = Modifier.padding(vertical = 10.dp),
+            textAlign = TextAlign.Center,
+            color = if (selected) accent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun FinanceEmptyLedgerMessage(message: String) {
+    Text(
+        message,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 18.dp),
+        textAlign = TextAlign.Center,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+        fontSize = 13.sp,
+    )
+}
+
+@Composable
+private fun FinanceRevenueCard(
+    row: FinanceRevenueLine,
+    formatCurrency: (Double) -> String,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = BrandGreen.copy(alpha = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) 0.14f else 0.07f),
+        border = BorderStroke(1.dp, BrandGreen.copy(alpha = 0.16f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(13.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Text(
+                    row.studentName,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    FinanceTypePill(row.type, if (row.type == "Joining") BrandBlue else BrandGreen)
+                    Text(
+                        displayDate(row.date),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                    )
+                }
+            }
+            Text(
+                formatCurrency(row.amount),
+                color = BrandGreen,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun FinanceExpenseCard(
+    expense: AcademyExpense,
+    isDeleting: Boolean,
+    formatCurrency: (Double) -> String,
+    onDelete: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.background.copy(alpha = 0.80f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(13.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Text(
+                    expense.expenseType,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    expense.comment?.takeIf { it.isNotBlank() } ?: "${displayDate(expense.expenseDate)} • ${expense.paidBy}",
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (!expense.comment.isNullOrBlank()) {
+                    Text(
+                        "${displayDate(expense.expenseDate)} • ${expense.paidBy}",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.52f),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    formatCurrency(expense.amount),
+                    color = BrandRed,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                )
+                TextButton(
+                    enabled = !isDeleting,
+                    onClick = onDelete,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    modifier = Modifier.heightIn(min = 28.dp),
+                ) {
+                    if (isDeleting) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text("Delete", color = BrandRed, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FinanceTypePill(label: String, tint: Color) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = tint.copy(alpha = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) 0.22f else 0.12f),
+    ) {
+        Text(
+            label,
+            color = tint,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.ExtraBold,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            maxLines = 1,
         )
     }
 }
@@ -2754,7 +2974,7 @@ private fun FinanceMiniChart(
             ) {
                 Column {
                     Text(
-                        "6 MONTH NET VIEW",
+                        "6 MONTH VIEW",
                         color = MaterialTheme.colorScheme.primary,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.ExtraBold,
@@ -2763,56 +2983,63 @@ private fun FinanceMiniChart(
                 }
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 months.forEach { month ->
                     val net = month.fees - month.expenses
                     Surface(
                         shape = RoundedCornerShape(16.dp),
                         color = if (net >= 0) BrandGreen.copy(alpha = 0.1f) else BrandRed.copy(alpha = 0.1f),
                         modifier = Modifier
-                            .fillMaxWidth()
+                            .width(168.dp)
                             .clickable { onMonthClick(month.key) },
                     ) {
-                        Row(
+                        Column(
                             modifier = Modifier
-                                .fillMaxWidth()
                                 .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(9.dp),
                         ) {
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(5.dp),
+                            Text(month.label, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(44.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                                verticalAlignment = Alignment.Bottom,
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(month.label, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
-                                    Text(
-                                        formatCurrency(net),
-                                        color = if (net >= 0) BrandGreen else BrandRed,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                FlowRow(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                                ) {
-                                    FinanceMiniPill("Fees", formatCurrency(month.fees), BrandBlue)
-                                    FinanceMiniPill("Expense", formatCurrency(month.expenses), BrandRed)
-                                }
+                                FinanceMiniBar(month.fees, maxOf(month.fees, month.expenses, 1.0), BrandBlue)
+                                FinanceMiniBar(month.expenses, maxOf(month.fees, month.expenses, 1.0), BrandRed)
                             }
+                            Text(
+                                formatCurrency(net),
+                                color = if (net >= 0) BrandGreen else BrandRed,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            FinanceMiniPill("Fees", formatCurrency(month.fees), BrandBlue)
+                            FinanceMiniPill("Expense", formatCurrency(month.expenses), BrandRed)
                         }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun FinanceMiniBar(value: Double, maxValue: Double, tint: Color) {
+    val fraction = (value / maxValue).toFloat().coerceIn(0.08f, 1f)
+    Box(
+        modifier = Modifier
+            .width(18.dp)
+            .height((42 * fraction).dp)
+            .clip(RoundedCornerShape(topStart = 9.dp, topEnd = 9.dp))
+            .background(tint)
+    )
 }
 
 @Composable
@@ -3800,7 +4027,6 @@ private fun RosterToolbar(
     statusFilter: String,
     jerseyFilter: String,
     typeFilter: String,
-    feePaidFilter: String,
     feeDueFilter: String,
     visibleCount: Int,
     totalCount: Int,
@@ -3810,7 +4036,6 @@ private fun RosterToolbar(
     onStatusFilterChange: (String) -> Unit,
     onJerseyFilterChange: (String) -> Unit,
     onTypeFilterChange: (String) -> Unit,
-    onFeePaidFilterChange: (String) -> Unit,
     onFeeDueFilterChange: (String) -> Unit,
     onRefresh: () -> Unit,
 ) {
@@ -3937,12 +4162,6 @@ private fun RosterToolbar(
                     onSelected = onTypeFilterChange,
                 )
                 CompactRosterFilter(
-                    label = "Fee",
-                    selectedValue = feePaidFilter,
-                    options = RosterFeePaidFilterOptions,
-                    onSelected = onFeePaidFilterChange,
-                )
-                CompactRosterFilter(
                     label = "Due",
                     selectedValue = feeDueFilter,
                     options = RosterFeeDueFilterOptions,
@@ -3986,12 +4205,6 @@ private val RosterTypeFilterOptions = listOf(
     "all" to "All",
     "new" to "New",
     "returning" to "Returning",
-)
-
-private val RosterFeePaidFilterOptions = listOf(
-    "all" to "All",
-    "paid" to "Paid",
-    "not-paid" to "Not paid",
 )
 
 private val RosterFeeDueFilterOptions = listOf(

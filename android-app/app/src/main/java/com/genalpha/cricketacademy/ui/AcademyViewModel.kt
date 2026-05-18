@@ -62,7 +62,7 @@ data class AcademyUiState(
     val searchQuery: String = "",
     val rosterSortKey: String = "nextDue",
     val rosterSortAscending: Boolean = true,
-    val rosterStatusFilter: String = "all",
+    val rosterStatusFilter: String = "active",
     val rosterJerseyFilter: String = "all",
     val rosterTypeFilter: String = "all",
     val rosterFeePaidFilter: String = "all",
