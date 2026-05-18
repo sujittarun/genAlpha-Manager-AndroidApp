@@ -3118,9 +3118,12 @@ private fun FinanceMonthDetailDialog(
         expenses.filter { it.expenseDate.startsWith(monthKey) }.sortedByDescending { normalizeDateForSort(it.expenseDate) }
     }
     val revenueTotal = revenueRows.sumOf { it.amount }
+    val joiningCount = revenueRows.count { it.type == "Joining" }
+    val renewalCount = revenueRows.count { it.type == "Renewal" }
     val joiningTotal = revenueRows.filter { it.type == "Joining" }.sumOf { it.amount }
     val renewalTotal = revenueRows.filter { it.type == "Renewal" }.sumOf { it.amount }
     val expenseTotal = expenseRows.sumOf { it.amount }
+    val totalRecordCount = revenueRows.size + expenseRows.size
     val net = revenueTotal - expenseTotal
     val title = remember(monthKey) {
         runCatching {
@@ -3164,9 +3167,13 @@ private fun FinanceMonthDetailDialog(
                             FinanceMonthSummaryStrip(
                                 revenue = formatCurrency(revenueTotal),
                                 joining = formatCurrency(joiningTotal),
+                                joiningCount = joiningCount,
                                 renewal = formatCurrency(renewalTotal),
+                                renewalCount = renewalCount,
                                 expense = formatCurrency(expenseTotal),
+                                expenseCount = expenseRows.size,
                                 net = formatCurrency(net),
+                                totalRecordCount = totalRecordCount,
                                 isNetPositive = net >= 0,
                             )
                         }
@@ -3177,6 +3184,7 @@ private fun FinanceMonthDetailDialog(
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                         FinanceMonthDetailList(
                             title = "Revenue",
+                            count = revenueRows.size,
                             emptyText = "No revenue",
                             rows = revenueRows.map {
                                 Triple(it.studentName, "${it.type} • ${displayDate(it.date)}", formatCurrency(it.amount))
@@ -3185,6 +3193,7 @@ private fun FinanceMonthDetailDialog(
                         )
                         FinanceMonthDetailList(
                             title = "Expenses",
+                            count = expenseRows.size,
                             emptyText = "No expenses",
                             rows = expenseRows.map {
                                 Triple(it.expenseType, "${it.paidBy} • ${displayDate(it.expenseDate)}", formatCurrency(it.amount))
@@ -3203,9 +3212,13 @@ private fun FinanceMonthDetailDialog(
 private fun FinanceMonthSummaryStrip(
     revenue: String,
     joining: String,
+    joiningCount: Int,
     renewal: String,
+    renewalCount: Int,
     expense: String,
+    expenseCount: Int,
     net: String,
+    totalRecordCount: Int,
     isNetPositive: Boolean,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
@@ -3213,18 +3226,20 @@ private fun FinanceMonthSummaryStrip(
             FinanceSummaryMiniCard(
                 label = "Revenue",
                 value = revenue,
-                subText = "Joining $joining • Renewal $renewal",
+                subText = "Joining $joiningCount / $joining • Renewal $renewalCount / $renewal",
                 modifier = Modifier.weight(1.35f),
             )
             FinanceSummaryMiniCard(
                 label = "Expense",
                 value = expense,
+                subText = "$expenseCount record${if (expenseCount == 1) "" else "s"}",
                 modifier = Modifier.weight(1f),
             )
         }
         FinanceSummaryMiniCard(
             label = "Net",
             value = net,
+            subText = "$totalRecordCount total record${if (totalRecordCount == 1) "" else "s"}",
             valueColor = if (isNetPositive) BrandGreen else BrandRed,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -3258,6 +3273,7 @@ private fun FinanceSummaryMiniCard(
 @Composable
 private fun FinanceMonthDetailList(
     title: String,
+    count: Int,
     emptyText: String,
     rows: List<Triple<String, String, String>>,
     modifier: Modifier = Modifier,
@@ -3269,7 +3285,25 @@ private fun FinanceMonthDetailList(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
     ) {
         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(title, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                ) {
+                    Text(
+                        "$count",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    )
+                }
+            }
             if (rows.isEmpty()) {
                 Text(emptyText, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f))
             } else {
