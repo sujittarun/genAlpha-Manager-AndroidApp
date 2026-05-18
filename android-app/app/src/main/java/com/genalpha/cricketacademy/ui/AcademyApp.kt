@@ -288,8 +288,12 @@ private val AdmissionMonths = listOf(
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 )
 private val UiTimeSlots = listOf("6AM", "7:30AM", "4PM", "5:30PM", "7PM")
-private val JerseySizeOptions = listOf("22", "24", "26", "28", "30", "32", "34", "36", "40", "42", "38")
-private fun jerseySizeLabel(size: String): String = if (size == "38") "38 - Medium" else size
+private val JerseySizeOptions = listOf("", "22", "24", "26", "28", "30", "32", "34", "36", "38", "40", "42")
+private fun jerseySizeLabel(size: String): String = when (size) {
+    "" -> "Not set"
+    "38" -> "38 - Medium"
+    else -> size
+}
 
 private val AcademyLightScheme = lightColorScheme(
     primary = BrandBlue,
@@ -6666,11 +6670,6 @@ private fun PlayerEditorSheet(
                     onClick = {
                         scope.launch {
                             isSaving = true
-                                    if (jerseySize.isNotBlank() && (jerseyPairs.isBlank() || jerseyPairs.toIntOrNull() ?: 0 < 1)) {
-                                        inlineMessage = "Please specify the number of jersey pairs."
-                                        isSaving = false
-                                        return@launch
-                                    }
                                     val result = onSubmit(
                                         StudentDraft(
                                             name = name,
@@ -7303,12 +7302,6 @@ private fun AdmissionFormSheet(
                         scope.launch {
                             isSubmitting = true
                             inlineMessage = ""
-                            if (jerseySize.isNotBlank() && (jerseyPairs.isBlank() || jerseyPairs.toIntOrNull() ?: 0 < 1)) {
-                                inlineMessage = "Please specify the number of jersey pairs."
-                                isSubmitting = false
-                                return@launch
-                            }
-
                             val draft = AdmissionDraft(
                                 applicantName = applicantName,
                                 filledBy = filledBy,
