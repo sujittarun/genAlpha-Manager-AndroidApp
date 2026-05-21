@@ -374,6 +374,7 @@ fun Student.paidThroughDate(payments: List<StudentPayment>): String {
 
     payments
         .filter { it.studentId == id }
+        .filter { it.paymentType == "joining" || it.paymentType == "renewal" }
         .forEach { payment ->
             val cycleStart = payment.cycleStartDate?.takeIf { it.isNotBlank() } ?: payment.paidOn
             val months = payment.monthsCoveredForDueDate()

@@ -43,6 +43,7 @@ import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
 private val TIME_SLOTS = listOf("6AM", "7:30AM", "4PM", "5:30PM", "7PM")
+private const val JERSEY_PAIR_REVENUE = 750.0
 
 data class AcademyUiState(
     val isLoading: Boolean = true,
@@ -576,11 +577,24 @@ class AcademyViewModel(
 
         return try {
             var profileFieldsSaved = true
+            var jerseyPayment: StudentPayment? = null
             val session = withFreshSession { session ->
                 profileFieldsSaved = if (editingStudent == null) {
                     repository.createStudent(draft, session.email, session)
                 } else {
                     repository.updateStudent(editingStudent, draft, session.email, session)
+                }
+                if (editingStudent != null) {
+                    val nextPairs = draft.jerseyPairs.toIntOrNull() ?: 0
+                    if (nextPairs != editingStudent.jerseyPairs) {
+                        jerseyPayment = repository.recordJerseyPairAdjustment(
+                            student = editingStudent,
+                            managerEmail = session.email,
+                            session = session,
+                            nextPairs = nextPairs,
+                            patchStudent = false,
+                        )
+                    }
                 }
                 session
             }
@@ -607,6 +621,8 @@ class AcademyViewModel(
                         discontinuedAt = editingStudent.discontinuedAt,
                     )
                 )
+                jerseyPayment?.let { upsertLocalPayment(it) }
+                if (jerseyPayment != null) refreshFinanceInBackground()
                 refreshInBackground()
             }
             OperationResult(
@@ -634,6 +650,43 @@ class AcademyViewModel(
             OperationResult(true, "Player ${student.name} deleted")
         } catch (error: Exception) {
             OperationResult(false, error.message ?: "Unable to delete player.")
+        }
+    }
+
+    suspend fun updateJerseyPairs(student: Student, nextPairs: Int): OperationResult {
+        val safeNextPairs = nextPairs.coerceAtLeast(0)
+        val delta = safeNextPairs - student.jerseyPairs.coerceAtLeast(0)
+        if (delta == 0) {
+            return OperationResult(true, "Jersey pair count is unchanged.")
+        }
+
+        return try {
+            val (session, payment) = withFreshSession { session ->
+                val insertedPayment = repository.recordJerseyPairAdjustment(
+                    student = student,
+                    managerEmail = session.email,
+                    session = session,
+                    nextPairs = safeNextPairs,
+                    patchStudent = true,
+                )
+                session to insertedPayment
+            }
+            upsertLocalStudent(student.copy(jerseyPairs = safeNextPairs, updatedBy = session.email))
+            payment?.let { upsertLocalPayment(it) }
+            refreshFinanceInBackground()
+            refreshInBackground()
+
+            val amount = kotlin.math.abs(delta) * JERSEY_PAIR_REVENUE
+            OperationResult(
+                true,
+                if (delta > 0) {
+                    "Added ${kotlin.math.abs(delta)} jersey pair${if (kotlin.math.abs(delta) == 1) "" else "s"} and recorded Rs ${amount.toInt()}."
+                } else {
+                    "Removed ${kotlin.math.abs(delta)} jersey pair${if (kotlin.math.abs(delta) == 1) "" else "s"} and subtracted Rs ${amount.toInt()}."
+                },
+            )
+        } catch (error: Exception) {
+            OperationResult(false, error.message ?: "Unable to update jersey pairs.")
         }
     }
 

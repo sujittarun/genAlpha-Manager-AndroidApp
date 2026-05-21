@@ -1086,6 +1086,14 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                             snackbarHostState.showSnackbar(result.message)
                                         }
                                     },
+                                    onJerseyPairsChange = if (viewModel.canEdit()) {
+                                        { nextPairs ->
+                                            scope.launch {
+                                                val result = viewModel.updateJerseyPairs(student, nextPairs)
+                                                snackbarHostState.showSnackbar(result.message)
+                                            }
+                                        }
+                                    } else null,
                                 )
                             }
                         }
@@ -2381,11 +2389,17 @@ private fun FinanceRevenueCard(
     row: FinanceRevenueLine,
     formatCurrency: (Double) -> String,
 ) {
+    val accent = when {
+        row.amount < 0 -> BrandRed
+        row.type == "Joining" -> BrandBlue
+        row.type == "Jersey" -> Color(0xFF9A6400)
+        else -> BrandGreen
+    }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        color = BrandGreen.copy(alpha = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) 0.14f else 0.07f),
-        border = BorderStroke(1.dp, BrandGreen.copy(alpha = 0.16f)),
+        color = accent.copy(alpha = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) 0.14f else 0.07f),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.16f)),
     ) {
         Row(
             modifier = Modifier.padding(13.dp),
@@ -2405,7 +2419,7 @@ private fun FinanceRevenueCard(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    FinanceTypePill(row.type, if (row.type == "Joining") BrandBlue else BrandGreen)
+                    FinanceTypePill(row.type, accent)
                     Text(
                         displayDate(row.date),
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
@@ -2416,7 +2430,7 @@ private fun FinanceRevenueCard(
             }
             Text(
                 formatCurrency(row.amount),
-                color = BrandGreen,
+                color = accent,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.ExtraBold,
                 maxLines = 1,
@@ -2570,9 +2584,19 @@ private fun paymentPlanLabel(planType: String?, months: Int): String = when (pla
     "quarterly" -> "3 months"
     "halfyearly" -> "6 months"
     "special" -> "Special training"
+    "jersey_pair" -> "Jersey pair"
     "custom" -> "Custom amount"
     else -> if (months > 1) "$months months" else "Monthly"
 }
+
+private fun paymentTypeLabel(paymentType: String?): String = when (paymentType.orEmpty().lowercase(Locale.US)) {
+    "joining" -> "Joining"
+    "jersey", "jersey_refund" -> "Jersey"
+    else -> "Renewal"
+}
+
+private fun signedPaymentAmount(payment: StudentPayment): Double =
+    if (payment.paymentType == "jersey_refund") -payment.amount else payment.amount
 
 private fun buildPlayerPaymentRows(student: Student, payments: List<StudentPayment>): List<PlayerPaymentLine> {
     val rows = mutableListOf<PlayerPaymentLine>()
@@ -2590,14 +2614,16 @@ private fun buildPlayerPaymentRows(student: Student, payments: List<StudentPayme
         )
     }
     studentPayments.forEach { payment ->
-        val months = paymentMonthsCovered(payment)
+        val typeLabel = paymentTypeLabel(payment.paymentType)
+        val isJerseyPayment = payment.paymentType == "jersey" || payment.paymentType == "jersey_refund"
+        val months = if (isJerseyPayment) 0 else paymentMonthsCovered(payment)
         rows += PlayerPaymentLine(
             id = payment.id,
             date = payment.paidOn,
-            title = if (payment.paymentType == "joining") "Joining payment" else "Renewal payment",
-            plan = paymentPlanLabel(payment.planType, months),
+            title = "$typeLabel payment",
+            plan = if (isJerseyPayment) "Jersey pair" else paymentPlanLabel(payment.planType, months),
             months = months,
-            amount = payment.amount,
+            amount = signedPaymentAmount(payment),
         )
     }
     return rows.sortedByDescending { it.date }
@@ -3096,9 +3122,9 @@ private fun buildFinanceRevenueLines(students: List<Student>, payments: List<Stu
         val student = students.firstOrNull { it.id == payment.studentId }
         FinanceRevenueLine(
             studentName = student?.name ?: "Unknown player",
-            type = if (payment.paymentType == "joining") "Joining" else "Renewal",
+            type = paymentTypeLabel(payment.paymentType),
             date = payment.paidOn,
-            amount = payment.amount,
+            amount = signedPaymentAmount(payment),
         )
     }
     return (legacyJoiningRows + ledgerRows).sortedByDescending { normalizeDateForSort(it.date) }
@@ -3124,8 +3150,10 @@ private fun FinanceMonthDetailDialog(
     val revenueTotal = revenueRows.sumOf { it.amount }
     val joiningCount = revenueRows.count { it.type == "Joining" }
     val renewalCount = revenueRows.count { it.type == "Renewal" }
+    val jerseyCount = revenueRows.count { it.type == "Jersey" }
     val joiningTotal = revenueRows.filter { it.type == "Joining" }.sumOf { it.amount }
     val renewalTotal = revenueRows.filter { it.type == "Renewal" }.sumOf { it.amount }
+    val jerseyTotal = revenueRows.filter { it.type == "Jersey" }.sumOf { it.amount }
     val expenseTotal = expenseRows.sumOf { it.amount }
     val totalRecordCount = revenueRows.size + expenseRows.size
     val net = revenueTotal - expenseTotal
@@ -3174,6 +3202,8 @@ private fun FinanceMonthDetailDialog(
                                 joiningCount = joiningCount,
                                 renewal = formatCurrency(renewalTotal),
                                 renewalCount = renewalCount,
+                                jersey = formatCurrency(jerseyTotal),
+                                jerseyCount = jerseyCount,
                                 expense = formatCurrency(expenseTotal),
                                 expenseCount = expenseRows.size,
                                 net = formatCurrency(net),
@@ -3219,6 +3249,8 @@ private fun FinanceMonthSummaryStrip(
     joiningCount: Int,
     renewal: String,
     renewalCount: Int,
+    jersey: String,
+    jerseyCount: Int,
     expense: String,
     expenseCount: Int,
     net: String,
@@ -3230,7 +3262,7 @@ private fun FinanceMonthSummaryStrip(
             FinanceSummaryMiniCard(
                 label = "Revenue",
                 value = revenue,
-                subText = "Joining $joiningCount / $joining • Renewal $renewalCount / $renewal",
+                subText = "Joining $joiningCount / $joining • Renewal $renewalCount / $renewal • Jersey $jerseyCount / $jersey",
                 modifier = Modifier.weight(1.35f),
             )
             FinanceSummaryMiniCard(
@@ -4650,6 +4682,7 @@ private fun RosterRow(
     onRenew: (() -> Unit)? = null,
     onSendReminder: (() -> Unit)? = null,
     onToggleStatus: (() -> Unit)? = null,
+    onJerseyPairsChange: ((Int) -> Unit)? = null,
 ) {
     val needsAttention = student.isFeesPending() || student.isRenewalPending(payments)
     val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
@@ -4974,23 +5007,28 @@ private fun RosterRow(
                             modifier = Modifier.weight(1f),
                         )
                         if (isManager) {
-                            Surface(
-                                onClick = { showingActions = true },
-                                shape = RoundedCornerShape(999.dp),
-                                color = BrandBlue.copy(alpha = if (isDarkTheme) 0.22f else 0.10f),
-                                border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.20f)),
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
+                                onJerseyPairsChange?.let { updatePairs ->
+                                    JerseyPairStepper(
+                                        count = student.jerseyPairs.coerceAtLeast(0),
+                                        onDecrease = { updatePairs((student.jerseyPairs - 1).coerceAtLeast(0)) },
+                                        onIncrease = { updatePairs(student.jerseyPairs + 1) },
+                                    )
+                                }
+                                Surface(
+                                    onClick = { showingActions = true },
+                                    shape = RoundedCornerShape(999.dp),
+                                    color = BrandBlue.copy(alpha = if (isDarkTheme) 0.22f else 0.10f),
+                                    border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.20f)),
                                 ) {
-                                    Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(15.dp), tint = BrandBlue)
-                                    Text(
-                                        text = "Manage",
-                                        color = BrandBlue,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.ExtraBold,
+                                    Icon(
+                                        Icons.Outlined.Edit,
+                                        contentDescription = "Manage player",
+                                        modifier = Modifier.padding(9.dp).size(15.dp),
+                                        tint = BrandBlue,
                                     )
                                 }
                             }
@@ -5004,6 +5042,60 @@ private fun RosterRow(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun JerseyPairStepper(
+    count: Int,
+    onDecrease: () -> Unit,
+    onIncrease: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = BrandBlue.copy(alpha = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) 0.18f else 0.08f),
+        border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.18f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                enabled = count > 0,
+                onClick = onDecrease,
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surface,
+            ) {
+                Text(
+                    text = "−",
+                    color = if (count > 0) BrandBlue else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.32f),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                )
+            }
+            Text(
+                text = "$count",
+                color = BrandBlueDeep,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Black,
+                modifier = Modifier.widthIn(min = 18.dp).wrapContentWidth(Alignment.CenterHorizontally),
+            )
+            Surface(
+                onClick = onIncrease,
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surface,
+            ) {
+                Text(
+                    text = "+",
+                    color = BrandBlue,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                )
             }
         }
     }
@@ -5344,12 +5436,17 @@ private fun PlayerDetailSheet(
                             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(row.title, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
                                 Text(
-                                    "${displayDate(row.date)} • ${row.plan} • ${row.months}m",
+                                    "${displayDate(row.date)} • ${row.plan}${if (row.months > 0) " • ${row.months}m" else ""}",
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
                                     fontSize = 11.sp,
                                 )
                             }
-                            Text("Rs ${String.format(Locale.US, "%,.0f", row.amount)}", color = BrandGreen, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+                            Text(
+                                "Rs ${String.format(Locale.US, "%,.0f", row.amount)}",
+                                color = if (row.amount < 0) BrandRed else BrandGreen,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                            )
                             if (isManager && row.id.isNotBlank()) {
                                 IconButton(
                                     onClick = {

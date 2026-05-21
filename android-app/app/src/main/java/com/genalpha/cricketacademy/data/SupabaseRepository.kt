@@ -889,6 +889,55 @@ class SupabaseRepository(
         }
     }
 
+    suspend fun recordJerseyPairAdjustment(
+        student: Student,
+        managerEmail: String,
+        session: ManagerSession,
+        nextPairs: Int,
+        patchStudent: Boolean = true,
+    ): StudentPayment? {
+        return withContext(Dispatchers.IO) {
+            val safeNextPairs = nextPairs.coerceAtLeast(0)
+            val previousPairs = student.jerseyPairs.coerceAtLeast(0)
+            val delta = safeNextPairs - previousPairs
+
+            if (patchStudent) {
+                val updateBody = JSONObject()
+                    .put("jersey_pairs", safeNextPairs)
+                    .put("updated_by", managerEmail)
+                executeWriteRequest(
+                    url = "$baseUrl/rest/v1/students?id=eq.${student.id}",
+                    session = session,
+                    method = "PATCH",
+                    body = updateBody,
+                )
+            }
+
+            if (delta == 0) return@withContext null
+
+            val increased = delta > 0
+            val body = JSONObject()
+                .put("student_id", student.id)
+                .put("payment_type", if (increased) "jersey" else "jersey_refund")
+                .put("plan_type", "jersey_pair")
+                .put("cycle_start_date", todayIsoDate())
+                .put("months_covered", 1)
+                .put("amount", kotlin.math.abs(delta) * 750.0)
+                .put("paid_on", todayIsoDate())
+                .put("comment", "${if (increased) "Jersey pair added" else "Jersey pair removed"}. Count $previousPairs to $safeNextPairs.")
+                .put("recorded_by", managerEmail)
+
+            val responseBody = executeWriteRequestReturningBody(
+                url = "$baseUrl/rest/v1/student_payments?select=*",
+                session = session,
+                method = "POST",
+                body = body,
+            )
+            paymentListAdapter.fromJson(responseBody).orEmpty().firstOrNull()
+                ?: throw SupabaseException(200, "Jersey count was saved, but the revenue row was not returned.")
+        }
+    }
+
     suspend fun sendRenewalVerifiedMessage(
         student: Student,
         session: ManagerSession,

@@ -1,6 +1,6 @@
 # Gen Alpha Manager Changelog Notes
 
-Last updated: 2026-05-15
+Last updated: 2026-05-21
 
 This file records meaningful project changes and decisions so future Codex sessions can understand recent work without rereading the full chat. It is not a release changelog for users; it is a developer/manager memory log.
 
@@ -12,6 +12,18 @@ Use this file when:
 - A future agent needs to understand why a design or business rule exists.
 
 For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
+
+## 2026-05-21
+
+### Jersey Pair Counter and Revenue Ledger
+
+- Added a lightweight jersey-pair counter for staff in Android roster cards.
+- Updating the count immediately saves `students.jersey_pairs` and records a `student_payments` ledger row.
+- Added `jersey` revenue rows for added pairs and `jersey_refund` rows for removed pairs so finance totals can add/subtract Rs 750 without violating the DB non-negative payment amount check.
+- Renewal due-date logic now ignores jersey ledger rows so jersey edits do not extend player subscription periods.
+- Existing full player edit saves also record jersey count revenue adjustments when the pair count changes.
+- Verification done:
+  - `./gradlew assembleDebug`
 
 ## 2026-05-15
 
