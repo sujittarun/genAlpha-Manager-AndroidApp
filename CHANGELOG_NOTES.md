@@ -15,6 +15,14 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 
 ## 2026-05-21
 
+### Blank Jersey Size Save Fix
+
+- Fixed web and Android save payloads so blank jersey size is stored as an empty string instead of `NULL`.
+- Reason: `students.jersey_size` is `NOT NULL`, and editing a player without a jersey size was failing with a constraint error.
+- Verification done:
+  - `node --check web-app-repo/script.js`
+  - `./gradlew assembleDebug`
+
 ### Jersey Pair Counter and Revenue Ledger
 
 - Added a lightweight jersey-pair counter for staff in Android roster cards.
