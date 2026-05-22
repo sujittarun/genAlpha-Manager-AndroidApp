@@ -44,6 +44,10 @@ import java.time.temporal.ChronoUnit
 
 private val TIME_SLOTS = listOf("6AM", "7:30AM", "4PM", "5:30PM", "7PM")
 private const val JERSEY_PAIR_REVENUE = 750.0
+private const val INCLUDED_JERSEY_PAIRS = 1
+
+private fun chargeableJerseyPairCount(pairCount: Int): Int =
+    (pairCount.coerceAtLeast(0) - INCLUDED_JERSEY_PAIRS).coerceAtLeast(0)
 
 data class AcademyUiState(
     val isLoading: Boolean = true,
@@ -656,6 +660,8 @@ class AcademyViewModel(
     suspend fun updateJerseyPairs(student: Student, nextPairs: Int): OperationResult {
         val safeNextPairs = nextPairs.coerceAtLeast(0)
         val delta = safeNextPairs - student.jerseyPairs.coerceAtLeast(0)
+        val chargeableDelta = chargeableJerseyPairCount(safeNextPairs) -
+            chargeableJerseyPairCount(student.jerseyPairs)
         if (delta == 0) {
             return OperationResult(true, "Jersey pair count is unchanged.")
         }
@@ -673,16 +679,23 @@ class AcademyViewModel(
             }
             upsertLocalStudent(student.copy(jerseyPairs = safeNextPairs, updatedBy = session.email))
             payment?.let { upsertLocalPayment(it) }
-            refreshFinanceInBackground()
+            if (payment != null) refreshFinanceInBackground()
             refreshInBackground()
 
-            val amount = kotlin.math.abs(delta) * JERSEY_PAIR_REVENUE
+            if (chargeableDelta == 0) {
+                return OperationResult(
+                    true,
+                    "Jersey pair count updated. The first pair is included, so no extra charge was recorded.",
+                )
+            }
+
+            val amount = kotlin.math.abs(chargeableDelta) * JERSEY_PAIR_REVENUE
             OperationResult(
                 true,
-                if (delta > 0) {
-                    "Added ${kotlin.math.abs(delta)} jersey pair${if (kotlin.math.abs(delta) == 1) "" else "s"} and recorded Rs ${amount.toInt()}."
+                if (chargeableDelta > 0) {
+                    "Added ${kotlin.math.abs(chargeableDelta)} extra jersey pair${if (kotlin.math.abs(chargeableDelta) == 1) "" else "s"} and recorded Rs ${amount.toInt()}."
                 } else {
-                    "Removed ${kotlin.math.abs(delta)} jersey pair${if (kotlin.math.abs(delta) == 1) "" else "s"} and subtracted Rs ${amount.toInt()}."
+                    "Removed ${kotlin.math.abs(chargeableDelta)} extra jersey pair${if (kotlin.math.abs(chargeableDelta) == 1) "" else "s"} and subtracted Rs ${amount.toInt()}."
                 },
             )
         } catch (error: Exception) {
@@ -1129,19 +1142,16 @@ class AcademyViewModel(
         if (alternateDigits.isNotBlank() && alternateDigits.length != 10) {
             return "Alternate mobile number should be 10 digits."
         }
+        val jerseyPairs = draft.jerseyPairs.toIntOrNull()
+        if (draft.jerseyPairs.isNotBlank() && (jerseyPairs == null || jerseyPairs < 0)) {
+            return "Enter a valid jersey pair count."
+        }
         if (!draft.feesPaid) {
-            if (draft.jerseyPairs.toIntOrNull()?.let { it < 0 } == true) {
-                return "Jersey pairs cannot be negative."
-            }
             return null
         }
         val amount = draft.amountPaid.toDoubleOrNull()
         if (amount == null || amount < 0) {
             return "Enter a valid amount paid."
-        }
-        val jerseyPairs = draft.jerseyPairs.toIntOrNull()
-        if (jerseyPairs == null || jerseyPairs < 0) {
-            return "Enter a valid jersey pair count."
         }
         return null
     }
@@ -1190,7 +1200,7 @@ class AcademyViewModel(
         }
 
         val jerseyPairs = draft.jerseyPairs.toIntOrNull()
-        if (jerseyPairs == null || jerseyPairs < 0) {
+        if (draft.jerseyPairs.isNotBlank() && (jerseyPairs == null || jerseyPairs < 0)) {
             return "Enter a valid jersey pair count."
         }
 

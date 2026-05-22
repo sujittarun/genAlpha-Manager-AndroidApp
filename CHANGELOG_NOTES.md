@@ -1,6 +1,6 @@
 # Gen Alpha Manager Changelog Notes
 
-Last updated: 2026-05-21
+Last updated: 2026-05-22
 
 This file records meaningful project changes and decisions so future Codex sessions can understand recent work without rereading the full chat. It is not a release changelog for users; it is a developer/manager memory log.
 
@@ -12,6 +12,18 @@ Use this file when:
 - A future agent needs to understand why a design or business rule exists.
 
 For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
+
+## 2026-05-22
+
+### Jersey First Pair Included Rule
+
+- Made jersey size and jersey pair count optional in both web and Android admission/player-edit flows.
+- Changed jersey revenue logic so joining includes the first pair; only pair 2+ records Rs 750 per extra pair.
+- Removing pairs now only records a refund row when an already charged extra pair is removed.
+- Adjusted first-payment duration inference so extra jersey charges do not break 3-month or 6-month paid-through calculations.
+- Verification done:
+  - `node --check web-app-repo/script.js`
+  - `./gradlew assembleDebug`
 
 ## 2026-05-21
 

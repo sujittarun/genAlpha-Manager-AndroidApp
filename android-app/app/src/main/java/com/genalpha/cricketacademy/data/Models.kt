@@ -7,6 +7,12 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
+private const val INCLUDED_JERSEY_PAIRS = 1
+private const val JERSEY_PAIR_REVENUE = 750.0
+
+private fun chargeableJerseyPairCount(pairCount: Int): Int =
+    (pairCount.coerceAtLeast(0) - INCLUDED_JERSEY_PAIRS).coerceAtLeast(0)
+
 data class Student(
     val id: String,
     val regNo: Long?,
@@ -567,8 +573,9 @@ fun calculateAgeFromDate(dateOfBirth: String): Int? {
 
 private fun Student.initialMonthsCovered(): Int {
     if (!feesPaid || amountPaid <= 0.0) return 0
-    val withoutAdmissionFee = (amountPaid - 500.0).coerceAtLeast(0.0)
-    val roundedAmount = kotlin.math.round(amountPaid).toInt()
+    val feeOnlyAmount = (amountPaid - (chargeableJerseyPairCount(jerseyPairs) * JERSEY_PAIR_REVENUE)).coerceAtLeast(0.0)
+    val withoutAdmissionFee = (feeOnlyAmount - 500.0).coerceAtLeast(0.0)
+    val roundedAmount = kotlin.math.round(feeOnlyAmount).toInt()
     return when {
         withoutAdmissionFee >= 18900.0 || roundedAmount in setOf(18900, 19400, 20000, 20500, 21000) -> 6
         roundedAmount in setOf(9000, 9500, 9975, 10475, 10500, 11000) ||

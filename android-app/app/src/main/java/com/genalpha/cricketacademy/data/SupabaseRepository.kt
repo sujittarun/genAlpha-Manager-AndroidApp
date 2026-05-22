@@ -900,6 +900,7 @@ class SupabaseRepository(
             val safeNextPairs = nextPairs.coerceAtLeast(0)
             val previousPairs = student.jerseyPairs.coerceAtLeast(0)
             val delta = safeNextPairs - previousPairs
+            val chargeableDelta = (safeNextPairs - 1).coerceAtLeast(0) - (previousPairs - 1).coerceAtLeast(0)
 
             if (patchStudent) {
                 val updateBody = JSONObject()
@@ -914,17 +915,18 @@ class SupabaseRepository(
             }
 
             if (delta == 0) return@withContext null
+            if (chargeableDelta == 0) return@withContext null
 
-            val increased = delta > 0
+            val increased = chargeableDelta > 0
             val body = JSONObject()
                 .put("student_id", student.id)
                 .put("payment_type", if (increased) "jersey" else "jersey_refund")
                 .put("plan_type", "jersey_pair")
                 .put("cycle_start_date", todayIsoDate())
                 .put("months_covered", 1)
-                .put("amount", kotlin.math.abs(delta) * 750.0)
+                .put("amount", kotlin.math.abs(chargeableDelta) * 750.0)
                 .put("paid_on", todayIsoDate())
-                .put("comment", "${if (increased) "Jersey pair added" else "Jersey pair removed"}. Count $previousPairs to $safeNextPairs.")
+                .put("comment", "${if (increased) "Extra jersey pair added" else "Extra jersey pair removed"}. Count $previousPairs to $safeNextPairs. First pair is included.")
                 .put("recorded_by", managerEmail)
 
             val responseBody = executeWriteRequestReturningBody(
