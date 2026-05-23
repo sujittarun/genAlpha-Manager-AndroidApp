@@ -6634,7 +6634,7 @@ private fun PlayerEditorSheet(
     var timeSlot by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.timeSlot.orEmpty()) }
     var joinDate by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.joinDate.orEmpty()) }
     var feesPaid by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.feesPaid ?: true) }
-    var amountPaid by rememberSaveable(editingStudent?.id) { mutableStateOf(if (editingStudent == null) "0" else editingStudent.toDraft().amountPaid) }
+    var amountPaid by rememberSaveable(editingStudent?.id) { mutableStateOf(if (editingStudent == null) "" else editingStudent.toDraft().amountPaid) }
     var jerseySize by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.jerseySize.orEmpty()) }
     var jerseyPairs by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.jerseyPairs?.toString() ?: "0") }
     var fatherGuardianName by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.fatherGuardianName.orEmpty()) }
@@ -6647,6 +6647,11 @@ private fun PlayerEditorSheet(
     var isSaving by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val editorCoachingFee = admissionPlanBase("monthly")
+    val editorAdmissionFee = AdmissionOneTimeFee
+    val editorJerseyAmount = extraJerseyAmount(jerseyPairs)
+    val editorSuggestedTotal = editorCoachingFee + editorAdmissionFee + editorJerseyAmount
+    val editorAmountPaid = amountPaid.toDoubleOrNull() ?: 0.0
 
     val openDatePicker = rememberUpdatedState(newValue = {
         val (year, month, day) = currentDatePickerValues(joinDate)
@@ -6784,6 +6789,47 @@ private fun PlayerEditorSheet(
                     label = { Text("Jersey pairs (optional)") },
                     supportingText = { Text("Each selected jersey pair adds Rs 750.") },
                     singleLine = true,
+                )
+            }
+
+            AdmissionSectionCard(title = "Joining fee split") {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    DataTileContent(
+                        modifier = Modifier.weight(1f),
+                        label = "Coaching",
+                        value = admissionAmountLabel(editorCoachingFee),
+                        accent = BrandBlue,
+                    )
+                    DataTileContent(
+                        modifier = Modifier.weight(1f),
+                        label = "Admission",
+                        value = admissionAmountLabel(editorAdmissionFee),
+                        accent = BrandBlue,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    DataTileContent(
+                        modifier = Modifier.weight(1f),
+                        label = "Jersey",
+                        value = admissionAmountLabel(editorJerseyAmount),
+                        accent = BrandBlue,
+                    )
+                    DataTileContent(
+                        modifier = Modifier.weight(1f),
+                        label = "Total",
+                        value = admissionAmountLabel(editorSuggestedTotal),
+                        accent = BrandGold,
+                    )
+                }
+                Text(
+                    text = if (editorAmountPaid > 0.0) {
+                        "Amount paid now: ${admissionAmountLabel(editorAmountPaid)}. Blank values are saved as Rs 0."
+                    } else {
+                        "Amount paid can stay blank for unpaid or partial records. Every jersey pair is Rs 750."
+                    },
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
                 )
             }
 

@@ -15,6 +15,17 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 
 ## 2026-05-23
 
+### Player Edit Fee Split and Blank Values
+
+- Wired the manager/player edit flows to show the same coaching fee, admission fee, jersey amount, and total guidance used by admissions.
+- Blank amount fields are now accepted and saved as Rs 0 in both web and Android player edit flows.
+- Kept renewal pricing unchanged: monthly Rs 3,500, 3 months Rs 9,975, 6 months Rs 18,900.
+- Strengthened jersey pair parsing so blank or invalid pair counts safely become 0, while every selected pair still adds Rs 750.
+- Fixed the small-screen web edit card name rendering so the player name stays visible in edit mode.
+- Verification done:
+  - `node --check web-app-repo/script.js`
+  - `./gradlew assembleDebug`
+
 ### Joining Fee Payment Action
 
 - Added a manager action for joining-fee-pending players to record the first payment separately from renewals.

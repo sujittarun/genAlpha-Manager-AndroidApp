@@ -1155,6 +1155,9 @@ class AcademyViewModel(
         if (!draft.feesPaid) {
             return null
         }
+        if (draft.amountPaid.isBlank()) {
+            return null
+        }
         val amount = draft.amountPaid.toDoubleOrNull()
         if (amount == null || amount < 0) {
             return "Enter a valid amount paid."
