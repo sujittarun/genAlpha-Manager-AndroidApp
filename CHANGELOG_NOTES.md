@@ -15,6 +15,14 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 
 ## 2026-05-23
 
+### Joining Fee Payment Action
+
+- Added a manager action for joining-fee-pending players to record the first payment separately from renewals.
+- The payment popup/dialog now supports plan, amount, comment, and payment date; payment date is used for finance reporting while the fee cycle stays anchored to the player join date.
+- In joining-fee mode, the suggested amount includes selected plan amount, admission fee, and jersey amount, but remains editable.
+- Saving a joining payment inserts a `student_payments` row with `payment_type = joining`, marks the student paid, and updates due-date logic via the selected plan/months.
+- Applied in both web and Android.
+
 ### Admission Fee Breakdown and Jersey Charging
 
 - Updated web and Android admission forms to show separate coaching fee, admission fee, jersey amount, and total boxes.

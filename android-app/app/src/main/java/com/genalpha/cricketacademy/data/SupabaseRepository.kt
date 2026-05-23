@@ -845,6 +845,7 @@ class SupabaseRepository(
         amount: Double,
         comment: String,
         cycleDate: String,
+        paidOn: String = todayIsoDate(),
         proofPath: String = "",
         isJoiningFee: Boolean = false,
     ): StudentPayment {
@@ -856,7 +857,7 @@ class SupabaseRepository(
                 .put("cycle_start_date", cycleDate)
                 .put("months_covered", monthsCovered)
                 .put("amount", amount)
-                .put("paid_on", todayIsoDate())
+                .put("paid_on", paidOn.ifBlank { todayIsoDate() })
                 .put("comment", comment)
                 .put("recorded_by", managerEmail)
                 .put("proof_path", proofPath)
@@ -873,6 +874,8 @@ class SupabaseRepository(
             if (isJoiningFee) {
                 val updateBody = JSONObject()
                     .put("fees_paid", true)
+                    .put("amount_paid", amount)
+                    .put("payment_status", "paid")
                     .put("discontinued", false)
                     .put("discontinued_at", JSONObject.NULL)
                     .put("updated_by", managerEmail)

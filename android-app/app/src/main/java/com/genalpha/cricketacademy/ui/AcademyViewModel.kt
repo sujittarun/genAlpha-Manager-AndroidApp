@@ -727,6 +727,7 @@ class AcademyViewModel(
         amount: Double,
         comment: String,
         cycleDateOverride: String? = null,
+        paidOn: String = "",
         proofPath: String = "",
         isJoiningFee: Boolean = false,
     ): OperationResult {
@@ -739,7 +740,19 @@ class AcademyViewModel(
         var whatsappWarning: String? = null
         return try {
             val (session, insertedPayment) = withFreshSession { session ->
-                val payment = repository.recordRenewalPayment(student, session.email, session, planType, monthsCovered, amount, comment, cycleDate, proofPath, isJoiningFee)
+                val payment = repository.recordRenewalPayment(
+                    student = student,
+                    managerEmail = session.email,
+                    session = session,
+                    planType = planType,
+                    monthsCovered = monthsCovered,
+                    amount = amount,
+                    comment = comment,
+                    cycleDate = cycleDate,
+                    paidOn = paidOn.ifBlank { LocalDate.now().toString() },
+                    proofPath = proofPath,
+                    isJoiningFee = isJoiningFee,
+                )
                 
                 // Run slow WhatsApp trigger in background
                 viewModelScope.launch {
@@ -763,6 +776,7 @@ class AcademyViewModel(
                 upsertLocalStudent(
                     student.copy(
                         feesPaid = true,
+                        amountPaid = amount,
                         paymentStatus = "paid",
                         updatedBy = session.email,
                     )
@@ -780,7 +794,7 @@ class AcademyViewModel(
             refreshInBackground()
             OperationResult(
                 true,
-                "${student.name} renewal payment recorded.${whatsappWarning?.let { " $it" } ?: ""}",
+                "${student.name} ${if (isJoiningFee) "joining fee" else "renewal payment"} recorded.${whatsappWarning?.let { " $it" } ?: ""}",
             )
         } catch (error: Exception) {
             OperationResult(false, error.message ?: "Unable to record renewal payment.")

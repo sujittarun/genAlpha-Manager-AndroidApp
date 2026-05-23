@@ -163,6 +163,7 @@ Current fee constants in code:
   - special: Rs 10,000.
 - In future if the user says "3 months is 10500 and 6 months is 21000", interpret that as pre-discount base unless they explicitly cancel discount.
 - For due-date/month calculation, use the selected plan value/month count, not the manually typed amount. Sometimes academy may take a lower amount from a player.
+- Joining-fee-pending players can be marked paid from manager actions. Save a `student_payments` row with `payment_type = joining`; use the selected payment date for finance (`paid_on`) and keep cycle start on the player's join date for next-fee-due logic.
 
 Renewal logic:
 

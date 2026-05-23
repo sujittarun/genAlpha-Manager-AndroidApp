@@ -277,6 +277,18 @@ private fun extraJerseyAmount(pairText: String): Double =
 private fun admissionAmountLabel(amount: Double): String =
     "Rs ${String.format(Locale.US, "%,d", amount.toInt())}"
 
+private fun joiningPaymentAmountForPlan(student: Student, plan: String): Double {
+    val base = when (plan) {
+        "quarterly" -> 9975.0
+        "halfyearly" -> 18900.0
+        "special" -> 10000.0
+        "custom" -> 0.0
+        else -> 3500.0
+    }
+    val admissionFee = if (plan == "special" || plan == "custom") 0.0 else AdmissionOneTimeFee
+    return base + admissionFee + (student.jerseyPairs.coerceAtLeast(0) * JerseyExtraPairFee)
+}
+
 private fun planDiscountLabel(plan: String): String = when (plan) {
     "quarterly" -> "5% discount applied"
     "halfyearly" -> "10% discount applied"
@@ -1055,7 +1067,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                         selectedStudent = student
                                         showEditorSheet = true
                                     },
-                                    onRenew = if (student.isRenewalPending(uiState.payments) && student.isActive()) {
+                                    onRenew = if ((student.isFeesPending() || student.isRenewalPending(uiState.payments)) && student.isActive()) {
                                         {
                                             renewalStudent = student
                                             selectedStudent = student
@@ -1411,11 +1423,30 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         student = renewalStudent!!,
                         payments = uiState.payments,
                         onDismiss = { renewalStudent = null },
-                        onSubmit = { plan, months, amount, comment ->
+                        onSubmit = { plan, months, amount, comment, paymentDate ->
                             val studentForReceipt = renewalStudent!!
-                            val result = viewModel.recordRenewalPayment(studentForReceipt, plan, months, amount, comment)
+                            val isJoiningFee = studentForReceipt.isFeesPending()
+                            val result = viewModel.recordRenewalPayment(
+                                student = studentForReceipt,
+                                planType = plan,
+                                monthsCovered = months,
+                                amount = amount,
+                                comment = comment,
+                                cycleDateOverride = if (isJoiningFee) studentForReceipt.joinDate else null,
+                                paidOn = paymentDate,
+                                isJoiningFee = isJoiningFee,
+                            )
                             if (result.success) {
-                                context.shareReceiptPdf(buildAndroidRenewalReceipt(studentForReceipt, plan, months, amount))
+                                context.shareReceiptPdf(
+                                    buildAndroidRenewalReceipt(
+                                        student = studentForReceipt,
+                                        plan = plan,
+                                        months = months,
+                                        amount = amount,
+                                        paidOn = paymentDate,
+                                        isJoiningFee = isJoiningFee,
+                                    )
+                                )
                                 renewalStudent = null
                                 showDetailSheet = false
                                 selectedStudent = null
@@ -3371,11 +3402,16 @@ private fun RenewalPaymentDialog(
     student: Student,
     payments: List<StudentPayment>,
     onDismiss: () -> Unit,
-    onSubmit: suspend (String, Int, Double, String) -> OperationResult,
+    onSubmit: suspend (String, Int, Double, String, String) -> OperationResult,
 ) {
+    val isJoiningFee = student.isFeesPending()
+    val context = LocalContext.current
     var plan by rememberSaveable(student.id) { mutableStateOf("monthly") }
-    var amount by rememberSaveable(student.id) { mutableStateOf("3500") }
+    var amount by rememberSaveable(student.id) {
+        mutableStateOf(if (isJoiningFee) joiningPaymentAmountForPlan(student, "monthly").toInt().toString() else "3500")
+    }
     var comment by rememberSaveable(student.id) { mutableStateOf("") }
+    var paymentDate by rememberSaveable(student.id) { mutableStateOf(todayIsoDate()) }
     var isSaving by rememberSaveable(student.id) { mutableStateOf(false) }
     var inlineMessage by rememberSaveable(student.id) { mutableStateOf("") }
     val scope = rememberCoroutineScope()
@@ -3386,6 +3422,25 @@ private fun RenewalPaymentDialog(
         "custom" -> Triple("Custom amount", 1, amount.toDoubleOrNull() ?: 0.0)
         else -> Triple("Monthly", 1, 3500.0)
     }
+    val cycleDate = if (isJoiningFee) student.joinDate else student.nextRenewalCycleDate(payments)
+    val openPaymentDatePicker = rememberUpdatedState(newValue = {
+        val (year, month, day) = currentDatePickerValues(paymentDate.ifBlank { null })
+        DatePickerDialog(
+            context,
+            { _, selectedYear, selectedMonth, selectedDay ->
+                paymentDate = String.format(
+                    Locale.US,
+                    "%04d-%02d-%02d",
+                    selectedYear,
+                    selectedMonth + 1,
+                    selectedDay,
+                )
+            },
+            year,
+            month,
+            day,
+        ).show()
+    })
 
     FormDialog(onDismiss = onDismiss) {
         Column(
@@ -3395,9 +3450,17 @@ private fun RenewalPaymentDialog(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text("Record renewal payment", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
             Text(
-                "${student.name} cycle starts ${displayDate(student.nextRenewalCycleDate(payments))}. Late payment will not change the usual fee date.",
+                if (isJoiningFee) "Record joining fee" else "Record renewal payment",
+                fontSize = 22.sp,
+                fontWeight = FontWeight.ExtraBold,
+            )
+            Text(
+                if (isJoiningFee) {
+                    "${student.name} first fee starts from ${displayDate(cycleDate)}. Payment date is used for finance reports."
+                } else {
+                    "${student.name} cycle starts ${displayDate(cycleDate)}. Late payment will not change the usual fee date."
+                },
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
@@ -3415,11 +3478,11 @@ private fun RenewalPaymentDialog(
                         else -> "monthly"
                     }
                     amount = when (plan) {
-                        "quarterly" -> "9975"
-                        "halfyearly" -> "18900"
-                        "special" -> "10000"
+                        "quarterly" -> if (isJoiningFee) joiningPaymentAmountForPlan(student, plan).toInt().toString() else "9975"
+                        "halfyearly" -> if (isJoiningFee) joiningPaymentAmountForPlan(student, plan).toInt().toString() else "18900"
+                        "special" -> if (isJoiningFee) joiningPaymentAmountForPlan(student, plan).toInt().toString() else "10000"
                         "custom" -> ""
-                        else -> "3500"
+                        else -> if (isJoiningFee) joiningPaymentAmountForPlan(student, plan).toInt().toString() else "3500"
                     }
                 },
             )
@@ -3436,7 +3499,18 @@ private fun RenewalPaymentDialog(
                 onValueChange = { amount = it.filter { char -> char.isDigit() || char == '.' } },
                 label = "Amount paid",
                 singleLine = true,
-                enabled = plan == "custom",
+            )
+            AdmissionTextField(
+                value = paymentDate,
+                onValueChange = {},
+                label = "Payment date",
+                singleLine = true,
+                readOnly = true,
+                trailing = {
+                    TextButton(onClick = { openPaymentDatePicker.value.invoke() }) {
+                        Text("Pick")
+                    }
+                },
             )
             AdmissionTextField(
                 value = comment,
@@ -3462,9 +3536,9 @@ private fun RenewalPaymentDialog(
                             val finalAmount = if (plan == "custom") {
                                 amount.toDoubleOrNull() ?: 0.0
                             } else {
-                                planInfo.third
+                                amount.toDoubleOrNull() ?: planInfo.third
                             }
-                            val result = onSubmit(plan, planInfo.second, finalAmount, comment)
+                            val result = onSubmit(plan, planInfo.second, finalAmount, comment, paymentDate)
                             if (!result.success) {
                                 inlineMessage = result.message
                             }
@@ -3480,7 +3554,7 @@ private fun RenewalPaymentDialog(
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                     Spacer(modifier = Modifier.size(8.dp))
                 }
-                Text("Save renewal payment")
+                Text(if (isJoiningFee) "Save joining payment" else "Save renewal payment")
             }
         }
     }
@@ -4813,7 +4887,7 @@ private fun RosterRow(
                             )
                             onRenew?.let { renew ->
                                 RosterActionButton(
-                                    label = "Renew payment",
+                                    label = if (student.isFeesPending()) "Record joining fee" else "Renew payment",
                                     tint = BrandGreen,
                                     onClick = {
                                         showingActions = false
@@ -4995,7 +5069,10 @@ private fun RosterRow(
                         ) {
                             Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Renew Payment", fontWeight = FontWeight.ExtraBold)
+                            Text(
+                                if (student.isFeesPending()) "Record Joining Fee" else "Renew Payment",
+                                fontWeight = FontWeight.ExtraBold,
+                            )
                         }
                     }
 
@@ -5292,14 +5369,14 @@ private fun PlayerDetailSheet(
                         Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp)); Text("Edit")
                     }
-                    if (student.isRenewalPending(payments) && student.isActive()) {
+                    if ((student.isFeesPending() || student.isRenewalPending(payments)) && student.isActive()) {
                         ElevatedButton(
                             enabled = actionInProgress == null,
                             onClick = { scope.launch { actionInProgress = "renew"; onRenew(); actionInProgress = null } },
                         ) {
                             if (actionInProgress == "renew") CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
                             else Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp)); Text("Renew")
+                            Spacer(Modifier.width(6.dp)); Text(if (student.isFeesPending()) "Joining payment" else "Renew")
                         }
                     }
                     if (reminderDue && student.isActive()) {
@@ -7910,11 +7987,13 @@ private fun buildAndroidRenewalReceipt(
     plan: String,
     months: Int,
     amount: Double,
+    paidOn: String = LocalDate.now().toString(),
+    isJoiningFee: Boolean = false,
 ): ReceiptPdfData {
     val regNo = student.regNo?.toString() ?: "Saved"
     return ReceiptPdfData(
-        receiptType = "Renewal Fee Receipt",
-        receiptNo = buildReceiptNo("GACA-REN", regNo),
+        receiptType = if (isJoiningFee) "Joining Fee Receipt" else "Renewal Fee Receipt",
+        receiptNo = buildReceiptNo(if (isJoiningFee) "GACA" else "GACA-REN", regNo),
         regNo = regNo,
         playerName = student.name,
         amountText = formatRupees(amount),
@@ -7922,10 +8001,14 @@ private fun buildAndroidRenewalReceipt(
         rows = listOf(
             ReceiptPdfRow("Plan", renewalPlanLabel(plan)),
             ReceiptPdfRow("Covered", "$months month${if (months == 1) "" else "s"}"),
-            ReceiptPdfRow("Paid On", displayDate(LocalDate.now().toString())),
+            ReceiptPdfRow("Paid On", displayDate(paidOn)),
             ReceiptPdfRow("Time Slot", student.timeSlot.ifBlank { "Not set" }),
         ),
-        footer = "Thank you for continuing with Gen Alpha Cricket Academy.",
+        footer = if (isJoiningFee) {
+            "Welcome to Gen Alpha Cricket Academy."
+        } else {
+            "Thank you for continuing with Gen Alpha Cricket Academy."
+        },
     )
 }
 
