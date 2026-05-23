@@ -269,7 +269,8 @@ private fun admissionPlanBase(plan: String): Double = when (plan) {
     else -> 3500.0
 }
 
-private fun admissionPlanTotal(plan: String): Double = admissionPlanBase(plan) + AdmissionOneTimeFee
+private fun admissionPlanTotal(plan: String): Double =
+    if (plan == "special") admissionPlanBase(plan) else admissionPlanBase(plan) + AdmissionOneTimeFee
 
 private fun chargeableJerseyPairs(pairText: String): Int =
     ((pairText.toIntOrNull() ?: 0) - IncludedJerseyPairs).coerceAtLeast(0)
@@ -2566,6 +2567,7 @@ private fun initialCoverageMonthsForAmount(amount: Double, feesPaid: Boolean, je
     val withoutAdmissionFee = (feeOnlyAmount - 500.0).coerceAtLeast(0.0)
     val roundedAmount = kotlin.math.round(feeOnlyAmount).toInt()
     return when {
+        roundedAmount == 10000 -> 1
         withoutAdmissionFee >= 18900.0 || roundedAmount in setOf(18900, 19400, 20000, 20500, 21000) -> 6
         roundedAmount in setOf(9000, 9500, 9975, 10475, 10500, 11000) ||
             withoutAdmissionFee in 9000.0..10500.0 -> 3
@@ -7168,7 +7170,11 @@ private fun AdmissionFormSheet(
                             } else {
                                 ""
                             }
-                            "Plan Rs ${String.format(Locale.US, "%,d", admissionPlanBase(feePlan).toInt())}$discount + Rs ${AdmissionOneTimeFee.toInt()} admission$jerseyCopy. First payment Rs ${String.format(Locale.US, "%,d", planAmount.toInt())}"
+                            if (feePlan == "special") {
+                                "Special training Rs ${String.format(Locale.US, "%,d", admissionPlanBase(feePlan).toInt())} for 1 month$jerseyCopy. First payment Rs ${String.format(Locale.US, "%,d", planAmount.toInt())}"
+                            } else {
+                                "Plan Rs ${String.format(Locale.US, "%,d", admissionPlanBase(feePlan).toInt())}$discount + Rs ${AdmissionOneTimeFee.toInt()} admission$jerseyCopy. First payment Rs ${String.format(Locale.US, "%,d", planAmount.toInt())}"
+                            }
                         },
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),

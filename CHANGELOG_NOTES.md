@@ -1,6 +1,6 @@
 # Gen Alpha Manager Changelog Notes
 
-Last updated: 2026-05-22
+Last updated: 2026-05-23
 
 This file records meaningful project changes and decisions so future Codex sessions can understand recent work without rereading the full chat. It is not a release changelog for users; it is a developer/manager memory log.
 
@@ -12,6 +12,18 @@ Use this file when:
 - A future agent needs to understand why a design or business rule exists.
 
 For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
+
+## 2026-05-23
+
+### Special Training Admission Logic
+
+- Fixed special-training admission logic in web and Android so Rs 10,000 is treated as 1 month, not inferred as a 3-month payment.
+- Special training no longer adds the one-time admission fee in the admission amount summary.
+- Added special-training roster detection for explicit `plan_type = special` payment rows and legacy Rs 10,000 first payments.
+- Corrected Parvez Ali in Supabase by adding a `student_payments` joining row with `plan_type = special`, `months_covered = 1`, and amount Rs 10,000.
+- Verification done:
+  - `node --check web-app-repo/script.js`
+  - `./gradlew assembleDebug`
 
 ## 2026-05-22
 

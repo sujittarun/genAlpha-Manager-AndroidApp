@@ -360,9 +360,13 @@ fun PendingAdmission.isPaymentPendingVerification(): Boolean =
 fun Student.referenceDate(): String = renewals.lastOrNull() ?: joinDate
 
 fun Student.isSpecialTraining(payments: List<StudentPayment>): Boolean {
-    val latest = payments.filter { it.studentId == id && it.paymentType == "renewal" }
-        .maxByOrNull { it.cycleStartDate ?: "" }
-    return latest?.planType == "special"
+    if (payments.any { it.studentId == id && it.planType == "special" }) {
+        return true
+    }
+    val firstPaymentAmount = kotlin.math.round(
+        (amountPaid - (chargeableJerseyPairCount(jerseyPairs) * JERSEY_PAIR_REVENUE)).coerceAtLeast(0.0)
+    ).toInt()
+    return feesPaid && firstPaymentAmount == 10000
 }
 
 fun Student.nextRenewalCycleDate(payments: List<StudentPayment>): String = paidThroughDate(payments)
@@ -577,6 +581,7 @@ private fun Student.initialMonthsCovered(): Int {
     val withoutAdmissionFee = (feeOnlyAmount - 500.0).coerceAtLeast(0.0)
     val roundedAmount = kotlin.math.round(feeOnlyAmount).toInt()
     return when {
+        roundedAmount == 10000 -> 1
         withoutAdmissionFee >= 18900.0 || roundedAmount in setOf(18900, 19400, 20000, 20500, 21000) -> 6
         roundedAmount in setOf(9000, 9500, 9975, 10475, 10500, 11000) ||
             withoutAdmissionFee in 9000.0..10500.0 -> 3
