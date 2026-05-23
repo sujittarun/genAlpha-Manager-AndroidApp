@@ -7,11 +7,10 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-private const val INCLUDED_JERSEY_PAIRS = 1
 private const val JERSEY_PAIR_REVENUE = 750.0
 
 private fun chargeableJerseyPairCount(pairCount: Int): Int =
-    (pairCount.coerceAtLeast(0) - INCLUDED_JERSEY_PAIRS).coerceAtLeast(0)
+    pairCount.coerceAtLeast(0)
 
 data class Student(
     val id: String,

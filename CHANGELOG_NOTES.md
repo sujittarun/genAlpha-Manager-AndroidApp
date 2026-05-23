@@ -15,6 +15,17 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 
 ## 2026-05-23
 
+### Admission Fee Breakdown and Jersey Charging
+
+- Updated web and Android admission forms to show separate coaching fee, admission fee, jersey amount, and total boxes.
+- Removed the first-pair-free jersey rule; every selected jersey pair now adds Rs 750.
+- Added/kept optional amount-paid override so admissions can still be submitted when parents pay a custom or partial amount.
+- Updated jersey pair edit revenue logic so moving from 0 to 1 pair records Rs 750 revenue.
+- Verification done:
+  - `node --check web-app-repo/script.js`
+  - `./gradlew assembleDebug`
+  - Local web preview confirmed monthly + one jersey pair shows Rs 4,750 total.
+
 ### Special Training Admission Logic
 
 - Fixed special-training admission logic in web and Android so Rs 10,000 is treated as 1 month, not inferred as a 3-month payment.
@@ -31,6 +42,7 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 
 - Made jersey size and jersey pair count optional in both web and Android admission/player-edit flows.
 - Changed jersey revenue logic so joining includes the first pair; only pair 2+ records Rs 750 per extra pair.
+- Superseded on 2026-05-23: every selected jersey pair is now chargeable at Rs 750.
 - Removing pairs now only records a refund row when an already charged extra pair is removed.
 - Adjusted first-payment duration inference so extra jersey charges do not break 3-month or 6-month paid-through calculations.
 - Verification done:

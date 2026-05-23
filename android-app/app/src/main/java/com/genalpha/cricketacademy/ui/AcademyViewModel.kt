@@ -44,10 +44,9 @@ import java.time.temporal.ChronoUnit
 
 private val TIME_SLOTS = listOf("6AM", "7:30AM", "4PM", "5:30PM", "7PM")
 private const val JERSEY_PAIR_REVENUE = 750.0
-private const val INCLUDED_JERSEY_PAIRS = 1
 
 private fun chargeableJerseyPairCount(pairCount: Int): Int =
-    (pairCount.coerceAtLeast(0) - INCLUDED_JERSEY_PAIRS).coerceAtLeast(0)
+    pairCount.coerceAtLeast(0)
 
 data class AcademyUiState(
     val isLoading: Boolean = true,
@@ -682,20 +681,13 @@ class AcademyViewModel(
             if (payment != null) refreshFinanceInBackground()
             refreshInBackground()
 
-            if (chargeableDelta == 0) {
-                return OperationResult(
-                    true,
-                    "Jersey pair count updated. The first pair is included, so no extra charge was recorded.",
-                )
-            }
-
             val amount = kotlin.math.abs(chargeableDelta) * JERSEY_PAIR_REVENUE
             OperationResult(
                 true,
                 if (chargeableDelta > 0) {
-                    "Added ${kotlin.math.abs(chargeableDelta)} extra jersey pair${if (kotlin.math.abs(chargeableDelta) == 1) "" else "s"} and recorded Rs ${amount.toInt()}."
+                    "Added ${kotlin.math.abs(chargeableDelta)} jersey pair${if (kotlin.math.abs(chargeableDelta) == 1) "" else "s"} and recorded Rs ${amount.toInt()}."
                 } else {
-                    "Removed ${kotlin.math.abs(chargeableDelta)} extra jersey pair${if (kotlin.math.abs(chargeableDelta) == 1) "" else "s"} and subtracted Rs ${amount.toInt()}."
+                    "Removed ${kotlin.math.abs(chargeableDelta)} jersey pair${if (kotlin.math.abs(chargeableDelta) == 1) "" else "s"} and subtracted Rs ${amount.toInt()}."
                 },
             )
         } catch (error: Exception) {

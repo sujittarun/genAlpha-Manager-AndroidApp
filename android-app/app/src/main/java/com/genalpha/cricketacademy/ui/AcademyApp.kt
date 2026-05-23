@@ -250,7 +250,6 @@ private val AdmissionSlotOptions = listOf(
     SlotOption("7PM", "7:00 - 8:30 PM"),
 )
 private const val AdmissionOneTimeFee = 500.0
-private const val IncludedJerseyPairs = 1
 private const val JerseyExtraPairFee = 750.0
 private val AdmissionFeePlanOptions = listOf(
     SlotOption("monthly", "Monthly"),
@@ -269,14 +268,14 @@ private fun admissionPlanBase(plan: String): Double = when (plan) {
     else -> 3500.0
 }
 
-private fun admissionPlanTotal(plan: String): Double =
-    if (plan == "special") admissionPlanBase(plan) else admissionPlanBase(plan) + AdmissionOneTimeFee
-
 private fun chargeableJerseyPairs(pairText: String): Int =
-    ((pairText.toIntOrNull() ?: 0) - IncludedJerseyPairs).coerceAtLeast(0)
+    (pairText.toIntOrNull() ?: 0).coerceAtLeast(0)
 
 private fun extraJerseyAmount(pairText: String): Double =
     chargeableJerseyPairs(pairText) * JerseyExtraPairFee
+
+private fun admissionAmountLabel(amount: Double): String =
+    "Rs ${String.format(Locale.US, "%,d", amount.toInt())}"
 
 private fun planDiscountLabel(plan: String): String = when (plan) {
     "quarterly" -> "5% discount applied"
@@ -2563,7 +2562,7 @@ private data class PlayerPaymentLine(
 
 private fun initialCoverageMonthsForAmount(amount: Double, feesPaid: Boolean, jerseyPairs: Int = 0): Int {
     if (!feesPaid || amount <= 0.0) return 0
-    val feeOnlyAmount = (amount - ((jerseyPairs - IncludedJerseyPairs).coerceAtLeast(0) * JerseyExtraPairFee)).coerceAtLeast(0.0)
+    val feeOnlyAmount = (amount - (jerseyPairs.coerceAtLeast(0) * JerseyExtraPairFee)).coerceAtLeast(0.0)
     val withoutAdmissionFee = (feeOnlyAmount - 500.0).coerceAtLeast(0.0)
     val roundedAmount = kotlin.math.round(feeOnlyAmount).toInt()
     return when {
@@ -6706,7 +6705,7 @@ private fun PlayerEditorSheet(
                         .fillMaxWidth()
                         .then(rememberBringIntoViewOnFocusModifier()),
                     label = { Text("Jersey pairs (optional)") },
-                    supportingText = { Text("First pair is included. Extra pairs add Rs 750 each.") },
+                    supportingText = { Text("Each selected jersey pair adds Rs 750.") },
                     singleLine = true,
                 )
             }
@@ -6862,6 +6861,7 @@ private fun AdmissionFormSheet(
     var feesPaid by rememberSaveable { mutableStateOf(false) }
     var feePlan by rememberSaveable { mutableStateOf("monthly") }
     var customAmount by rememberSaveable { mutableStateOf("") }
+    var paidAmountOverride by rememberSaveable { mutableStateOf("") }
     var jerseySize by rememberSaveable { mutableStateOf("") }
     var jerseyPairs by rememberSaveable { mutableStateOf("") }
     var comments by rememberSaveable { mutableStateOf("") }
@@ -6879,15 +6879,20 @@ private fun AdmissionFormSheet(
     val upiId = remember { context.getString(R.string.academy_upi_id) }
     val upiMobile = remember { context.getString(R.string.academy_upi_mobile) }
     val upiName = remember { context.getString(R.string.academy_upi_name) }
-    val planBaseTotal = remember(feePlan, customAmount) {
-        if (feePlan == "custom") customAmount.toDoubleOrNull() ?: 0.0 else admissionPlanTotal(feePlan)
+    val coachingFee = remember(feePlan, customAmount) {
+        if (feePlan == "custom") customAmount.toDoubleOrNull() ?: 0.0 else admissionPlanBase(feePlan)
     }
-    val admissionExtraJerseyPairs = remember(jerseyPairs) { chargeableJerseyPairs(jerseyPairs) }
+    val admissionFee = remember(feePlan) {
+        if (feePlan == "special") 0.0 else AdmissionOneTimeFee
+    }
     val admissionExtraJerseyAmount = remember(jerseyPairs) { extraJerseyAmount(jerseyPairs) }
-    val planAmount = remember(planBaseTotal, admissionExtraJerseyAmount) {
-        planBaseTotal + admissionExtraJerseyAmount
+    val planAmount = remember(coachingFee, admissionFee, admissionExtraJerseyAmount) {
+        coachingFee + admissionFee + admissionExtraJerseyAmount
     }
-    val upiAmount = remember(planAmount) { planAmount.takeIf { it > 0.0 } }
+    val paymentAmount = remember(planAmount, paidAmountOverride) {
+        paidAmountOverride.toDoubleOrNull()?.takeIf { it > 0.0 } ?: planAmount
+    }
+    val upiAmount = remember(paymentAmount) { paymentAmount.takeIf { it > 0.0 } }
     val upiUri = remember(upiId, upiName, upiAmount, applicantName) {
         if (upiId.isBlank()) "" else buildUpiPayUri(
             upiId = upiId,
@@ -7150,36 +7155,40 @@ private fun AdmissionFormSheet(
                         feePlan = AdmissionFeePlanOptions.firstOrNull { it.label == selectedLabel }?.value ?: "monthly"
                     },
                 )
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.background.copy(alpha = 0.8f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        DataTileContent(
+                            modifier = Modifier.weight(1f),
+                            label = "Coaching fee",
+                            value = admissionAmountLabel(coachingFee),
+                            accent = BrandBlue,
+                        )
+                        DataTileContent(
+                            modifier = Modifier.weight(1f),
+                            label = "Admission fee",
+                            value = admissionAmountLabel(admissionFee),
+                            accent = BrandBlue,
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        DataTileContent(
+                            modifier = Modifier.weight(1f),
+                            label = "Jersey amount",
+                            value = admissionAmountLabel(admissionExtraJerseyAmount),
+                            accent = BrandBlue,
+                        )
+                        DataTileContent(
+                            modifier = Modifier.weight(1f),
+                            label = "Total",
+                            value = admissionAmountLabel(planAmount),
+                            accent = BrandGold,
+                        )
+                    }
                     Text(
-                        text = if (feePlan == "custom") {
-                            val jerseyCopy = if (admissionExtraJerseyPairs > 0) {
-                                " + Rs ${String.format(Locale.US, "%,d", admissionExtraJerseyAmount.toInt())} extra jersey"
-                            } else {
-                                ""
-                            }
-                            "Custom amount Rs ${String.format(Locale.US, "%,d", planBaseTotal.toInt())}$jerseyCopy. First payment Rs ${String.format(Locale.US, "%,d", planAmount.toInt())}"
-                        } else {
-                            val discount = planDiscountLabel(feePlan).takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()
-                            val jerseyCopy = if (admissionExtraJerseyPairs > 0) {
-                                " + Rs ${String.format(Locale.US, "%,d", admissionExtraJerseyAmount.toInt())} extra jersey"
-                            } else {
-                                ""
-                            }
-                            if (feePlan == "special") {
-                                "Special training Rs ${String.format(Locale.US, "%,d", admissionPlanBase(feePlan).toInt())} for 1 month$jerseyCopy. First payment Rs ${String.format(Locale.US, "%,d", planAmount.toInt())}"
-                            } else {
-                                "Plan Rs ${String.format(Locale.US, "%,d", admissionPlanBase(feePlan).toInt())}$discount + Rs ${AdmissionOneTimeFee.toInt()} admission$jerseyCopy. First payment Rs ${String.format(Locale.US, "%,d", planAmount.toInt())}"
-                            }
-                        },
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                        text = "Each jersey pair adds Rs 750. Parents can submit even if they paid a different amount.",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
                         fontSize = 12.sp,
-                        lineHeight = 17.sp,
+                        lineHeight = 16.sp,
                     )
                 }
                 if (feePlan == "custom") {
@@ -7214,7 +7223,6 @@ private fun AdmissionFormSheet(
                         singleLine = true,
                     )
                 }
-
             }
 
             AdmissionSectionCard(title = "Skills and playing style") {
@@ -7329,6 +7337,17 @@ private fun AdmissionFormSheet(
                     Switch(
                         checked = feesPaid,
                         onCheckedChange = { feesPaid = it }
+                    )
+                }
+                if (feesPaid) {
+                    AdmissionTextField(
+                        value = paidAmountOverride,
+                        onValueChange = { paidAmountOverride = it.filter { char -> char.isDigit() || char == '.' } },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(rememberBringIntoViewOnFocusModifier()),
+                        label = "Amount paid now (optional)",
+                        singleLine = true,
                     )
                 }
 
@@ -7447,7 +7466,7 @@ private fun AdmissionFormSheet(
                                 timeSlot = timeSlot,
                                 joinDate = joinDate,
                                 feesPaid = false,
-                                amountPaid = if (feesPaid) String.format(Locale.US, "%.2f", planAmount) else "0",
+                                amountPaid = if (feesPaid) String.format(Locale.US, "%.2f", paymentAmount) else "0",
                                 jerseySize = jerseySize,
                                 jerseyPairs = jerseyPairs.ifBlank { "0" },
                                 paymentMethod = "UPI",
