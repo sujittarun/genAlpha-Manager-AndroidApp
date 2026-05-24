@@ -6647,8 +6647,8 @@ private fun PlayerEditorSheet(
     var isSaving by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val editorCoachingFee = admissionPlanBase("monthly")
-    val editorAdmissionFee = AdmissionOneTimeFee
+    val editorCoachingFee = editingStudent?.coachingFee?.takeIf { it > 0.0 } ?: admissionPlanBase("monthly")
+    val editorAdmissionFee = editingStudent?.admissionFee?.takeIf { it > 0.0 } ?: AdmissionOneTimeFee
     val editorJerseyAmount = extraJerseyAmount(jerseyPairs)
     val editorSuggestedTotal = editorCoachingFee + editorAdmissionFee + editorJerseyAmount
     val editorAmountPaid = amountPaid.toDoubleOrNull() ?: 0.0
@@ -6786,7 +6786,7 @@ private fun PlayerEditorSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .then(rememberBringIntoViewOnFocusModifier()),
-                    label = { Text("Jersey pairs (optional)") },
+                    label = { Text("Jersey pairs") },
                     supportingText = { Text("Each selected jersey pair adds Rs 750.") },
                     singleLine = true,
                 )
@@ -6909,6 +6909,11 @@ private fun PlayerEditorSheet(
                                             joinDate = joinDate,
                                             feesPaid = feesPaid,
                                             amountPaid = amountPaid,
+                                            feePlan = editingStudent?.feePlan?.ifBlank { "monthly" } ?: "monthly",
+                                            coachingFee = String.format(Locale.US, "%.2f", editorCoachingFee),
+                                            admissionFee = String.format(Locale.US, "%.2f", editorAdmissionFee),
+                                            jerseyAmount = String.format(Locale.US, "%.2f", editorJerseyAmount),
+                                            totalFeeAmount = String.format(Locale.US, "%.2f", editorSuggestedTotal),
                                             jerseySize = jerseySize,
                                             jerseyPairs = jerseyPairs.ifBlank { "0" },
                                             paymentMethod = editingStudent?.paymentMethod.orEmpty(),
@@ -7342,7 +7347,7 @@ private fun AdmissionFormSheet(
                         modifier = Modifier
                             .weight(1f)
                             .then(rememberBringIntoViewOnFocusModifier()),
-                        label = "Jersey pairs (optional)",
+                        label = "Jersey pairs",
                         singleLine = true,
                     )
                 }
@@ -7590,6 +7595,11 @@ private fun AdmissionFormSheet(
                                 joinDate = joinDate,
                                 feesPaid = false,
                                 amountPaid = if (feesPaid) String.format(Locale.US, "%.2f", paymentAmount) else "0",
+                                feePlan = feePlan,
+                                coachingFee = String.format(Locale.US, "%.2f", coachingFee),
+                                admissionFee = String.format(Locale.US, "%.2f", admissionFee),
+                                jerseyAmount = String.format(Locale.US, "%.2f", admissionExtraJerseyAmount),
+                                totalFeeAmount = String.format(Locale.US, "%.2f", planAmount),
                                 jerseySize = jerseySize,
                                 jerseyPairs = jerseyPairs.ifBlank { "0" },
                                 paymentMethod = "UPI",

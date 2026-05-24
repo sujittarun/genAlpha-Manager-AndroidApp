@@ -395,7 +395,9 @@ class SupabaseRepository(
                 executeWriteRequest(url = url, session = session, method = "POST", body = body)
                 true
             } catch (error: SupabaseException) {
-                if (!error.isMissingStudentProfileColumnError()) throw error
+                val missingProfileColumns = error.isMissingStudentProfileColumnError()
+                val missingFeeColumns = error.isMissingStudentFeeColumnError()
+                if (!missingProfileColumns && !missingFeeColumns) throw error
                 executeWriteRequest(
                     url = url,
                     session = session,
@@ -407,10 +409,11 @@ class SupabaseRepository(
                         updatedBy = managerEmail,
                         discontinued = false,
                         discontinuedAt = null,
-                        includeProfileFields = false,
+                        includeProfileFields = !missingProfileColumns,
+                        includeFeeFields = !missingFeeColumns,
                     ),
                 )
-                false
+                !missingProfileColumns
             }
         }
     }
@@ -444,6 +447,11 @@ class SupabaseRepository(
             .put("p_join_date", draft.joinDate)
             .put("p_fees_paid", verifiedFeesPaid)
             .put("p_amount_paid", submittedAmount)
+            .put("p_fee_plan", draft.feePlan.ifBlank { "monthly" })
+            .put("p_coaching_fee", draft.coachingFee.toDoubleOrNull() ?: 0.0)
+            .put("p_admission_fee", draft.admissionFee.toDoubleOrNull() ?: 0.0)
+            .put("p_jersey_amount", draft.jerseyAmount.toDoubleOrNull() ?: 0.0)
+            .put("p_total_fee_amount", draft.totalFeeAmount.toDoubleOrNull() ?: 0.0)
             .put("p_jersey_size", draft.jerseySize.trim())
             .put("p_jersey_pairs", draft.jerseyPairs.toIntOrNull() ?: 0)
             .put("p_payment_method", draft.paymentMethod.trim())
@@ -481,10 +489,15 @@ class SupabaseRepository(
             )
             if (!isSignatureMismatch) throw error
 
-            // Backward compatibility for DBs that still have the signature before filled_by.
-            body.remove("p_filled_by")
+            // Backward compatibility for DBs that still have the signature before fee split fields.
+            val noFeeSplitBody = JSONObject(body.toString())
+            noFeeSplitBody.remove("p_fee_plan")
+            noFeeSplitBody.remove("p_coaching_fee")
+            noFeeSplitBody.remove("p_admission_fee")
+            noFeeSplitBody.remove("p_jersey_amount")
+            noFeeSplitBody.remove("p_total_fee_amount")
             try {
-                executeSubmission(body)
+                executeSubmission(noFeeSplitBody)
             } catch (legacyError: SupabaseException) {
                 val legacyMismatch = legacyError.message.contains(
                     "Could not find the function public.submit_admission_form",
@@ -492,12 +505,24 @@ class SupabaseRepository(
                 )
                 if (!legacyMismatch) throw legacyError
 
-                // Backward compatibility for DBs that still have the older RPC signature before payment args.
-                body.remove("p_payment_method")
-                body.remove("p_payment_upi_id")
-                body.remove("p_payment_reference")
+                // Backward compatibility for DBs that still have the signature before filled_by.
+                noFeeSplitBody.remove("p_filled_by")
                 try {
-                    return@withContext executeSubmission(body)
+                    return@withContext executeSubmission(noFeeSplitBody)
+                } catch (filledByError: SupabaseException) {
+                    val filledByMismatch = filledByError.message.contains(
+                        "Could not find the function public.submit_admission_form",
+                        ignoreCase = true
+                    )
+                    if (!filledByMismatch) throw filledByError
+                }
+
+                // Backward compatibility for DBs that still have the older RPC signature before payment args.
+                noFeeSplitBody.remove("p_payment_method")
+                noFeeSplitBody.remove("p_payment_upi_id")
+                noFeeSplitBody.remove("p_payment_reference")
+                try {
+                    return@withContext executeSubmission(noFeeSplitBody)
                 } catch (olderError: SupabaseException) {
                     val olderMismatch = olderError.message.contains(
                         "Could not find the function public.submit_admission_form",
@@ -526,6 +551,11 @@ class SupabaseRepository(
                     .put("join_date", draft.joinDate)
                     .put("fees_paid", verifiedFeesPaid)
                     .put("amount_paid", submittedAmount)
+                    .put("fee_plan", draft.feePlan.ifBlank { "monthly" })
+                    .put("coaching_fee", draft.coachingFee.toDoubleOrNull() ?: 0.0)
+                    .put("admission_fee", draft.admissionFee.toDoubleOrNull() ?: 0.0)
+                    .put("jersey_amount", draft.jerseyAmount.toDoubleOrNull() ?: 0.0)
+                    .put("total_fee_amount", draft.totalFeeAmount.toDoubleOrNull() ?: 0.0)
                     .put("jersey_size", draft.jerseySize.trim())
                     .put("jersey_pairs", draft.jerseyPairs.toIntOrNull() ?: 0)
                     .put("payment_method", draft.paymentMethod.trim().ifBlank { "UPI" })
@@ -538,22 +568,31 @@ class SupabaseRepository(
                     .put("consent_accepted", draft.consentAccepted)
                     .put("terms_accepted", draft.termsAccepted)
                     .put("review_status", "pending")
-                    .toString()
-                    .toRequestBody(JSON_MEDIA_TYPE)
 
-                val insertRequest = baseRequest("$baseUrl/rest/v1/admissions?select=id,reg_no")
-                    .header("Authorization", "Bearer $anonKey")
-                    .header("Prefer", "return=representation")
-                    .post(insertBody)
-                    .build()
+                val executeAdmissionInsert: (JSONObject) -> AdmissionInsertResult = { payload ->
+                    val insertRequest = baseRequest("$baseUrl/rest/v1/admissions?select=id,reg_no")
+                        .header("Authorization", "Bearer $anonKey")
+                        .header("Prefer", "return=representation")
+                        .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                        .build()
 
-                client.newCall(insertRequest).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        throw SupabaseException(response.code, parseError(response.body?.string()))
+                    client.newCall(insertRequest).execute().use { response ->
+                        if (!response.isSuccessful) {
+                            throw SupabaseException(response.code, parseError(response.body?.string()))
+                        }
+                        val rows = admissionInsertAdapter.fromJson(response.body?.string().orEmpty()).orEmpty()
+                        rows.firstOrNull()
+                            ?: throw SupabaseException(response.code, "Admission submitted, but registration number was not returned.")
                     }
-                    val rows = admissionInsertAdapter.fromJson(response.body?.string().orEmpty()).orEmpty()
-                    rows.firstOrNull()
-                        ?: throw SupabaseException(response.code, "Admission submitted, but registration number was not returned.")
+                }
+
+                try {
+                    executeAdmissionInsert(insertBody)
+                } catch (insertError: SupabaseException) {
+                    if (!insertError.isMissingStudentFeeColumnError()) throw insertError
+                    listOf("fee_plan", "coaching_fee", "admission_fee", "jersey_amount", "total_fee_amount")
+                        .forEach { insertBody.remove(it) }
+                    executeAdmissionInsert(insertBody)
                 }
             }
         }
@@ -782,7 +821,9 @@ class SupabaseRepository(
                 executeWriteRequest(url = url, session = session, method = "PATCH", body = body)
                 true
             } catch (error: SupabaseException) {
-                if (!error.isMissingStudentProfileColumnError()) throw error
+                val missingProfileColumns = error.isMissingStudentProfileColumnError()
+                val missingFeeColumns = error.isMissingStudentFeeColumnError()
+                if (!missingProfileColumns && !missingFeeColumns) throw error
                 executeWriteRequest(
                     url = url,
                     session = session,
@@ -794,10 +835,11 @@ class SupabaseRepository(
                         updatedBy = managerEmail,
                         discontinued = current.discontinued,
                         discontinuedAt = current.discontinuedAt,
-                        includeProfileFields = false,
+                        includeProfileFields = !missingProfileColumns,
+                        includeFeeFields = !missingFeeColumns,
                     ),
                 )
-                false
+                !missingProfileColumns
             }
         }
     }
@@ -1113,6 +1155,7 @@ class SupabaseRepository(
         discontinued: Boolean,
         discontinuedAt: String?,
         includeProfileFields: Boolean = true,
+        includeFeeFields: Boolean = true,
     ): JSONObject {
         val body = JSONObject()
             .put("name", draft.name.trim())
@@ -1128,6 +1171,15 @@ class SupabaseRepository(
             .put("updated_by", updatedBy)
             .put("discontinued", discontinued)
             .put("discontinued_at", discontinuedAt ?: JSONObject.NULL)
+
+        if (includeFeeFields) {
+            body
+                .put("fee_plan", draft.feePlan.ifBlank { "monthly" })
+                .put("coaching_fee", draft.coachingFee.toDoubleOrNull() ?: 0.0)
+                .put("admission_fee", draft.admissionFee.toDoubleOrNull() ?: 0.0)
+                .put("jersey_amount", draft.jerseyAmount.toDoubleOrNull() ?: 0.0)
+                .put("total_fee_amount", draft.totalFeeAmount.toDoubleOrNull() ?: 0.0)
+        }
 
         if (includeProfileFields) {
             body
@@ -1407,6 +1459,11 @@ class SupabaseRepository(
             joinDate = optSafeString("join_date"),
             feesPaid = optBoolean("fees_paid", false),
             amountPaid = optDoubleValue("amount_paid"),
+            feePlan = optSafeString("fee_plan").ifBlank { "monthly" },
+            coachingFee = optDoubleValue("coaching_fee"),
+            admissionFee = optDoubleValue("admission_fee"),
+            jerseyAmount = optDoubleValue("jersey_amount"),
+            totalFeeAmount = optDoubleValue("total_fee_amount"),
             renewals = optStringList("renewals"),
             addedBy = optSafeString("added_by").ifBlank { "Unknown" },
             updatedBy = optSafeString("updated_by").ifBlank { "Unknown" },
@@ -1556,5 +1613,17 @@ private fun SupabaseException.isMissingStudentProfileColumnError(): Boolean {
             "school_college",
             "grade",
             "address",
+        ).any { lowerMessage.contains(it) }
+}
+
+private fun SupabaseException.isMissingStudentFeeColumnError(): Boolean {
+    val lowerMessage = message.lowercase()
+    return lowerMessage.contains("schema cache") &&
+        listOf(
+            "fee_plan",
+            "coaching_fee",
+            "admission_fee",
+            "jersey_amount",
+            "total_fee_amount",
         ).any { lowerMessage.contains(it) }
 }

@@ -15,6 +15,16 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 
 ## 2026-05-24
 
+### Web Fee Split and Action Menu Audit
+
+- Converted web admission and manager player-entry fee breakdown tiles into editable amount fields for coaching fee, admission fee, jersey amount, and total.
+- Added safe web payload mapping for fee split fields and a Supabase migration file `supabase/add-fee-breakdown-fields.sql`.
+- Cleaned roster action-menu logic so dropdowns close when scrolling, only one action menu stays open, and stale menus do not stick to the page.
+- Wired Android admission/player edit models and Supabase payloads to carry the same fee split fields, with schema-cache fallbacks for older DB states.
+- Verification done:
+  - `node --check web-app-repo/script.js`
+  - `./gradlew assembleDebug`
+
 ### Admission Jersey Payment Layout and Lithvik Correction
 
 - Moved the web admission `Pay now` button below jersey size and jersey pairs.
