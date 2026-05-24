@@ -56,7 +56,7 @@ Important: keep Android-only code in the Android repo and web-only code in `web-
   - Parent Aadhaar is optional. Do not use "NIDA" wording.
   - Time slot.
   - Join date defaults to today but can be picked.
-  - Fee paid yes/no, payment plan, amount/custom amount.
+  - Fee paid yes/no, payment plan, calculated total amount.
   - Jersey size and jersey pairs.
   - Comments/special requests, optional.
   - Skills and playing style. "Kick start the journey now" disables detailed style choices.
@@ -156,8 +156,8 @@ Current fee constants in code:
 - Special training: Rs 10,000 per month.
 - Admission first payment shows three separate values: coaching fee, one-time admission fee, and jersey amount.
 - Jersey pairs are charged at Rs 750 per pair; there is no free first-pair rule.
-- Custom/partial payment is allowed; admission submission must not be blocked when the amount paid differs from the calculated total.
-- Current calculated admission totals before custom payment:
+- Admission/player create-edit forms should not expose a manual "amount paid" override. Store `amount_paid` internally as the calculated total when payment is marked made/pending, or Rs 0 when unpaid. Custom/partial collections belong in the manager joining-fee or renewal payment action.
+- Current calculated admission totals before manager payment adjustments:
   - monthly admission: Rs 4,000 plus Rs 750 per jersey pair (example: 1 pair = Rs 4,750).
   - 3 months admission: Rs 10,475 plus Rs 750 per jersey pair.
   - 6 months admission: Rs 19,400 plus Rs 750 per jersey pair.

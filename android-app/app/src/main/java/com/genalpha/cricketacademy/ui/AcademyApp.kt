@@ -134,7 +134,6 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Density
@@ -6634,7 +6633,6 @@ private fun PlayerEditorSheet(
     var timeSlot by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.timeSlot.orEmpty()) }
     var joinDate by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.joinDate.orEmpty()) }
     var feesPaid by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.feesPaid ?: true) }
-    var amountPaid by rememberSaveable(editingStudent?.id) { mutableStateOf(if (editingStudent == null) "" else editingStudent.toDraft().amountPaid) }
     var jerseySize by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.jerseySize.orEmpty()) }
     var jerseyPairs by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.jerseyPairs?.toString() ?: "0") }
     var fatherGuardianName by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.fatherGuardianName.orEmpty()) }
@@ -6651,7 +6649,12 @@ private fun PlayerEditorSheet(
     val editorAdmissionFee = editingStudent?.admissionFee?.takeIf { it > 0.0 } ?: AdmissionOneTimeFee
     val editorJerseyAmount = extraJerseyAmount(jerseyPairs)
     val editorSuggestedTotal = editorCoachingFee + editorAdmissionFee + editorJerseyAmount
-    val editorAmountPaid = amountPaid.toDoubleOrNull() ?: 0.0
+    val editorStoredAmountPaid = editingStudent?.amountPaid ?: 0.0
+    val editorDerivedAmountPaid = when {
+        !feesPaid -> 0.0
+        editorStoredAmountPaid > 0.0 -> editorStoredAmountPaid
+        else -> editorSuggestedTotal
+    }
 
     val openDatePicker = rememberUpdatedState(newValue = {
         val (year, month, day) = currentDatePickerValues(joinDate)
@@ -6747,27 +6750,13 @@ private fun PlayerEditorSheet(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Fees paid?", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                    Text("If unpaid, amount is locked to 0.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
+                    Text("If paid, the total due is saved as the joining amount.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
                 }
                 Switch(
                     checked = feesPaid,
-                    onCheckedChange = {
-                        feesPaid = it
-                        if (!it) amountPaid = "0"
-                    }
+                    onCheckedChange = { feesPaid = it }
                 )
             }
-
-            OutlinedTextField(
-                value = amountPaid,
-                onValueChange = { amountPaid = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(rememberBringIntoViewOnFocusModifier()),
-                label = { Text("Amount paid") },
-                enabled = feesPaid,
-                singleLine = true,
-            )
 
             AdmissionSectionCard(title = "Jersey details") {
                 AdmissionDropdownField(
@@ -6822,10 +6811,10 @@ private fun PlayerEditorSheet(
                     )
                 }
                 Text(
-                    text = if (editorAmountPaid > 0.0) {
-                        "Amount paid now: ${admissionAmountLabel(editorAmountPaid)}. Blank values are saved as Rs 0."
+                    text = if (feesPaid) {
+                        "Joining amount saved: ${admissionAmountLabel(editorDerivedAmountPaid)}. Use Renew/Record Joining Fee for custom payment entries."
                     } else {
-                        "Amount paid can stay blank for unpaid or partial records. Every jersey pair is Rs 750."
+                        "Unpaid records save Rs 0 until joining payment is recorded. Every jersey pair is Rs 750."
                     },
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
                     fontSize = 12.sp,
@@ -6908,7 +6897,7 @@ private fun PlayerEditorSheet(
                                             timeSlot = timeSlot,
                                             joinDate = joinDate,
                                             feesPaid = feesPaid,
-                                            amountPaid = amountPaid,
+                                            amountPaid = String.format(Locale.US, "%.2f", editorDerivedAmountPaid),
                                             feePlan = editingStudent?.feePlan?.ifBlank { "monthly" } ?: "monthly",
                                             coachingFee = String.format(Locale.US, "%.2f", editorCoachingFee),
                                             admissionFee = String.format(Locale.US, "%.2f", editorAdmissionFee),
@@ -6989,7 +6978,6 @@ private fun AdmissionFormSheet(
     var feesPaid by rememberSaveable { mutableStateOf(false) }
     var feePlan by rememberSaveable { mutableStateOf("monthly") }
     var customAmount by rememberSaveable { mutableStateOf("") }
-    var paidAmountOverride by rememberSaveable { mutableStateOf("") }
     var jerseySize by rememberSaveable { mutableStateOf("") }
     var jerseyPairs by rememberSaveable { mutableStateOf("") }
     var comments by rememberSaveable { mutableStateOf("") }
@@ -7003,9 +6991,7 @@ private fun AdmissionFormSheet(
     var previewRegNo by rememberSaveable { mutableStateOf<Long?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
     val upiId = remember { context.getString(R.string.academy_upi_id) }
-    val upiMobile = remember { context.getString(R.string.academy_upi_mobile) }
     val upiName = remember { context.getString(R.string.academy_upi_name) }
     val coachingFee = remember(feePlan, customAmount) {
         if (feePlan == "custom") customAmount.toDoubleOrNull() ?: 0.0 else admissionPlanBase(feePlan)
@@ -7017,18 +7003,7 @@ private fun AdmissionFormSheet(
     val planAmount = remember(coachingFee, admissionFee, admissionExtraJerseyAmount) {
         coachingFee + admissionFee + admissionExtraJerseyAmount
     }
-    val paymentAmount = remember(planAmount, paidAmountOverride) {
-        paidAmountOverride.toDoubleOrNull()?.takeIf { it > 0.0 } ?: planAmount
-    }
-    val upiAmount = remember(paymentAmount) { paymentAmount.takeIf { it > 0.0 } }
-    val upiUri = remember(upiId, upiName, upiAmount, applicantName) {
-        if (upiId.isBlank()) "" else buildUpiPayUri(
-            upiId = upiId,
-            payeeName = upiName,
-            amount = upiAmount,
-            note = "Gen Alpha admission - ${applicantName.ifBlank { "New player" }}",
-        )
-    }
+    val upiAmount = remember(planAmount) { planAmount.takeIf { it > 0.0 } }
     var showUpiWebDialog by rememberSaveable { mutableStateOf(false) }
     val dateOfBirth = remember(birthDay, birthMonth, birthYear) {
         if (birthDay.isBlank() || birthMonth.isBlank() || birthYear.isBlank()) {
@@ -7313,7 +7288,7 @@ private fun AdmissionFormSheet(
                         )
                     }
                     Text(
-                        text = "Each jersey pair adds Rs 750. Parents can submit even if they paid a different amount.",
+                        text = "Each jersey pair adds Rs 750. If payment is marked made, this total is submitted for manager verification.",
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
                         fontSize = 12.sp,
                         lineHeight = 16.sp,
@@ -7467,18 +7442,6 @@ private fun AdmissionFormSheet(
                         onCheckedChange = { feesPaid = it }
                     )
                 }
-                if (feesPaid) {
-                    AdmissionTextField(
-                        value = paidAmountOverride,
-                        onValueChange = { paidAmountOverride = it.filter { char -> char.isDigit() || char == '.' } },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .then(rememberBringIntoViewOnFocusModifier()),
-                        label = "Amount paid now (optional)",
-                        singleLine = true,
-                    )
-                }
-
                 if (upiId.isNotBlank()) {
                     Button(
                         onClick = { showUpiWebDialog = true },
@@ -7594,7 +7557,7 @@ private fun AdmissionFormSheet(
                                 timeSlot = timeSlot,
                                 joinDate = joinDate,
                                 feesPaid = false,
-                                amountPaid = if (feesPaid) String.format(Locale.US, "%.2f", paymentAmount) else "0",
+                                amountPaid = if (feesPaid) String.format(Locale.US, "%.2f", planAmount) else "0",
                                 feePlan = feePlan,
                                 coachingFee = String.format(Locale.US, "%.2f", coachingFee),
                                 admissionFee = String.format(Locale.US, "%.2f", admissionFee),

@@ -1,6 +1,6 @@
 # Gen Alpha Manager Changelog Notes
 
-Last updated: 2026-05-24
+Last updated: 2026-05-25
 
 This file records meaningful project changes and decisions so future Codex sessions can understand recent work without rereading the full chat. It is not a release changelog for users; it is a developer/manager memory log.
 
@@ -12,6 +12,20 @@ Use this file when:
 - A future agent needs to understand why a design or business rule exists.
 
 For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
+
+## 2026-05-25
+
+### Simplified Admission Amount Paid Wiring
+
+- Removed the visible manual "Amount paid" override from admission and player create/edit forms in both web and Android.
+- Kept the database/RPC `amount_paid` wiring stable: paid/pending admissions now submit the calculated total, unpaid submissions submit Rs 0, and existing paid player edits preserve the stored paid amount.
+- Custom or partial collections should use the manager joining-fee or renewal payment action, where the payment amount remains editable.
+- No destructive DB migration is required because existing columns and RPC parameters are still populated.
+- Verification done:
+  - `node --check web-app-repo/script.js`
+  - `git diff --check` in both repos.
+  - `./gradlew assembleDebug`
+  - Small-screen browser check at 390 px confirmed admission has no `Amount paid now`, manager edit form has no manual amount field, and edit-card player names are visible without overlapping status.
 
 ## 2026-05-24
 
