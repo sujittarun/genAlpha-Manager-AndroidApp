@@ -31,6 +31,9 @@ Important: keep Android-only code in the Android repo and web-only code in `web-
 - If a new field is added, check all layers: Supabase schema/RPC, web form/render/edit flows, Android models/repository/UI, receipts/finance/timeline if relevant.
 - Do not make big design changes silently. For risky layout choices, give a concise option/recommendation first or keep existing design language.
 - The user expects thorough verification before saying "fixed", especially for Android emulator/UI bugs and Supabase/RPC issues.
+- For code/UI changes, do a proper audit before finishing: inspect the diff, think through edge cases, and test rough UI edges such as small screens, long text, flipped/expanded states, empty or optional values, and stale-cache behavior when relevant.
+- For browser UI changes, verify the rendered app at the affected viewport(s), including mobile when the bug is mobile-only. A passing syntax/build check is not enough for visible layout work.
+- Going forward, completed code changes should be committed and pushed to GitHub after verification unless the user explicitly says to keep the work local, skip pushing, or pause before publishing.
 - Keep `CHANGELOG_NOTES.md` updated automatically for meaningful feature work, bug fixes, database changes, UI redesigns, payment/reminder changes, and anything pushed to GitHub. Do not log tiny experiments, simple explanations, failed attempts, or temporary checks unless the user asks.
 - Update this `PROJECT_CONTEXT.md` only when the stable source-of-truth changes, such as new business rules, repo/deployment changes, major feature decisions, credentials/config locations, or important "do not do this again" lessons.
 

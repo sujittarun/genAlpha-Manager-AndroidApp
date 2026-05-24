@@ -15,6 +15,17 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 
 ## 2026-05-24
 
+### Project Verification and Push Rule
+
+- Added a standing project instruction to audit code/UI changes before finishing, including edge cases and rough rendered UI states.
+- Added a standing project instruction to commit and push completed code changes to GitHub after verification unless the user says to keep them local or pause before publishing.
+
+### Web Mobile Edit Card Player Names
+
+- Fixed phone-sized browser roster edit cards so the player name spans the mobile card front instead of being squeezed beside status.
+- Added the player name to the flipped mobile action face so staff can still see which player they are editing/reminding/deleting.
+- Bumped web cache assets to `v59`.
+
 ### Web Fee Split and Action Menu Audit
 
 - Converted web admission and manager player-entry fee breakdown tiles into editable amount fields for coaching fee, admission fee, jersey amount, and total.
