@@ -709,12 +709,74 @@ async function sendTemplateMessage(
 ) {
   const token = env("META_WHATSAPP_TOKEN");
   const phoneNumberId = env("META_WHATSAPP_PHONE_NUMBER_ID");
-  const templateName = env("META_WHATSAPP_TEMPLATE_NAME") ||
-    "gen_alpha_fee_reminder";
+  const isHeadsUp = reminderType === "heads_up";
+  const templateName = isHeadsUp
+    ? (env("META_WHATSAPP_HEADS_UP_TEMPLATE_NAME") || "gen_alpha_fee_heads_up")
+    : (env("META_WHATSAPP_TEMPLATE_NAME") || "gen_alpha_fee_reminder");
   const languageCode = env("META_WHATSAPP_TEMPLATE_LANGUAGE") || "en";
   if (!token || !phoneNumberId) {
     throw new Error("Meta WhatsApp secrets are missing.");
   }
+
+  const components = [
+    ...(!isHeadsUp
+      ? [
+          {
+            type: "header",
+            parameters: [
+              {
+                type: "image",
+                image: {
+                  link: "https://genalphaacademy.in/assets/og-image.jpg",
+                },
+              },
+            ],
+          },
+        ]
+      : []),
+    {
+      type: "body",
+      parameters: [
+        { type: "text", text: student.name || "Player" },
+        {
+          type: "text",
+          text: buildReminderDueText(reminderType, dueDate),
+        },
+      ],
+    },
+    {
+      type: "button",
+      sub_type: "quick_reply",
+      index: "0",
+      parameters: [
+        { type: "payload", payload: `renewal:${eventId}:monthly` },
+      ],
+    },
+    {
+      type: "button",
+      sub_type: "quick_reply",
+      index: "1",
+      parameters: [
+        { type: "payload", payload: `renewal:${eventId}:quarterly` },
+      ],
+    },
+    {
+      type: "button",
+      sub_type: "quick_reply",
+      index: "2",
+      parameters: [
+        { type: "payload", payload: `renewal:${eventId}:halfyearly` },
+      ],
+    },
+    {
+      type: "button",
+      sub_type: "quick_reply",
+      index: "3",
+      parameters: [
+        { type: "payload", payload: `renewal:${eventId}:need_help` },
+      ],
+    },
+  ];
 
   const response = await fetch(
     `https://graph.facebook.com/v20.0/${phoneNumberId}/messages`,
@@ -731,61 +793,7 @@ async function sendTemplateMessage(
         template: {
           name: templateName,
           language: { code: languageCode },
-          components: [
-            {
-              type: "header",
-              parameters: [
-                {
-                  type: "image",
-                  image: {
-                    link: "https://genalphaacademy.in/assets/og-image.jpg",
-                  },
-                },
-              ],
-            },
-            {
-              type: "body",
-              parameters: [
-                { type: "text", text: student.name || "Player" },
-                {
-                  type: "text",
-                  text: buildReminderDueText(reminderType, dueDate),
-                },
-              ],
-            },
-            {
-              type: "button",
-              sub_type: "quick_reply",
-              index: "0",
-              parameters: [
-                { type: "payload", payload: `renewal:${eventId}:monthly` },
-              ],
-            },
-            {
-              type: "button",
-              sub_type: "quick_reply",
-              index: "1",
-              parameters: [
-                { type: "payload", payload: `renewal:${eventId}:quarterly` },
-              ],
-            },
-            {
-              type: "button",
-              sub_type: "quick_reply",
-              index: "2",
-              parameters: [
-                { type: "payload", payload: `renewal:${eventId}:halfyearly` },
-              ],
-            },
-            {
-              type: "button",
-              sub_type: "quick_reply",
-              index: "3",
-              parameters: [
-                { type: "payload", payload: `renewal:${eventId}:need_help` },
-              ],
-            },
-          ],
+          components,
         },
       }),
     },
@@ -2057,7 +2065,7 @@ async function handleAutoSchedule() {
             event_type: "reminder_created",
             direction: "outbound",
             parent_phone: parentPhone,
-            message_kind: reminderType === "heads_up" ? "text" : "template",
+            message_kind: "template",
             message_body: event.message_preview || "",
             status: dryRun ? "dry_run" : "queued",
             status_at: new Date().toISOString(),
@@ -2079,7 +2087,7 @@ async function handleAutoSchedule() {
                 event_type: "reminder_send_failed",
                 direction: "outbound",
                 parent_phone: parentPhone,
-                message_kind: reminderType === "heads_up" ? "text" : "template",
+                message_kind: "template",
                 status: "send_failed",
                 failed_at: new Date().toISOString(),
                 error_message: "Parent phone number is missing.",
@@ -2093,17 +2101,18 @@ async function handleAutoSchedule() {
             let metaResponse;
             let messageBody = event.message_preview || "";
             if (reminderType === "heads_up") {
-              messageBody = `Hi! Hope you're having a great week. Coach here from Gen Alpha—just a quick heads-up that *${student.name}'s* next training cycle starts in 2 days. We've seen some great progress lately, just wanted to let you know so you can plan ahead! 🏏`;
-              metaResponse = await sendTextMessage(to, messageBody);
-            } else {
-              metaResponse = await sendTemplateMessage(
-                to,
-                event.id,
-                student,
-                dueDate,
-                reminderType,
-              );
+              messageBody =
+                `Template gen_alpha_fee_heads_up: ${student.name || "Player"} / ${
+                  buildReminderDueText(reminderType, dueDate)
+                }`;
             }
+            metaResponse = await sendTemplateMessage(
+              to,
+              event.id,
+              student,
+              dueDate,
+              reminderType,
+            );
             const whatsappMessageId = String(
               metaResponse?.messages?.[0]?.id || "",
             );
@@ -2118,7 +2127,7 @@ async function handleAutoSchedule() {
               event_type: "reminder_message_status",
               direction: "outbound",
               parent_phone: parentPhone,
-              message_kind: reminderType === "heads_up" ? "text" : "template",
+              message_kind: "template",
               message_body: messageBody,
               message_id: whatsappMessageId,
               status: whatsappMessageId ? "accepted" : "sent",
@@ -2142,7 +2151,7 @@ async function handleAutoSchedule() {
               event_type: "reminder_send_failed",
               direction: "outbound",
               parent_phone: parentPhone,
-              message_kind: reminderType === "heads_up" ? "text" : "template",
+              message_kind: "template",
               status: "send_failed",
               failed_at: new Date().toISOString(),
               error_message: (e as Error).message,

@@ -1,6 +1,6 @@
 # Gen Alpha Manager Changelog Notes
 
-Last updated: 2026-05-23
+Last updated: 2026-05-24
 
 This file records meaningful project changes and decisions so future Codex sessions can understand recent work without rereading the full chat. It is not a release changelog for users; it is a developer/manager memory log.
 
@@ -12,6 +12,14 @@ Use this file when:
 - A future agent needs to understand why a design or business rule exists.
 
 For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
+
+## 2026-05-24
+
+### WhatsApp Heads-Up Template
+
+- Changed automated `heads_up` WhatsApp reminders from free-text messages to the Meta template `gen_alpha_fee_heads_up`.
+- Reason: Meta error `131047` blocks free-text re-engagement messages outside the 24-hour parent reply window.
+- Heads-up reminders now use template quick replies for 1 month, 3 months, 6 months, and Need Help, matching the renewal flow.
 
 ## 2026-05-23
 
