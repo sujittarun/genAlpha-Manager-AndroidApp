@@ -15,6 +15,12 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 
 ## 2026-05-24
 
+### Admission Jersey Payment Layout and Lithvik Correction
+
+- Moved the web admission `Pay now` button below jersey size and jersey pairs.
+- Removed the optional label from admission and manager jersey pairs and made pair count active only when a jersey size is selected.
+- Corrected Lithvik tiru lohan G in Supabase: joining payment Rs 3,500, paid on 2026-05-22, cycle start kept at join date 2026-04-25, next fee due 2026-05-25.
+
 ### WhatsApp Heads-Up Template
 
 - Changed automated `heads_up` WhatsApp reminders from free-text messages to the Meta template `gen_alpha_fee_heads_up`.
