@@ -15,6 +15,12 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 
 ## 2026-05-24
 
+### Cross-App Implementation Rule
+
+- Strengthened the project instruction that this workspace has separate Android and web app projects.
+- Future shared logic, business-rule, validation, payment/reminder, schema/RPC, and bug-fix work must be checked and implemented in both apps unless the user says one app only.
+- Added explicit guidance to fit changes into each app's own architecture, design, navigation, and flow instead of copying UI/code blindly.
+
 ### Project Verification and Push Rule
 
 - Added a standing project instruction to audit code/UI changes before finishing, including edge cases and rough rendered UI states.

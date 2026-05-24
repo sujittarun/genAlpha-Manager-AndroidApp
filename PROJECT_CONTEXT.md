@@ -27,7 +27,10 @@ Important: keep Android-only code in the Android repo and web-only code in `web-
 
 ## Expected Working Rule
 
-- Unless the user explicitly says "Android only" or "web only", changes that apply to product behavior should be implemented in both Android and browser apps.
+- This workspace contains two separate app projects: the Android/native app at `/Users/jiths/Documents/New project` and the web/browser app at `/Users/jiths/Documents/New project/web-app-repo`.
+- Unless the user explicitly says "Android only" or "web only", any logic, product behavior, business rule, schema/RPC payload, fee/reminder/payment flow, validation, or shared bug fix must be checked and implemented in both Android and browser apps.
+- Do not blindly copy UI/code between apps. Understand each app's project structure, data flow, design language, navigation, and user flow, then fit the change exactly where it belongs in that app.
+- If a shared change truly does not apply to one app, note why in the final response and, when meaningful, in `CHANGELOG_NOTES.md`.
 - If a new field is added, check all layers: Supabase schema/RPC, web form/render/edit flows, Android models/repository/UI, receipts/finance/timeline if relevant.
 - Do not make big design changes silently. For risky layout choices, give a concise option/recommendation first or keep existing design language.
 - The user expects thorough verification before saying "fixed", especially for Android emulator/UI bugs and Supabase/RPC issues.
