@@ -890,6 +890,10 @@ class SupabaseRepository(
         paidOn: String = todayIsoDate(),
         proofPath: String = "",
         isJoiningFee: Boolean = false,
+        coachingFee: Double = 0.0,
+        admissionFee: Double = 0.0,
+        jerseyAmount: Double = 0.0,
+        totalFeeAmount: Double = 0.0,
     ): StudentPayment {
         return withContext(Dispatchers.IO) {
             val body = JSONObject()
@@ -903,13 +907,32 @@ class SupabaseRepository(
                 .put("comment", comment)
                 .put("recorded_by", managerEmail)
                 .put("proof_path", proofPath)
+            if (isJoiningFee) {
+                body
+                    .put("coaching_fee", coachingFee.coerceAtLeast(0.0))
+                    .put("admission_fee", admissionFee.coerceAtLeast(0.0))
+                    .put("jersey_amount", jerseyAmount.coerceAtLeast(0.0))
+                    .put("total_fee_amount", totalFeeAmount.coerceAtLeast(0.0))
+            }
 
-            val responseBody = executeWriteRequestReturningBody(
-                url = "$baseUrl/rest/v1/student_payments?select=*",
-                session = session,
-                method = "POST",
-                body = body,
-            )
+            val responseBody = try {
+                executeWriteRequestReturningBody(
+                    url = "$baseUrl/rest/v1/student_payments?select=*",
+                    session = session,
+                    method = "POST",
+                    body = body,
+                )
+            } catch (error: SupabaseException) {
+                if (!isJoiningFee || !error.isMissingPaymentFeeColumnError()) throw error
+                listOf("coaching_fee", "admission_fee", "jersey_amount", "total_fee_amount")
+                    .forEach { body.remove(it) }
+                executeWriteRequestReturningBody(
+                    url = "$baseUrl/rest/v1/student_payments?select=*",
+                    session = session,
+                    method = "POST",
+                    body = body,
+                )
+            }
             val insertedPayment = paymentListAdapter.fromJson(responseBody).orEmpty().firstOrNull()
                 ?: throw SupabaseException(200, "Payment was saved, but the payment row was not returned.")
 
@@ -918,15 +941,32 @@ class SupabaseRepository(
                     .put("fees_paid", true)
                     .put("amount_paid", amount)
                     .put("payment_status", "paid")
+                    .put("fee_plan", planType)
+                    .put("coaching_fee", coachingFee.coerceAtLeast(0.0))
+                    .put("admission_fee", admissionFee.coerceAtLeast(0.0))
+                    .put("jersey_amount", jerseyAmount.coerceAtLeast(0.0))
+                    .put("total_fee_amount", totalFeeAmount.coerceAtLeast(0.0))
                     .put("discontinued", false)
                     .put("discontinued_at", JSONObject.NULL)
                     .put("updated_by", managerEmail)
-                executeWriteRequest(
-                    url = "$baseUrl/rest/v1/students?id=eq.${student.id}",
-                    session = session,
-                    method = "PATCH",
-                    body = updateBody,
-                )
+                try {
+                    executeWriteRequest(
+                        url = "$baseUrl/rest/v1/students?id=eq.${student.id}",
+                        session = session,
+                        method = "PATCH",
+                        body = updateBody,
+                    )
+                } catch (error: SupabaseException) {
+                    if (!error.isMissingStudentFeeColumnError()) throw error
+                    listOf("fee_plan", "coaching_fee", "admission_fee", "jersey_amount", "total_fee_amount")
+                        .forEach { updateBody.remove(it) }
+                    executeWriteRequest(
+                        url = "$baseUrl/rest/v1/students?id=eq.${student.id}",
+                        session = session,
+                        method = "PATCH",
+                        body = updateBody,
+                    )
+                }
             } else {
                 renewStudent(student, managerEmail, session, cycleDate)
             }
@@ -1516,6 +1556,10 @@ class SupabaseRepository(
             planType = optSafeString("plan_type"),
             cycleStartDate = optSafeString("cycle_start_date"),
             monthsCovered = optIntValue("months_covered").takeIf { it > 0 } ?: 1,
+            coachingFee = optDoubleValue("coaching_fee"),
+            admissionFee = optDoubleValue("admission_fee"),
+            jerseyAmount = optDoubleValue("jersey_amount"),
+            totalFeeAmount = optDoubleValue("total_fee_amount"),
         )
     }
 
@@ -1621,6 +1665,17 @@ private fun SupabaseException.isMissingStudentFeeColumnError(): Boolean {
     return lowerMessage.contains("schema cache") &&
         listOf(
             "fee_plan",
+            "coaching_fee",
+            "admission_fee",
+            "jersey_amount",
+            "total_fee_amount",
+        ).any { lowerMessage.contains(it) }
+}
+
+private fun SupabaseException.isMissingPaymentFeeColumnError(): Boolean {
+    val lowerMessage = message.lowercase()
+    return lowerMessage.contains("schema cache") &&
+        listOf(
             "coaching_fee",
             "admission_fee",
             "jersey_amount",

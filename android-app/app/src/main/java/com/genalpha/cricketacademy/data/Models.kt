@@ -218,6 +218,10 @@ data class StudentPayment(
     @Json(name = "plan_type") val planType: String? = "monthly",
     @Json(name = "cycle_start_date") val cycleStartDate: String? = "",
     @Json(name = "months_covered") val monthsCovered: Int? = 1,
+    @Json(name = "coaching_fee") val coachingFee: Double? = 0.0,
+    @Json(name = "admission_fee") val admissionFee: Double? = 0.0,
+    @Json(name = "jersey_amount") val jerseyAmount: Double? = 0.0,
+    @Json(name = "total_fee_amount") val totalFeeAmount: Double? = 0.0,
 )
 
 data class PaymentFollowUp(

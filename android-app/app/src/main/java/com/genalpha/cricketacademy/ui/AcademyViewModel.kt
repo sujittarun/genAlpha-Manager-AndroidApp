@@ -735,6 +735,10 @@ class AcademyViewModel(
         paidOn: String = "",
         proofPath: String = "",
         isJoiningFee: Boolean = false,
+        coachingFee: Double = 0.0,
+        admissionFee: Double = 0.0,
+        jerseyAmount: Double = 0.0,
+        totalFeeAmount: Double = 0.0,
     ): OperationResult {
         val payments = _uiState.value.payments
         val cycleDate = cycleDateOverride?.takeIf { it.isNotBlank() } ?: student.nextRenewalCycleDate(payments)
@@ -757,6 +761,10 @@ class AcademyViewModel(
                     paidOn = paidOn.ifBlank { LocalDate.now().toString() },
                     proofPath = proofPath,
                     isJoiningFee = isJoiningFee,
+                    coachingFee = coachingFee,
+                    admissionFee = admissionFee,
+                    jerseyAmount = jerseyAmount,
+                    totalFeeAmount = totalFeeAmount,
                 )
                 
                 // Run slow WhatsApp trigger in background
@@ -783,6 +791,11 @@ class AcademyViewModel(
                         feesPaid = true,
                         amountPaid = amount,
                         paymentStatus = "paid",
+                        feePlan = planType,
+                        coachingFee = coachingFee,
+                        admissionFee = admissionFee,
+                        jerseyAmount = jerseyAmount,
+                        totalFeeAmount = totalFeeAmount,
                         updatedBy = session.email,
                     )
                 )
@@ -832,6 +845,10 @@ class AcademyViewModel(
             comment = if (isJoiningFee) "Joining fee confirmed by manager." else "Confirmed from WhatsApp payment proof.",
             cycleDateOverride = cycleDate,
             isJoiningFee = isJoiningFee,
+            coachingFee = if (isJoiningFee) student.coachingFee else 0.0,
+            admissionFee = if (isJoiningFee) student.admissionFee else 0.0,
+            jerseyAmount = if (isJoiningFee) student.jerseyAmount else 0.0,
+            totalFeeAmount = if (isJoiningFee) student.totalFeeAmount else 0.0,
         )
     }
 

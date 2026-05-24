@@ -15,6 +15,13 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 
 ## 2026-05-25
 
+### Joining Fee Split Payment Wiring
+
+- Added `supabase/add-payment-fee-breakdown-fields.sql` to store coaching/admission/jersey/total split fields on `student_payments`.
+- Updated web and Android `Record joining fee` flows to show and save the fee split, update the player fee split fields, and keep `amount_paid` as the actual received amount.
+- Added schema-cache fallbacks so joining payments can still be saved if the live DB has not yet received the new payment split columns.
+- Supabase CLI local status could not inspect the project because Docker is not running; the migration file is saved for application to the linked DB.
+
 ### Simplified Admission Amount Paid Wiring
 
 - Removed the visible manual "Amount paid" override from admission and player create/edit forms in both web and Android.

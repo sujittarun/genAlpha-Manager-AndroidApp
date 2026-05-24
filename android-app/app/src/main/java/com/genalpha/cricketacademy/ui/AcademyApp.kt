@@ -276,7 +276,14 @@ private fun extraJerseyAmount(pairText: String): Double =
 private fun admissionAmountLabel(amount: Double): String =
     "Rs ${String.format(Locale.US, "%,d", amount.toInt())}"
 
-private fun joiningPaymentAmountForPlan(student: Student, plan: String): Double {
+private data class JoiningFeeSplit(
+    val coachingFee: Double,
+    val admissionFee: Double,
+    val jerseyAmount: Double,
+    val totalFeeAmount: Double,
+)
+
+private fun joiningFeeSplitForPlan(student: Student, plan: String): JoiningFeeSplit {
     val base = when (plan) {
         "quarterly" -> 9975.0
         "halfyearly" -> 18900.0
@@ -285,7 +292,17 @@ private fun joiningPaymentAmountForPlan(student: Student, plan: String): Double 
         else -> 3500.0
     }
     val admissionFee = if (plan == "special" || plan == "custom") 0.0 else AdmissionOneTimeFee
-    return base + admissionFee + (student.jerseyPairs.coerceAtLeast(0) * JerseyExtraPairFee)
+    val jerseyAmount = student.jerseyPairs.coerceAtLeast(0) * JerseyExtraPairFee
+    return JoiningFeeSplit(
+        coachingFee = base,
+        admissionFee = admissionFee,
+        jerseyAmount = jerseyAmount,
+        totalFeeAmount = base + admissionFee + jerseyAmount,
+    )
+}
+
+private fun joiningPaymentAmountForPlan(student: Student, plan: String): Double {
+    return joiningFeeSplitForPlan(student, plan).totalFeeAmount
 }
 
 private fun planDiscountLabel(plan: String): String = when (plan) {
@@ -1422,7 +1439,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         student = renewalStudent!!,
                         payments = uiState.payments,
                         onDismiss = { renewalStudent = null },
-                        onSubmit = { plan, months, amount, comment, paymentDate ->
+                        onSubmit = { plan, months, amount, comment, paymentDate, coachingFee, admissionFee, jerseyAmount, totalFeeAmount ->
                             val studentForReceipt = renewalStudent!!
                             val isJoiningFee = studentForReceipt.isFeesPending()
                             val result = viewModel.recordRenewalPayment(
@@ -1434,6 +1451,10 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                 cycleDateOverride = if (isJoiningFee) studentForReceipt.joinDate else null,
                                 paidOn = paymentDate,
                                 isJoiningFee = isJoiningFee,
+                                coachingFee = if (isJoiningFee) coachingFee else 0.0,
+                                admissionFee = if (isJoiningFee) admissionFee else 0.0,
+                                jerseyAmount = if (isJoiningFee) jerseyAmount else 0.0,
+                                totalFeeAmount = if (isJoiningFee) totalFeeAmount else 0.0,
                             )
                             if (result.success) {
                                 context.shareReceiptPdf(
@@ -3401,14 +3422,18 @@ private fun RenewalPaymentDialog(
     student: Student,
     payments: List<StudentPayment>,
     onDismiss: () -> Unit,
-    onSubmit: suspend (String, Int, Double, String, String) -> OperationResult,
+    onSubmit: suspend (String, Int, Double, String, String, Double, Double, Double, Double) -> OperationResult,
 ) {
     val isJoiningFee = student.isFeesPending()
     val context = LocalContext.current
     var plan by rememberSaveable(student.id) { mutableStateOf("monthly") }
+    val initialJoiningSplit = remember(student.id) { joiningFeeSplitForPlan(student, "monthly") }
     var amount by rememberSaveable(student.id) {
-        mutableStateOf(if (isJoiningFee) joiningPaymentAmountForPlan(student, "monthly").toInt().toString() else "3500")
+        mutableStateOf(if (isJoiningFee) initialJoiningSplit.totalFeeAmount.toInt().toString() else "3500")
     }
+    var coachingFee by rememberSaveable(student.id) { mutableStateOf(initialJoiningSplit.coachingFee.toInt().toString()) }
+    var admissionFee by rememberSaveable(student.id) { mutableStateOf(initialJoiningSplit.admissionFee.toInt().toString()) }
+    var jerseyAmount by rememberSaveable(student.id) { mutableStateOf(initialJoiningSplit.jerseyAmount.toInt().toString()) }
     var comment by rememberSaveable(student.id) { mutableStateOf("") }
     var paymentDate by rememberSaveable(student.id) { mutableStateOf(todayIsoDate()) }
     var isSaving by rememberSaveable(student.id) { mutableStateOf(false) }
@@ -3421,6 +3446,9 @@ private fun RenewalPaymentDialog(
         "custom" -> Triple("Custom amount", 1, amount.toDoubleOrNull() ?: 0.0)
         else -> Triple("Monthly", 1, 3500.0)
     }
+    val joiningSplitTotal = (coachingFee.toDoubleOrNull() ?: 0.0) +
+        (admissionFee.toDoubleOrNull() ?: 0.0) +
+        (jerseyAmount.toDoubleOrNull() ?: 0.0)
     val cycleDate = if (isJoiningFee) student.joinDate else student.nextRenewalCycleDate(payments)
     val openPaymentDatePicker = rememberUpdatedState(newValue = {
         val (year, month, day) = currentDatePickerValues(paymentDate.ifBlank { null })
@@ -3476,12 +3504,20 @@ private fun RenewalPaymentDialog(
                         "Custom amount" -> "custom"
                         else -> "monthly"
                     }
-                    amount = when (plan) {
-                        "quarterly" -> if (isJoiningFee) joiningPaymentAmountForPlan(student, plan).toInt().toString() else "9975"
-                        "halfyearly" -> if (isJoiningFee) joiningPaymentAmountForPlan(student, plan).toInt().toString() else "18900"
-                        "special" -> if (isJoiningFee) joiningPaymentAmountForPlan(student, plan).toInt().toString() else "10000"
-                        "custom" -> ""
-                        else -> if (isJoiningFee) joiningPaymentAmountForPlan(student, plan).toInt().toString() else "3500"
+                    if (isJoiningFee) {
+                        val split = joiningFeeSplitForPlan(student, plan)
+                        coachingFee = split.coachingFee.toInt().toString()
+                        admissionFee = split.admissionFee.toInt().toString()
+                        jerseyAmount = split.jerseyAmount.toInt().toString()
+                        amount = if (plan == "custom") "" else split.totalFeeAmount.toInt().toString()
+                    } else {
+                        amount = when (plan) {
+                            "quarterly" -> "9975"
+                            "halfyearly" -> "18900"
+                            "special" -> "10000"
+                            "custom" -> ""
+                            else -> "3500"
+                        }
                     }
                 },
             )
@@ -3499,6 +3535,34 @@ private fun RenewalPaymentDialog(
                 label = "Amount paid",
                 singleLine = true,
             )
+            if (isJoiningFee) {
+                AdmissionSectionCard(title = "Joining fee split") {
+                    AdmissionTextField(
+                        value = coachingFee,
+                        onValueChange = { coachingFee = it.filter { char -> char.isDigit() || char == '.' } },
+                        label = "Coaching fee",
+                        singleLine = true,
+                    )
+                    AdmissionTextField(
+                        value = admissionFee,
+                        onValueChange = { admissionFee = it.filter { char -> char.isDigit() || char == '.' } },
+                        label = "Admission fee",
+                        singleLine = true,
+                    )
+                    AdmissionTextField(
+                        value = jerseyAmount,
+                        onValueChange = { jerseyAmount = it.filter { char -> char.isDigit() || char == '.' } },
+                        label = "Jersey amount",
+                        singleLine = true,
+                    )
+                    Text(
+                        text = "Total due saved on player profile: ${admissionAmountLabel(joiningSplitTotal)}",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                    )
+                }
+            }
             AdmissionTextField(
                 value = paymentDate,
                 onValueChange = {},
@@ -3537,7 +3601,17 @@ private fun RenewalPaymentDialog(
                             } else {
                                 amount.toDoubleOrNull() ?: planInfo.third
                             }
-                            val result = onSubmit(plan, planInfo.second, finalAmount, comment, paymentDate)
+                            val result = onSubmit(
+                                plan,
+                                planInfo.second,
+                                finalAmount,
+                                comment,
+                                paymentDate,
+                                coachingFee.toDoubleOrNull() ?: 0.0,
+                                admissionFee.toDoubleOrNull() ?: 0.0,
+                                jerseyAmount.toDoubleOrNull() ?: 0.0,
+                                joiningSplitTotal,
+                            )
                             if (!result.success) {
                                 inlineMessage = result.message
                             }
