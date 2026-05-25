@@ -24,6 +24,7 @@ import com.genalpha.cricketacademy.data.addMonthsForPlan
 import com.genalpha.cricketacademy.data.buildSlotSummary
 import com.genalpha.cricketacademy.data.buildStats
 import com.genalpha.cricketacademy.data.calculateAgeFromDate
+import com.genalpha.cricketacademy.data.daysBetweenIso
 import com.genalpha.cricketacademy.data.isFutureDate
 import com.genalpha.cricketacademy.data.isActive
 import com.genalpha.cricketacademy.data.isPaymentPendingVerification
@@ -775,6 +776,9 @@ class AcademyViewModel(
                 student.copy(
                     renewals = student.renewals + cycleDate,
                     updatedBy = session.email,
+                    discontinued = false,
+                    rejoinedAt = if (student.discontinued) todayIsoDate() else student.rejoinedAt,
+                    feePauseDays = if (student.discontinued) student.rejoinedFeePauseDays() else student.feePauseDays,
                 )
             )
             refreshInBackground()
@@ -862,6 +866,9 @@ class AcademyViewModel(
                         jerseySize = jerseySize,
                         jerseyPairs = jerseyPairs,
                         updatedBy = session.email,
+                        discontinued = false,
+                        rejoinedAt = if (student.discontinued) todayIsoDate() else student.rejoinedAt,
+                        feePauseDays = if (student.discontinued) student.rejoinedFeePauseDays() else student.feePauseDays,
                     )
                 )
             } else {
@@ -869,6 +876,9 @@ class AcademyViewModel(
                     student.copy(
                         renewals = student.renewals + cycleDate,
                         updatedBy = session.email,
+                        discontinued = false,
+                        rejoinedAt = if (student.discontinued) todayIsoDate() else student.rejoinedAt,
+                        feePauseDays = if (student.discontinued) student.rejoinedFeePauseDays() else student.feePauseDays,
                     )
                 )
             }
@@ -961,6 +971,8 @@ class AcademyViewModel(
                     discontinued = !student.discontinued,
                     updatedBy = session.email,
                     discontinuedAt = if (student.discontinued) student.discontinuedAt else todayIsoDate(),
+                    rejoinedAt = if (student.discontinued) todayIsoDate() else student.rejoinedAt,
+                    feePauseDays = if (student.discontinued) student.rejoinedFeePauseDays() else student.feePauseDays,
                 )
             )
             refreshInBackground()
@@ -1390,6 +1402,14 @@ private fun paymentProofPath(details: String): String {
     val match = Regex("payment-proofs/([^\\s.]+/[^\\s.]+\\.(?:jpg|jpeg|png|webp|pdf))", RegexOption.IGNORE_CASE)
         .find(details)
     return match?.groupValues?.getOrNull(1).orEmpty()
+}
+
+private fun Student.rejoinedFeePauseDays(rejoinDate: String = todayIsoDate()): Int {
+    val pauseStart = discontinuedAt
+        ?: updatedAt.take(10).takeIf { it.isNotBlank() }
+        ?: createdAt.take(10).takeIf { it.isNotBlank() }
+        ?: joinDate
+    return feePauseDays.coerceAtLeast(0) + daysBetweenIso(pauseStart, rejoinDate)
 }
 
 class AcademyViewModelFactory(

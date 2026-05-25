@@ -45,6 +45,8 @@ data class Student(
     val updatedBy: String,
     val discontinued: Boolean,
     val discontinuedAt: String?,
+    val rejoinedAt: String?,
+    val feePauseDays: Int,
     val createdAt: String = "",
     val updatedAt: String = "",
 )
@@ -318,6 +320,8 @@ data class StudentDto(
     @Json(name = "updated_by") val updatedBy: String? = "Unknown",
     val discontinued: Boolean? = false,
     @Json(name = "discontinued_at") val discontinuedAt: String? = null,
+    @Json(name = "rejoined_at") val rejoinedAt: String? = null,
+    @Json(name = "fee_pause_days") val feePauseDays: Int? = 0,
     @Json(name = "created_at") val createdAt: String? = "",
     @Json(name = "updated_at") val updatedAt: String? = "",
 )
@@ -355,6 +359,8 @@ fun StudentDto.toDomain(): Student = Student(
     updatedBy = updatedBy ?: addedBy ?: "Unknown",
     discontinued = discontinued == true,
     discontinuedAt = discontinuedAt,
+    rejoinedAt = rejoinedAt,
+    feePauseDays = (feePauseDays ?: 0).coerceAtLeast(0),
     createdAt = createdAt.orEmpty(),
     updatedAt = updatedAt.orEmpty(),
 )
@@ -451,7 +457,7 @@ fun Student.paidThroughDate(payments: List<StudentPayment>): String {
             paidUntil = maxIsoDate(paidUntil, addMonths(cycleStart, months))
         }
 
-    return paidUntil
+    return if (feePauseDays > 0) addDays(paidUntil, feePauseDays) else paidUntil
 }
 
 private fun StudentPayment.monthsCoveredForDueDate(): Int {
@@ -490,6 +496,11 @@ fun Student.trainingDurationLabel(): String {
     } else {
         "$months month${if (months == 1) "" else "s"}, $remainingDays day${if (remainingDays == 1) "" else "s"}"
     }
+}
+
+fun Student.membershipDateLabel(): String {
+    val joined = "Joined ${displayDate(joinDate)}"
+    return rejoinedAt?.takeIf { it.isNotBlank() }?.let { "$joined • Rejoined ${displayDate(it)}" } ?: joined
 }
 
 fun Student.tenureBadgeLabel(): String {
@@ -579,6 +590,17 @@ fun displayDate(value: String?): String {
         DISPLAY_DATE_FORMAT.format(parsed)
     } catch (_: Exception) {
         value
+    }
+}
+
+fun daysBetweenIso(startValue: String?, endValue: String?): Int {
+    return try {
+        val start = ISO_DATE_FORMAT.parse(startValue?.take(10).orEmpty()) ?: return 0
+        val end = ISO_DATE_FORMAT.parse(endValue?.take(10).orEmpty()) ?: return 0
+        if (!end.after(start)) return 0
+        TimeUnit.MILLISECONDS.toDays(end.time - start.time).toInt()
+    } catch (_: Exception) {
+        0
     }
 }
 
@@ -682,6 +704,17 @@ private fun addMonths(value: String, months: Int): String {
 }
 
 fun addMonthsForPlan(value: String, months: Int): String = addMonths(value, months)
+
+fun addDays(value: String, days: Int): String {
+    return try {
+        val parsed = ISO_DATE_FORMAT.parse(value) ?: return value
+        val calendar = Calendar.getInstance().apply { time = parsed }
+        calendar.add(Calendar.DAY_OF_MONTH, days)
+        ISO_DATE_FORMAT.format(calendar.time)
+    } catch (_: Exception) {
+        value
+    }
+}
 
 private fun stripTime(date: Date): Date {
     val calendar = Calendar.getInstance()

@@ -182,6 +182,7 @@ import com.genalpha.cricketacademy.data.isFeesPending
 import com.genalpha.cricketacademy.data.isPaymentPendingVerification
 import com.genalpha.cricketacademy.data.isRenewalPending
 import com.genalpha.cricketacademy.data.latestRenewal
+import com.genalpha.cricketacademy.data.membershipDateLabel
 import com.genalpha.cricketacademy.data.nextRenewalCycleDate
 import com.genalpha.cricketacademy.data.renewalStatus
 import com.genalpha.cricketacademy.data.studentType
@@ -5565,7 +5566,7 @@ private fun PlayerDetailSheet(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     DataTileContent(modifier = Modifier.weight(1f), label = "Training", value = student.trainingDurationLabel(), accent = MaterialTheme.colorScheme.onSurface)
-                    DataTileContent(modifier = Modifier.weight(1f), label = "Join Date", value = displayDate(student.joinDate), accent = MaterialTheme.colorScheme.onSurface)
+                    DataTileContent(modifier = Modifier.weight(1f), label = "Membership Dates", value = student.membershipDateLabel(), accent = MaterialTheme.colorScheme.onSurface)
                 }
                 if (student.jerseySize.isNotBlank() || student.jerseyPairs > 0) {
                     DataTileContent(

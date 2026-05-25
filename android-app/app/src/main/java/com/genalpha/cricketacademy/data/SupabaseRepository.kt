@@ -411,6 +411,8 @@ class SupabaseRepository(
                 updatedBy = managerEmail,
                 discontinued = false,
                 discontinuedAt = null,
+                rejoinedAt = null,
+                feePauseDays = 0,
             )
 
             val url = "$baseUrl/rest/v1/students"
@@ -432,6 +434,8 @@ class SupabaseRepository(
                         updatedBy = managerEmail,
                         discontinued = false,
                         discontinuedAt = null,
+                        rejoinedAt = null,
+                        feePauseDays = 0,
                         includeProfileFields = !missingProfileColumns,
                         includeFeeFields = !missingFeeColumns,
                     ),
@@ -870,6 +874,8 @@ class SupabaseRepository(
                 updatedBy = managerEmail,
                 discontinued = current.discontinued,
                 discontinuedAt = current.discontinuedAt,
+                rejoinedAt = current.rejoinedAt,
+                feePauseDays = current.feePauseDays,
             )
 
             val url = "$baseUrl/rest/v1/students?id=eq.${current.id}"
@@ -891,6 +897,8 @@ class SupabaseRepository(
                         updatedBy = managerEmail,
                         discontinued = current.discontinued,
                         discontinuedAt = current.discontinuedAt,
+                        rejoinedAt = current.rejoinedAt,
+                        feePauseDays = current.feePauseDays,
                         includeProfileFields = !missingProfileColumns,
                         includeFeeFields = !missingFeeColumns,
                     ),
@@ -921,8 +929,8 @@ class SupabaseRepository(
             val renewals = JSONArray(student.renewals + cycleDate)
             val body = JSONObject()
                 .put("renewals", renewals)
-                .put("discontinued", false)
                 .put("updated_by", managerEmail)
+            appendActiveStatusFields(body, student)
 
             executeWriteRequest(
                 url = "$baseUrl/rest/v1/students?id=eq.${student.id}",
@@ -1007,8 +1015,8 @@ class SupabaseRepository(
                     .put("total_fee_amount", totalFeeAmount.coerceAtLeast(0.0))
                     .put("jersey_size", jerseySize.trim())
                     .put("jersey_pairs", jerseyPairs.coerceAtLeast(0))
-                    .put("discontinued", false)
                     .put("updated_by", managerEmail)
+                appendActiveStatusFields(updateBody, student)
                 try {
                     executeWriteRequest(
                         url = "$baseUrl/rest/v1/students?id=eq.${student.id}",
@@ -1123,6 +1131,8 @@ class SupabaseRepository(
                 .put("updated_by", managerEmail)
             if (!student.discontinued) {
                 body.put("discontinued_at", todayIsoDate())
+            } else {
+                appendRejoinFields(body, student)
             }
 
             executeWriteRequest(
@@ -1256,6 +1266,8 @@ class SupabaseRepository(
         updatedBy: String,
         discontinued: Boolean,
         discontinuedAt: String?,
+        rejoinedAt: String?,
+        feePauseDays: Int,
         includeProfileFields: Boolean = true,
         includeFeeFields: Boolean = true,
     ): JSONObject {
@@ -1273,6 +1285,8 @@ class SupabaseRepository(
             .put("updated_by", updatedBy)
             .put("discontinued", discontinued)
             .put("discontinued_at", discontinuedAt ?: JSONObject.NULL)
+            .put("rejoined_at", rejoinedAt ?: JSONObject.NULL)
+            .put("fee_pause_days", feePauseDays.coerceAtLeast(0))
 
         if (includeFeeFields) {
             body
@@ -1294,6 +1308,26 @@ class SupabaseRepository(
         }
 
         return body
+    }
+
+    private fun appendRejoinFields(body: JSONObject, student: Student) {
+        val today = todayIsoDate()
+        val pauseStart = student.discontinuedAt
+            ?: student.updatedAt.take(10).takeIf { it.isNotBlank() }
+            ?: student.createdAt.take(10).takeIf { it.isNotBlank() }
+            ?: student.joinDate
+        body
+            .put("discontinued", false)
+            .put("rejoined_at", today)
+            .put("fee_pause_days", student.feePauseDays.coerceAtLeast(0) + daysBetweenIso(pauseStart, today))
+    }
+
+    private fun appendActiveStatusFields(body: JSONObject, student: Student) {
+        if (student.discontinued) {
+            appendRejoinFields(body, student)
+        } else {
+            body.put("discontinued", false)
+        }
     }
 
     private fun baseRequest(url: String): Request.Builder {
@@ -1594,6 +1628,12 @@ class SupabaseRepository(
             } else {
                 null
             },
+            rejoinedAt = if (has("rejoined_at") && !isNull("rejoined_at")) {
+                optString("rejoined_at", "").takeIf { it.isNotBlank() }
+            } else {
+                null
+            },
+            feePauseDays = optIntValue("fee_pause_days").coerceAtLeast(0),
             createdAt = optSafeString("created_at"),
             updatedAt = optSafeString("updated_at"),
         )
