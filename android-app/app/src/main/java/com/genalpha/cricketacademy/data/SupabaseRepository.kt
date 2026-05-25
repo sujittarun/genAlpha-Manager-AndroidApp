@@ -922,7 +922,6 @@ class SupabaseRepository(
             val body = JSONObject()
                 .put("renewals", renewals)
                 .put("discontinued", false)
-                .put("discontinued_at", JSONObject.NULL)
                 .put("updated_by", managerEmail)
 
             executeWriteRequest(
@@ -1009,7 +1008,6 @@ class SupabaseRepository(
                     .put("jersey_size", jerseySize.trim())
                     .put("jersey_pairs", jerseyPairs.coerceAtLeast(0))
                     .put("discontinued", false)
-                    .put("discontinued_at", JSONObject.NULL)
                     .put("updated_by", managerEmail)
                 try {
                     executeWriteRequest(
@@ -1122,8 +1120,10 @@ class SupabaseRepository(
         withContext(Dispatchers.IO) {
             val body = JSONObject()
                 .put("discontinued", !student.discontinued)
-                .put("discontinued_at", if (!student.discontinued) todayIsoDate() else JSONObject.NULL)
                 .put("updated_by", managerEmail)
+            if (!student.discontinued) {
+                body.put("discontinued_at", todayIsoDate())
+            }
 
             executeWriteRequest(
                 url = "$baseUrl/rest/v1/students?id=eq.${student.id}",

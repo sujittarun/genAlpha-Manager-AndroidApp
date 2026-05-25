@@ -4168,7 +4168,8 @@ private fun buildStudentMovement(students: List<Student>): List<StudentMovementM
             continuing = students.count {
                 val joined = parseStudentDate(it.joinDate)
                 val discontinued = parseStudentDate(it.discontinuedAt)
-                joined != null && !joined.isAfter(previousMonthEnd) && (discontinued == null || !discontinued.isBefore(monthStart))
+                joined != null && !joined.isAfter(previousMonthEnd) &&
+                    (!it.discontinued || (discontinued != null && !discontinued.isBefore(monthStart)))
             },
             discontinued = students.count { parseStudentDate(it.discontinuedAt)?.let { date -> !date.isBefore(monthStart) && !date.isAfter(monthEnd) } == true },
         )
@@ -4197,7 +4198,8 @@ private fun studentMatchesMovementFilter(student: Student, monthKey: String, typ
     return when (type) {
         "joined" -> joinDate != null && !joinDate.isBefore(monthStart) && !joinDate.isAfter(monthEnd)
         "left" -> discontinuedAt != null && !discontinuedAt.isBefore(monthStart) && !discontinuedAt.isAfter(monthEnd)
-        else -> joinDate != null && !joinDate.isAfter(previousMonthEnd) && (discontinuedAt == null || !discontinuedAt.isBefore(monthStart))
+        else -> joinDate != null && !joinDate.isAfter(previousMonthEnd) &&
+            (!student.discontinued || (discontinuedAt != null && !discontinuedAt.isBefore(monthStart)))
     }
 }
 

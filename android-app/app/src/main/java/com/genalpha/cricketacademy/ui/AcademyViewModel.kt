@@ -960,7 +960,7 @@ class AcademyViewModel(
                 student.copy(
                     discontinued = !student.discontinued,
                     updatedBy = session.email,
-                    discontinuedAt = if (student.discontinued) null else todayIsoDate(),
+                    discontinuedAt = if (student.discontinued) student.discontinuedAt else todayIsoDate(),
                 )
             )
             refreshInBackground()
