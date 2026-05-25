@@ -19,6 +19,7 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 
 - Updated web and Android fee-status labels so failed WhatsApp/Meta reminders show `Reminder failed` instead of being flattened into `Reminder sent`.
 - Added failed reminder reason handling from `reminder_events.meta_error`/`failed_at` and profile timeline fallback entries, plus `supabase/reminder-status-timeline-failures.sql` to log provider failure reasons into `student_timeline`.
+- Compacted player timelines so a reminder attempt shows one `WhatsApp reminder prepared` item plus one final `Reminder failed`/`Reminder delivered` item, hiding accepted/legacy duplicate rows and long phone/template message bodies.
 - Simplified web and Android `Record joining fee`: removed the joining-mode `Amount paid` field, added jersey size/pairs, calculated jersey amount from pair count at Rs 750 each, and saved jersey size/pairs to joining payment rows.
 - Fixed the web admission banner spacing so it no longer overlaps the admission heading.
 - Verification done:

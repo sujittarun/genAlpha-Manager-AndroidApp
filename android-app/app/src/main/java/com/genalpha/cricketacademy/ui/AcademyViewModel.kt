@@ -438,7 +438,7 @@ class AcademyViewModel(
         val session = _uiState.value.session
         val timeline = repository.fetchStudentTimeline(studentId, session?.accessToken)
         if (session == null) return timeline
-        return timeline.map { item ->
+        return timeline.compactPlayerTimeline().map { item ->
             val proofPath = paymentProofPath(item.details.orEmpty())
             if (proofPath.isBlank()) {
                 item
@@ -446,6 +446,65 @@ class AcademyViewModel(
                 item.copy(proofUrl = repository.createPaymentProofSignedUrl(session.accessToken, proofPath))
             }
         }
+    }
+
+    private fun List<StudentTimelineItem>.compactPlayerTimeline(): List<StudentTimelineItem> {
+        val seen = mutableSetOf<String>()
+        return mapNotNull { it.compactTimelineItem() }
+            .filter { item ->
+                val title = item.title.ifBlank { item.eventType }
+                val dateKey = item.eventDate.ifBlank { item.createdAt.orEmpty().take(10) }
+                val detailKey = if (title == "Reminder failed") item.details.orEmpty() else ""
+                seen.add("$dateKey|$title|$detailKey")
+            }
+    }
+
+    private fun StudentTimelineItem.compactTimelineItem(): StudentTimelineItem? {
+        val eventText = "$eventType $title ${details.orEmpty()}".lowercase()
+        return when {
+            "renewal reminder prepared" in eventText || "joining fee reminder prepared" in eventText -> null
+            "reminder accepted" in eventText || " accepted " in eventText -> null
+            "confirmation" in eventText && "failed" !in eventText -> null
+            "whatsapp reminder prepared" in eventText || "status: queued" in eventText -> copy(
+                title = "WhatsApp reminder prepared",
+                details = "",
+                changedBy = changedBy.orEmpty().ifBlank { "System" },
+            )
+            "failed" in eventText || "send_failed" in eventText || "delivery_failed" in eventText -> copy(
+                title = "Reminder failed",
+                details = extractReminderTimelineReason(details.orEmpty()).ifBlank { "Provider did not return a detailed reason." },
+                changedBy = changedBy.orEmpty().ifBlank { "WhatsApp" },
+            )
+            "delivered" in eventText || "read" in eventText -> copy(
+                title = "Reminder delivered",
+                details = "",
+                changedBy = changedBy.orEmpty().ifBlank { "WhatsApp" },
+            )
+            "message: template" in eventText -> copy(details = "")
+            else -> this
+        }
+    }
+
+    private fun extractReminderTimelineReason(details: String): String {
+        val marker = "Reminder failed:"
+        if (details.contains(marker)) return details.substringAfter(marker).trim()
+        return details
+            .split("•")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .asReversed()
+            .firstOrNull { piece ->
+                val lower = piece.lowercase()
+                lower !in setOf("failed", "send_failed", "delivery_failed", "undelivered", "accepted", "sent", "delivered", "read") &&
+                    !lower.startsWith("message:") &&
+                    !lower.startsWith("parent:") &&
+                    !lower.startsWith("from:") &&
+                    !lower.startsWith("to:") &&
+                    !lower.startsWith("plan:") &&
+                    !lower.startsWith("amount:") &&
+                    !lower.startsWith("months:")
+            }
+            .orEmpty()
     }
 
     suspend fun markAttendance(student: Student): OperationResult {
