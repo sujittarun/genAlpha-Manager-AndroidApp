@@ -15,6 +15,16 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 
 ## 2026-05-25
 
+### Student Life Timeline and Attendance Calendar
+
+- Added `supabase/student-life-timeline-audit.sql` to log meaningful student life events into `student_timeline`: created, discontinued/rejoined, renewal array changes, fee status changes, jersey changes, profile/contact/fee split changes, and payment insert/update/delete.
+- Attendance is intentionally excluded from timeline and remains in the `attendance` table.
+- Updated browser Player Profile V2 to show filtered history chips and a six-month attendance calendar similar to the Android attendance history dialog.
+- Verification done:
+  - `node --check web-app-repo/script.js`
+  - `node --check web-app-repo/player-profile-v2/player-profile-v2.js`
+  - `git diff --check`
+
 ### Reminder Status and Joining Fee Simplification
 
 - Updated web and Android fee-status labels so failed WhatsApp/Meta reminders show `Reminder failed` instead of being flattened into `Reminder sent`.
