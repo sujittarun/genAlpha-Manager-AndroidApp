@@ -57,6 +57,7 @@ data class AcademyUiState(
     val kids: List<Student> = emptyList(),
     val todayAttendanceIds: Set<String> = emptySet(),
     val attendanceCounts: Map<String, Int> = emptyMap(),
+    val recentAttendanceDates: Map<String, List<String>> = emptyMap(),
     val pendingAdmissions: List<PendingAdmission> = emptyList(),
     val isAdmissionReviewLoading: Boolean = false,
     val expenses: List<AcademyExpense> = emptyList(),
@@ -100,25 +101,30 @@ class AcademyViewModel(
         }
 
         override fun onAttendanceUpsert(studentId: String, attendanceDate: String) {
-            if (attendanceDate != todayIsoDate()) return
             _uiState.update { state ->
-                if (state.todayAttendanceIds.contains(studentId)) return@update state
+                val currentDates = state.recentAttendanceDates[studentId].orEmpty()
+                val nextRecentDates = state.recentAttendanceDates + (studentId to ((currentDates + attendanceDate).distinct().sortedDescending()))
+                if (attendanceDate != todayIsoDate()) return@update state.copy(recentAttendanceDates = nextRecentDates)
+                if (state.todayAttendanceIds.contains(studentId)) return@update state.copy(recentAttendanceDates = nextRecentDates)
                 val currentCount = state.attendanceCounts[studentId] ?: 0
                 state.copy(
                     todayAttendanceIds = state.todayAttendanceIds + studentId,
                     attendanceCounts = state.attendanceCounts + (studentId to (currentCount + 1)),
+                    recentAttendanceDates = nextRecentDates,
                 )
             }
         }
 
         override fun onAttendanceDeleted(studentId: String, attendanceDate: String) {
-            if (attendanceDate != todayIsoDate()) return
             _uiState.update { state ->
-                if (!state.todayAttendanceIds.contains(studentId)) return@update state
+                val nextRecentDates = state.recentAttendanceDates + (studentId to state.recentAttendanceDates[studentId].orEmpty().filterNot { it == attendanceDate })
+                if (attendanceDate != todayIsoDate()) return@update state.copy(recentAttendanceDates = nextRecentDates)
+                if (!state.todayAttendanceIds.contains(studentId)) return@update state.copy(recentAttendanceDates = nextRecentDates)
                 val currentCount = state.attendanceCounts[studentId] ?: 0
                 state.copy(
                     todayAttendanceIds = state.todayAttendanceIds - studentId,
                     attendanceCounts = state.attendanceCounts + (studentId to (currentCount - 1).coerceAtLeast(0)),
+                    recentAttendanceDates = nextRecentDates,
                 )
             }
         }
@@ -167,6 +173,7 @@ class AcademyViewModel(
             loadKids()
             loadTodayAttendance()
             loadAttendanceCounts()
+            loadRecentAttendanceDates()
             loadFinance()
             startPlayersLiveSync()
             startAttendanceLiveSync()
@@ -257,6 +264,7 @@ class AcademyViewModel(
             loadKids()
             loadTodayAttendance()
             loadAttendanceCounts()
+            loadRecentAttendanceDates()
             loadFinance()
         }
     }
@@ -431,6 +439,20 @@ class AcademyViewModel(
         }
     }
 
+    suspend fun loadRecentAttendanceDates() {
+        try {
+            val since = LocalDate.now().minusDays(45).toString()
+            val recentDates = repository.fetchRecentAttendanceDates(since)
+            _uiState.update { it.copy(recentAttendanceDates = recentDates) }
+        } catch (error: Exception) {
+            _uiState.update {
+                it.copy(
+                    errorMessage = error.message ?: "Unable to load attendance follow-up nudges.",
+                )
+            }
+        }
+    }
+
     suspend fun attendanceHistory(studentId: String): List<String> {
         return repository.fetchAttendanceDates(studentId)
     }
@@ -519,9 +541,12 @@ class AcademyViewModel(
         return try {
             repository.markTodayAttendance(student.id)
             _uiState.update {
+                val currentDates = it.recentAttendanceDates[student.id].orEmpty()
+                val today = todayIsoDate()
                 it.copy(
                     todayAttendanceIds = it.todayAttendanceIds + student.id,
                     attendanceCounts = it.attendanceCounts + (student.id to ((it.attendanceCounts[student.id] ?: 0) + 1)),
+                    recentAttendanceDates = it.recentAttendanceDates + (student.id to ((currentDates + today).distinct().sortedDescending())),
                 )
             }
             OperationResult(true, "${student.name} marked present.")
@@ -539,9 +564,12 @@ class AcademyViewModel(
             repository.unmarkTodayAttendance(student.id)
             _uiState.update {
                 val currentCount = it.attendanceCounts[student.id] ?: 0
+                val today = todayIsoDate()
+                val nextDates = it.recentAttendanceDates[student.id].orEmpty().filterNot { date -> date == today }
                 it.copy(
                     todayAttendanceIds = it.todayAttendanceIds - student.id,
                     attendanceCounts = it.attendanceCounts + (student.id to (currentCount - 1).coerceAtLeast(0)),
+                    recentAttendanceDates = it.recentAttendanceDates + (student.id to nextDates),
                 )
             }
             OperationResult(true, "${student.name} attendance reverted.")

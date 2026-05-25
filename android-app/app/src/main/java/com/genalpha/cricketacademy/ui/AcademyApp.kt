@@ -738,6 +738,9 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     val todaysPresentCount = remember(uiState.todayAttendanceIds, activePlayers) {
         activePlayers.count { uiState.todayAttendanceIds.contains(it.id) }
     }
+    val attendanceFollowUps = remember(activePlayers, uiState.recentAttendanceDates, uiState.todayAttendanceIds) {
+        buildAttendanceFollowUps(activePlayers, uiState.recentAttendanceDates, uiState.todayAttendanceIds)
+    }
 
     LaunchedEffect(uiState.errorMessage) {
         uiState.errorMessage?.let {
@@ -1172,10 +1175,16 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                 onRefresh = {
                                     scope.launch {
                                         viewModel.loadTodayAttendance()
+                                        viewModel.loadRecentAttendanceDates()
                                     }
                                 },
                                 isRefreshing = uiState.isAttendanceRefreshing,
                             )
+                        }
+                        if (attendanceFollowUps.isNotEmpty()) {
+                            item {
+                                AttendanceFollowUpNudge(followUps = attendanceFollowUps)
+                            }
                         }
                         item {
                             PlayerAttendanceToolbar(
@@ -4529,6 +4538,106 @@ private fun CompactRosterFilter(
                         onSelected(value)
                     },
                 )
+            }
+        }
+    }
+}
+
+private data class AttendanceFollowUp(
+    val student: Student,
+    val absentDays: Long,
+    val lastPresentDate: String?,
+)
+
+private const val AttendanceFollowUpDays = 5L
+
+private fun buildAttendanceFollowUps(
+    activePlayers: List<Student>,
+    recentAttendanceDates: Map<String, List<String>>,
+    todayAttendanceIds: Set<String>,
+): List<AttendanceFollowUp> {
+    val today = LocalDate.now()
+    return activePlayers.mapNotNull { student ->
+        val presentDates = recentAttendanceDates[student.id].orEmpty()
+            .mapNotNull { runCatching { LocalDate.parse(it.take(10)) }.getOrNull() }
+            .filter { !it.isAfter(today) }
+        val lastPresent = when {
+            todayAttendanceIds.contains(student.id) -> today
+            else -> presentDates.maxOrNull()
+        }
+        val joined = runCatching { LocalDate.parse(student.joinDate.take(10)) }.getOrNull() ?: return@mapNotNull null
+        val streakStart = lastPresent ?: joined
+        val absentDays = ChronoUnit.DAYS.between(streakStart, today).coerceAtLeast(0)
+        if (absentDays < AttendanceFollowUpDays) return@mapNotNull null
+        AttendanceFollowUp(
+            student = student,
+            absentDays = absentDays,
+            lastPresentDate = lastPresent?.takeIf { it != today }?.toString(),
+        )
+    }.sortedWith(compareByDescending<AttendanceFollowUp> { it.absentDays }.thenBy { it.student.name.lowercase() })
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AttendanceFollowUpNudge(followUps: List<AttendanceFollowUp>) {
+    Card(
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7ED)),
+        border = BorderStroke(1.dp, Color(0xFFD97706).copy(alpha = 0.22f)),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    Icons.Outlined.Notifications,
+                    contentDescription = null,
+                    tint = Color(0xFF92400E),
+                    modifier = Modifier.size(18.dp),
+                )
+                Column {
+                    Text(
+                        "${followUps.size} player${if (followUps.size == 1) "" else "s"} need attendance follow-up",
+                        color = Color(0xFF7C2D12),
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 14.sp,
+                    )
+                    Text(
+                        "No attendance marked for 5+ days. Review before marking discontinued.",
+                        color = Color(0xFF9A5B12),
+                        fontSize = 12.sp,
+                        lineHeight = 15.sp,
+                    )
+                }
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                followUps.take(6).forEach { item ->
+                    Surface(
+                        shape = RoundedCornerShape(999.dp),
+                        color = Color.White.copy(alpha = 0.75f),
+                        border = BorderStroke(1.dp, Color(0xFFD97706).copy(alpha = 0.20f)),
+                    ) {
+                        Text(
+                            text = "${item.student.name} • ${item.absentDays}d${item.lastPresentDate?.let { " • last ${displayDate(it)}" } ?: " • never marked"}",
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            color = Color(0xFF7C2D12),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                val remaining = followUps.size - 6
+                if (remaining > 0) {
+                    Text("+$remaining more", color = Color(0xFF9A5B12), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }

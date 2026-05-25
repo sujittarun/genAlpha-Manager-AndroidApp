@@ -39,6 +39,9 @@ class SupabaseRepository(
     private val attendanceDateAdapter = moshi.adapter<List<AttendanceDateRecord>>(
         Types.newParameterizedType(List::class.java, AttendanceDateRecord::class.java)
     )
+    private val recentAttendanceAdapter = moshi.adapter<List<RecentAttendanceRecord>>(
+        Types.newParameterizedType(List::class.java, RecentAttendanceRecord::class.java)
+    )
     private val timelineAdapter = moshi.adapter<List<StudentTimelineItem>>(
         Types.newParameterizedType(List::class.java, StudentTimelineItem::class.java)
     )
@@ -751,6 +754,23 @@ class SupabaseRepository(
             attendanceDateAdapter.fromJson(response.body?.string().orEmpty())
                 .orEmpty()
                 .map { it.attendanceDate }
+        }
+    }
+
+    suspend fun fetchRecentAttendanceDates(since: String): Map<String, List<String>> = withContext(Dispatchers.IO) {
+        val request = baseRequest("$baseUrl/rest/v1/attendance?select=student_id,attendance_date&attendance_date=gte.$since&order=attendance_date.desc")
+            .header("Authorization", "Bearer $anonKey")
+            .get()
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw SupabaseException(response.code, parseError(response.body?.string()))
+            }
+
+            recentAttendanceAdapter.fromJson(response.body?.string().orEmpty())
+                .orEmpty()
+                .groupBy({ it.studentId }, { it.attendanceDate })
         }
     }
 

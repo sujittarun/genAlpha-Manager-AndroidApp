@@ -180,6 +180,11 @@ data class AttendanceDateRecord(
     @Json(name = "attendance_date") val attendanceDate: String,
 )
 
+data class RecentAttendanceRecord(
+    @Json(name = "student_id") val studentId: String,
+    @Json(name = "attendance_date") val attendanceDate: String,
+)
+
 data class StudentTimelineItem(
     val id: String,
     @Json(name = "student_id") val studentId: String,
