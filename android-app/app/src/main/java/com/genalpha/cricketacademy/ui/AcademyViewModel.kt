@@ -739,6 +739,8 @@ class AcademyViewModel(
         admissionFee: Double = 0.0,
         jerseyAmount: Double = 0.0,
         totalFeeAmount: Double = 0.0,
+        jerseySize: String = student.jerseySize,
+        jerseyPairs: Int = student.jerseyPairs,
     ): OperationResult {
         val payments = _uiState.value.payments
         val cycleDate = cycleDateOverride?.takeIf { it.isNotBlank() } ?: student.nextRenewalCycleDate(payments)
@@ -765,6 +767,8 @@ class AcademyViewModel(
                     admissionFee = admissionFee,
                     jerseyAmount = jerseyAmount,
                     totalFeeAmount = totalFeeAmount,
+                    jerseySize = jerseySize,
+                    jerseyPairs = jerseyPairs,
                 )
                 
                 // Run slow WhatsApp trigger in background
@@ -796,6 +800,8 @@ class AcademyViewModel(
                         admissionFee = admissionFee,
                         jerseyAmount = jerseyAmount,
                         totalFeeAmount = totalFeeAmount,
+                        jerseySize = jerseySize,
+                        jerseyPairs = jerseyPairs,
                         updatedBy = session.email,
                     )
                 )

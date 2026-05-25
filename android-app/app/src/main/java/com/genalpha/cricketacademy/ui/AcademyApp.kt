@@ -1439,7 +1439,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         student = renewalStudent!!,
                         payments = uiState.payments,
                         onDismiss = { renewalStudent = null },
-                        onSubmit = { plan, months, amount, comment, paymentDate, coachingFee, admissionFee, jerseyAmount, totalFeeAmount ->
+                        onSubmit = { plan, months, amount, comment, paymentDate, coachingFee, admissionFee, jerseyAmount, totalFeeAmount, jerseySize, jerseyPairs ->
                             val studentForReceipt = renewalStudent!!
                             val isJoiningFee = studentForReceipt.isFeesPending()
                             val result = viewModel.recordRenewalPayment(
@@ -1455,6 +1455,8 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                 admissionFee = if (isJoiningFee) admissionFee else 0.0,
                                 jerseyAmount = if (isJoiningFee) jerseyAmount else 0.0,
                                 totalFeeAmount = if (isJoiningFee) totalFeeAmount else 0.0,
+                                jerseySize = if (isJoiningFee) jerseySize else studentForReceipt.jerseySize,
+                                jerseyPairs = if (isJoiningFee) jerseyPairs else studentForReceipt.jerseyPairs,
                             )
                             if (result.success) {
                                 context.shareReceiptPdf(
@@ -3422,7 +3424,7 @@ private fun RenewalPaymentDialog(
     student: Student,
     payments: List<StudentPayment>,
     onDismiss: () -> Unit,
-    onSubmit: suspend (String, Int, Double, String, String, Double, Double, Double, Double) -> OperationResult,
+    onSubmit: suspend (String, Int, Double, String, String, Double, Double, Double, Double, String, Int) -> OperationResult,
 ) {
     val isJoiningFee = student.isFeesPending()
     val context = LocalContext.current
@@ -3433,7 +3435,8 @@ private fun RenewalPaymentDialog(
     }
     var coachingFee by rememberSaveable(student.id) { mutableStateOf(initialJoiningSplit.coachingFee.toInt().toString()) }
     var admissionFee by rememberSaveable(student.id) { mutableStateOf(initialJoiningSplit.admissionFee.toInt().toString()) }
-    var jerseyAmount by rememberSaveable(student.id) { mutableStateOf(initialJoiningSplit.jerseyAmount.toInt().toString()) }
+    var jerseySize by rememberSaveable(student.id) { mutableStateOf(student.jerseySize) }
+    var jerseyPairs by rememberSaveable(student.id) { mutableStateOf(student.jerseyPairs.coerceAtLeast(0).toString()) }
     var comment by rememberSaveable(student.id) { mutableStateOf("") }
     var paymentDate by rememberSaveable(student.id) { mutableStateOf(todayIsoDate()) }
     var isSaving by rememberSaveable(student.id) { mutableStateOf(false) }
@@ -3446,9 +3449,11 @@ private fun RenewalPaymentDialog(
         "custom" -> Triple("Custom amount", 1, amount.toDoubleOrNull() ?: 0.0)
         else -> Triple("Monthly", 1, 3500.0)
     }
+    val safeJerseyPairs = jerseyPairs.toIntOrNull()?.coerceAtLeast(0) ?: 0
+    val jerseyAmount = safeJerseyPairs * JerseyExtraPairFee
     val joiningSplitTotal = (coachingFee.toDoubleOrNull() ?: 0.0) +
         (admissionFee.toDoubleOrNull() ?: 0.0) +
-        (jerseyAmount.toDoubleOrNull() ?: 0.0)
+        jerseyAmount
     val cycleDate = if (isJoiningFee) student.joinDate else student.nextRenewalCycleDate(payments)
     val openPaymentDatePicker = rememberUpdatedState(newValue = {
         val (year, month, day) = currentDatePickerValues(paymentDate.ifBlank { null })
@@ -3508,7 +3513,8 @@ private fun RenewalPaymentDialog(
                         val split = joiningFeeSplitForPlan(student, plan)
                         coachingFee = split.coachingFee.toInt().toString()
                         admissionFee = split.admissionFee.toInt().toString()
-                        jerseyAmount = split.jerseyAmount.toInt().toString()
+                        jerseySize = student.jerseySize
+                        jerseyPairs = student.jerseyPairs.coerceAtLeast(0).toString()
                         amount = if (plan == "custom") "" else split.totalFeeAmount.toInt().toString()
                     } else {
                         amount = when (plan) {
@@ -3529,12 +3535,14 @@ private fun RenewalPaymentDialog(
                     fontWeight = FontWeight.ExtraBold,
                 )
             }
-            AdmissionTextField(
-                value = amount,
-                onValueChange = { amount = it.filter { char -> char.isDigit() || char == '.' } },
-                label = "Amount paid",
-                singleLine = true,
-            )
+            if (!isJoiningFee) {
+                AdmissionTextField(
+                    value = amount,
+                    onValueChange = { amount = it.filter { char -> char.isDigit() || char == '.' } },
+                    label = "Amount paid",
+                    singleLine = true,
+                )
+            }
             if (isJoiningFee) {
                 AdmissionSectionCard(title = "Joining fee split") {
                     AdmissionTextField(
@@ -3549,11 +3557,26 @@ private fun RenewalPaymentDialog(
                         label = "Admission fee",
                         singleLine = true,
                     )
+                    AdmissionDropdownField(
+                        label = "Jersey size",
+                        value = jerseySizeLabel(jerseySize),
+                        options = JerseySizeOptions.map(::jerseySizeLabel),
+                        displayText = { it },
+                        onSelect = { selectedLabel ->
+                            jerseySize = JerseySizeOptions.firstOrNull { jerseySizeLabel(it) == selectedLabel }.orEmpty()
+                        },
+                    )
                     AdmissionTextField(
-                        value = jerseyAmount,
-                        onValueChange = { jerseyAmount = it.filter { char -> char.isDigit() || char == '.' } },
-                        label = "Jersey amount",
+                        value = jerseyPairs,
+                        onValueChange = { jerseyPairs = it.filter(Char::isDigit) },
+                        label = "Jersey pairs",
                         singleLine = true,
+                    )
+                    Text(
+                        text = "Jersey amount: ${admissionAmountLabel(jerseyAmount)} (${safeJerseyPairs} x ${admissionAmountLabel(JerseyExtraPairFee)})",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
                     )
                     Text(
                         text = "Total due saved on player profile: ${admissionAmountLabel(joiningSplitTotal)}",
@@ -3596,7 +3619,9 @@ private fun RenewalPaymentDialog(
                         try {
                             isSaving = true
                             inlineMessage = ""
-                            val finalAmount = if (plan == "custom") {
+                            val finalAmount = if (isJoiningFee) {
+                                joiningSplitTotal
+                            } else if (plan == "custom") {
                                 amount.toDoubleOrNull() ?: 0.0
                             } else {
                                 amount.toDoubleOrNull() ?: planInfo.third
@@ -3609,8 +3634,10 @@ private fun RenewalPaymentDialog(
                                 paymentDate,
                                 coachingFee.toDoubleOrNull() ?: 0.0,
                                 admissionFee.toDoubleOrNull() ?: 0.0,
-                                jerseyAmount.toDoubleOrNull() ?: 0.0,
+                                jerseyAmount,
                                 joiningSplitTotal,
+                                jerseySize,
+                                safeJerseyPairs,
                             )
                             if (!result.success) {
                                 inlineMessage = result.message
@@ -4852,6 +4879,7 @@ private fun RosterRow(
     val feePendingTone = themedBadgeTone(Color(0xFFFFE8E8), BrandRed, DarkDangerContainer, DarkDangerText)
     val feeVerificationTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
     val feeReminderTone = themedBadgeTone(Color(0xFFEAF2FF), BrandBlueDeep, DarkInfoContainer, DarkInfoText)
+    val feeFailedTone = themedBadgeTone(Color(0xFFFFE8E8), BrandRed, DarkDangerContainer, DarkDangerText)
     val renewalOkTone = themedBadgeTone(Color(0xFFEAF8F2), BrandGreen, DarkSuccessContainer, DarkSuccessText)
     val renewalPendingTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
     val feeLabel = student.feeStatusLabel(paymentFollowUp, payments)
@@ -5085,12 +5113,14 @@ private fun RosterRow(
                         Badge(
                             label = feeLabel,
                             container = when {
+                                feeLabel == "Reminder failed" -> feeFailedTone.container
                                 feeLabel == "Reminder sent" -> feeReminderTone.container
                                 student.feesPaid -> feePaidTone.container
                                 feeLabel == "Pending verification" -> feeVerificationTone.container
                                 else -> feePendingTone.container
                             },
                             color = when {
+                                feeLabel == "Reminder failed" -> feeFailedTone.text
                                 feeLabel == "Reminder sent" -> feeReminderTone.text
                                 student.feesPaid -> feePaidTone.text
                                 feeLabel == "Pending verification" -> feeVerificationTone.text
@@ -5324,6 +5354,7 @@ private fun PlayerDetailSheet(
     val renewalOkTone = themedBadgeTone(Color(0xFFEAF8F2), BrandGreen, DarkSuccessContainer, DarkSuccessText)
     val renewalPendingTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
     val feeReminderTone = themedBadgeTone(Color(0xFFEAF2FF), BrandBlueDeep, DarkInfoContainer, DarkInfoText)
+    val feeFailedTone = themedBadgeTone(Color(0xFFFFE8E8), BrandRed, DarkDangerContainer, DarkDangerText)
     val feeVerificationTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
     val paymentRows = remember(student, payments) { buildPlayerPaymentRows(student, payments) }
     val totalPaid = paymentRows.sumOf { it.amount }
@@ -5421,12 +5452,14 @@ private fun PlayerDetailSheet(
                 Badge(
                     feeLabel,
                     when (feeLabel) {
+                        "Reminder failed" -> feeFailedTone.container
                         "Reminder sent" -> feeReminderTone.container
                         "Pending verification" -> feeVerificationTone.container
                         "Fees paid" -> renewalOkTone.container
                         else -> renewalPendingTone.container
                     },
                     when (feeLabel) {
+                        "Reminder failed" -> feeFailedTone.text
                         "Reminder sent" -> feeReminderTone.text
                         "Pending verification" -> feeVerificationTone.text
                         "Fees paid" -> renewalOkTone.text

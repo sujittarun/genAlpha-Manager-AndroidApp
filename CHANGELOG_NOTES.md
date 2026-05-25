@@ -15,6 +15,18 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 
 ## 2026-05-25
 
+### Reminder Status and Joining Fee Simplification
+
+- Updated web and Android fee-status labels so failed WhatsApp/Meta reminders show `Reminder failed` instead of being flattened into `Reminder sent`.
+- Added failed reminder reason handling from `reminder_events.meta_error`/`failed_at` and profile timeline fallback entries, plus `supabase/reminder-status-timeline-failures.sql` to log provider failure reasons into `student_timeline`.
+- Simplified web and Android `Record joining fee`: removed the joining-mode `Amount paid` field, added jersey size/pairs, calculated jersey amount from pair count at Rs 750 each, and saved jersey size/pairs to joining payment rows.
+- Fixed the web admission banner spacing so it no longer overlaps the admission heading.
+- Verification done:
+  - `node --check web-app-repo/script.js`
+  - `git diff --check` in both repos.
+  - `./gradlew assembleDebug`
+  - Browser DOM check on a fresh local static server confirmed the edited joining-fee fields, readonly jersey amount, and positive admission heading/banner gap.
+
 ### Joining Fee Split Payment Wiring
 
 - Added `supabase/add-payment-fee-breakdown-fields.sql` to store coaching/admission/jersey/total split fields on `student_payments`.

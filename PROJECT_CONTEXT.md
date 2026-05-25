@@ -64,7 +64,7 @@ Important: keep Android-only code in the Android repo and web-only code in `web-
 - Mobile number validation: parent and alternate contact should be 10 digits when provided/required.
 - Payment is not mandatory. If fees paid is "No", no receipt should be generated at admission submit time.
 - Parent UPI payments are not automatically verified. If a parent marks payment made or enters UTR/reference, store it as `Payment pending verification`: keep `fees_paid=false`, keep the submitted amount/reference for manager review, do not count it in finance, and do not generate receipt until manager verifies/marks paid.
-- Roster/profile fee state should distinguish `Reminder sent`, `Pending verification`, and `Paid` when WhatsApp reminder/payment-link data exists.
+- Roster/profile fee state should distinguish `Reminder sent`, `Reminder failed`, `Pending verification`, and `Paid` when WhatsApp reminder/payment-link data exists; failed reminders must preserve/display the provider reason in the player timeline.
 
 ### Admission Review Queue
 
@@ -156,7 +156,8 @@ Current fee constants in code:
 - Special training: Rs 10,000 per month.
 - Admission first payment shows three separate values: coaching fee, one-time admission fee, and jersey amount.
 - Jersey pairs are charged at Rs 750 per pair; there is no free first-pair rule.
-- Admission/player create-edit forms should not expose a manual "amount paid" override. Store `amount_paid` internally as the calculated total when payment is marked made/pending, or Rs 0 when unpaid. Custom/partial collections belong in the manager joining-fee or renewal payment action.
+- Admission/player create-edit forms should not expose a manual "amount paid" override. Store `amount_paid` internally as the calculated total when payment is marked made/pending, or Rs 0 when unpaid. Renewal custom/partial collections belong in the manager renewal payment action.
+- The manager `Record joining fee` action should not show a separate manual "Amount paid" field; it saves the calculated total due from coaching fee + admission fee + jersey pairs, with jersey amount derived from pair count at Rs 750 each.
 - Current calculated admission totals before manager payment adjustments:
   - monthly admission: Rs 4,000 plus Rs 750 per jersey pair (example: 1 pair = Rs 4,750).
   - 3 months admission: Rs 10,475 plus Rs 750 per jersey pair.

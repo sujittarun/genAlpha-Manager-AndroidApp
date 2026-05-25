@@ -222,6 +222,8 @@ data class StudentPayment(
     @Json(name = "admission_fee") val admissionFee: Double? = 0.0,
     @Json(name = "jersey_amount") val jerseyAmount: Double? = 0.0,
     @Json(name = "total_fee_amount") val totalFeeAmount: Double? = 0.0,
+    @Json(name = "jersey_size") val jerseySize: String? = "",
+    @Json(name = "jersey_pairs") val jerseyPairs: Int? = 0,
 )
 
 data class PaymentFollowUp(
@@ -236,14 +238,27 @@ data class PaymentFollowUp(
     val cycleStartDate: String = "",
     val createdAt: String = "",
     val overdueDays: Int = 0,
+    val failureReason: String = "",
+    val failedAt: String = "",
 ) {
+    fun isReminderFailed(): Boolean =
+        reminderStatus in setOf("failed", "send_failed", "delivery_failed", "undelivered") ||
+            linkStatus in setOf("failed", "send_failed", "delivery_failed", "undelivered") ||
+            failureReason.isNotBlank() ||
+            failedAt.isNotBlank()
+
     fun isPendingVerification(): Boolean =
         reminderStatus in setOf("payment_pending_verification", "pending_verification") ||
             linkStatus in setOf("payment_pending_verification", "pending_verification")
 
     fun isReminderSent(): Boolean =
-        reminderStatus in setOf("queued", "accepted", "sent", "delivered", "read", "payment_link_sent", "payment_attempted", "help_requested") ||
+        !isReminderFailed() &&
+            (reminderStatus in setOf("queued", "accepted", "sent", "delivered", "read", "payment_link_sent", "payment_attempted", "help_requested") ||
             linkStatus in setOf("awaiting_parent_choice", "payment_link_sent", "payment_attempted")
+            )
+
+    fun reminderFailureLabel(): String =
+        if (failureReason.isNotBlank()) "Reminder failed: $failureReason" else "Reminder failed"
 }
 
 data class AuthPayload(
@@ -387,6 +402,7 @@ fun Student.feeStatusLabel(): String = when {
 
 fun Student.feeStatusLabel(followUp: PaymentFollowUp?, payments: List<StudentPayment>): String = when {
     followUp?.isPendingVerification() == true || isPaymentPendingVerification() -> "Pending verification"
+    followUp?.isReminderFailed() == true && (isFeesPending() || isRenewalPending(payments)) -> "Reminder failed"
     followUp?.isReminderSent() == true && (isFeesPending() || isRenewalPending(payments)) -> "Reminder sent"
     feesPaid -> "Fees paid"
     else -> "Fees pending"

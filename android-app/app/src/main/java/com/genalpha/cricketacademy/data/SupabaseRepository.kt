@@ -115,7 +115,11 @@ class SupabaseRepository(
     }
 
     suspend fun fetchPaymentFollowUps(accessToken: String): List<PaymentFollowUp> = withContext(Dispatchers.IO) {
-        val reminderRequest = baseRequest("$baseUrl/rest/v1/reminder_events?select=id,student_id,reminder_type,status,due_date,selected_plan,amount,created_at,overdue_days&order=created_at.desc&limit=300")
+        val reminderRequest = baseRequest("$baseUrl/rest/v1/reminder_events?select=id,student_id,reminder_type,status,due_date,selected_plan,amount,created_at,overdue_days,meta_error,failed_at&order=created_at.desc&limit=300")
+            .header("Authorization", "Bearer $accessToken")
+            .get()
+            .build()
+        val legacyReminderRequest = baseRequest("$baseUrl/rest/v1/reminder_events?select=id,student_id,reminder_type,status,due_date,selected_plan,amount,created_at,overdue_days&order=created_at.desc&limit=300")
             .header("Authorization", "Bearer $accessToken")
             .get()
             .build()
@@ -125,7 +129,18 @@ class SupabaseRepository(
             .build()
 
         val reminders = client.newCall(reminderRequest).execute().use { response ->
-            if (!response.isSuccessful) JSONArray() else JSONArray(response.body?.string().orEmpty())
+            if (response.isSuccessful) {
+                JSONArray(response.body?.string().orEmpty())
+            } else {
+                val error = parseError(response.body?.string())
+                if (!error.lowercase().contains("schema cache")) {
+                    JSONArray()
+                } else {
+                    client.newCall(legacyReminderRequest).execute().use { fallback ->
+                        if (!fallback.isSuccessful) JSONArray() else JSONArray(fallback.body?.string().orEmpty())
+                    }
+                }
+            }
         }
         val links = client.newCall(linkRequest).execute().use { response ->
             if (!response.isSuccessful) JSONArray() else JSONArray(response.body?.string().orEmpty())
@@ -164,6 +179,8 @@ class SupabaseRepository(
                 cycleStartDate = link?.optString("cycle_start_date").orEmpty().ifBlank { reminder?.optString("due_date").orEmpty() },
                 createdAt = link?.optString("created_at").orEmpty().ifBlank { reminder?.optString("created_at").orEmpty() },
                 overdueDays = reminder?.optInt("overdue_days", 0) ?: 0,
+                failureReason = reminder?.extractReminderFailureReason().orEmpty(),
+                failedAt = reminder?.optString("failed_at").orEmpty(),
             )
         }
     }
@@ -218,7 +235,13 @@ class SupabaseRepository(
                 .build()
             client.newCall(request).execute().use { response ->
                 val responseBody = response.body?.string().orEmpty()
-                if (response.isSuccessful) return@withContext
+                if (response.isSuccessful) {
+                    val responseJson = responseBody.takeIf { it.isNotBlank() }?.let { JSONObject(it) }
+                    if (responseJson?.optBoolean("success", true) == false) {
+                        throw SupabaseException(response.code, responseJson.optString("error", "WhatsApp reminder failed."))
+                    }
+                    return@withContext
+                }
                 if (response.code != 404) {
                     throw SupabaseException(response.code, parseError(responseBody))
                 }
@@ -660,7 +683,7 @@ class SupabaseRepository(
     }
 
     suspend fun sendAdmissionReminder(admissionId: String, session: ManagerSession) = withContext(Dispatchers.IO) {
-        executeWriteRequest(
+        val responseBody = executeWriteRequestReturningBody(
             url = "$baseUrl/functions/v1/whatsapp-reminder",
             session = session,
             method = "POST",
@@ -668,6 +691,10 @@ class SupabaseRepository(
                 .put("action", "send_admission_reminder")
                 .put("admissionId", admissionId),
         )
+        val responseJson = responseBody.takeIf { it.isNotBlank() }?.let { JSONObject(it) }
+        if (responseJson?.optBoolean("success", true) == false) {
+            throw SupabaseException(200, responseJson.optString("error", "Reminder failed."))
+        }
     }
 
     suspend fun fetchTodayAttendance(date: String = todayIsoDate()): Set<String> = withContext(Dispatchers.IO) {
@@ -729,14 +756,43 @@ class SupabaseRepository(
             .header("Authorization", "Bearer $token")
             .get()
             .build()
+        val reminderFailuresRequest = baseRequest("$baseUrl/rest/v1/reminder_events?select=id,student_id,reminder_type,status,due_date,created_at,created_by,meta_error,failed_at&student_id=eq.$studentId&status=in.(failed,send_failed,delivery_failed,undelivered)&order=created_at.desc&limit=10")
+            .header("Authorization", "Bearer $token")
+            .get()
+            .build()
 
-        client.newCall(request).execute().use { response ->
+        val timeline = client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 throw SupabaseException(response.code, parseError(response.body?.string()))
             }
 
             timelineAdapter.fromJson(response.body?.string().orEmpty()).orEmpty()
         }
+        val failures = client.newCall(reminderFailuresRequest).execute().use { response ->
+            if (!response.isSuccessful) {
+                emptyList()
+            } else {
+                val rows = JSONArray(response.body?.string().orEmpty())
+                List(rows.length()) { index ->
+                    val row = rows.getJSONObject(index)
+                    val reason = row.extractReminderFailureReason().ifBlank { "Provider did not return a detailed reason." }
+                    val createdAt = row.optSafeString("failed_at").ifBlank { row.optSafeString("created_at") }
+                    StudentTimelineItem(
+                        id = "reminder-failure-${row.optSafeString("id")}",
+                        studentId = studentId,
+                        eventType = "whatsapp_reminder_failed",
+                        eventDate = createdAt.take(10),
+                        title = "Reminder failed",
+                        details = "Status: ${row.optSafeString("status")} • Reason: $reason",
+                        changedBy = row.optSafeString("created_by").ifBlank { "WhatsApp" },
+                        createdAt = createdAt,
+                    )
+                }
+            }
+        }
+        (timeline + failures)
+            .sortedByDescending { it.createdAt }
+            .take(30)
     }
 
     suspend fun createPaymentProofSignedUrl(accessToken: String, path: String): String = withContext(Dispatchers.IO) {
@@ -894,6 +950,8 @@ class SupabaseRepository(
         admissionFee: Double = 0.0,
         jerseyAmount: Double = 0.0,
         totalFeeAmount: Double = 0.0,
+        jerseySize: String = student.jerseySize,
+        jerseyPairs: Int = student.jerseyPairs,
     ): StudentPayment {
         return withContext(Dispatchers.IO) {
             val body = JSONObject()
@@ -913,6 +971,8 @@ class SupabaseRepository(
                     .put("admission_fee", admissionFee.coerceAtLeast(0.0))
                     .put("jersey_amount", jerseyAmount.coerceAtLeast(0.0))
                     .put("total_fee_amount", totalFeeAmount.coerceAtLeast(0.0))
+                    .put("jersey_size", jerseySize.trim())
+                    .put("jersey_pairs", jerseyPairs.coerceAtLeast(0))
             }
 
             val responseBody = try {
@@ -924,7 +984,7 @@ class SupabaseRepository(
                 )
             } catch (error: SupabaseException) {
                 if (!isJoiningFee || !error.isMissingPaymentFeeColumnError()) throw error
-                listOf("coaching_fee", "admission_fee", "jersey_amount", "total_fee_amount")
+                listOf("coaching_fee", "admission_fee", "jersey_amount", "total_fee_amount", "jersey_size", "jersey_pairs")
                     .forEach { body.remove(it) }
                 executeWriteRequestReturningBody(
                     url = "$baseUrl/rest/v1/student_payments?select=*",
@@ -946,6 +1006,8 @@ class SupabaseRepository(
                     .put("admission_fee", admissionFee.coerceAtLeast(0.0))
                     .put("jersey_amount", jerseyAmount.coerceAtLeast(0.0))
                     .put("total_fee_amount", totalFeeAmount.coerceAtLeast(0.0))
+                    .put("jersey_size", jerseySize.trim())
+                    .put("jersey_pairs", jerseyPairs.coerceAtLeast(0))
                     .put("discontinued", false)
                     .put("discontinued_at", JSONObject.NULL)
                     .put("updated_by", managerEmail)
@@ -1560,7 +1622,23 @@ class SupabaseRepository(
             admissionFee = optDoubleValue("admission_fee"),
             jerseyAmount = optDoubleValue("jersey_amount"),
             totalFeeAmount = optDoubleValue("total_fee_amount"),
+            jerseySize = optSafeString("jersey_size"),
+            jerseyPairs = optIntValue("jersey_pairs"),
         )
+    }
+
+    private fun JSONObject.extractReminderFailureReason(): String {
+        val meta = optJSONObject("meta_error") ?: return ""
+        val direct = meta.optString("message", "").trim()
+        if (direct.isNotBlank()) return direct
+        val error = meta.optJSONObject("error")
+        val nested = error?.optString("message", "")?.trim().orEmpty()
+        if (nested.isNotBlank()) return nested
+        return error
+            ?.optJSONObject("error_data")
+            ?.optString("details", "")
+            ?.trim()
+            .orEmpty()
     }
 
     private fun JSONObject.optSafeString(key: String): String {
@@ -1669,6 +1747,8 @@ private fun SupabaseException.isMissingStudentFeeColumnError(): Boolean {
             "admission_fee",
             "jersey_amount",
             "total_fee_amount",
+            "jersey_size",
+            "jersey_pairs",
         ).any { lowerMessage.contains(it) }
 }
 
@@ -1680,5 +1760,7 @@ private fun SupabaseException.isMissingPaymentFeeColumnError(): Boolean {
             "admission_fee",
             "jersey_amount",
             "total_fee_amount",
+            "jersey_size",
+            "jersey_pairs",
         ).any { lowerMessage.contains(it) }
 }
