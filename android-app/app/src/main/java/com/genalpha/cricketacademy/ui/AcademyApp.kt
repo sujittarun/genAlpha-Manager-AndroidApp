@@ -4167,19 +4167,28 @@ private fun buildStudentMovement(students: List<Student>): List<StudentMovementM
             joined = students.count { parseStudentDate(it.joinDate)?.let { date -> !date.isBefore(monthStart) && !date.isAfter(monthEnd) } == true },
             continuing = students.count {
                 val joined = parseStudentDate(it.joinDate)
-                val discontinued = parseStudentDate(it.discontinuedAt)
+                val discontinued = studentDiscontinuedMovementDate(it)
                 joined != null && !joined.isAfter(previousMonthEnd) &&
                     (!it.discontinued || (discontinued != null && !discontinued.isBefore(monthStart)))
             },
-            discontinued = students.count { parseStudentDate(it.discontinuedAt)?.let { date -> !date.isBefore(monthStart) && !date.isAfter(monthEnd) } == true },
+            discontinued = students.count { studentDiscontinuedMovementDate(it)?.let { date -> !date.isBefore(monthStart) && !date.isAfter(monthEnd) } == true },
         )
     }
 }
 
 private fun parseStudentDate(value: String?): LocalDate? = try {
-    if (value.isNullOrBlank()) null else LocalDate.parse(value)
+    val datePart = value?.take(10)
+    if (datePart.isNullOrBlank()) null else LocalDate.parse(datePart)
 } catch (_: Exception) {
     null
+}
+
+private fun studentDiscontinuedMovementDate(student: Student): LocalDate? {
+    parseStudentDate(student.discontinuedAt)?.let { return it }
+    if (!student.discontinued) return null
+    return parseStudentDate(student.updatedAt)
+        ?: parseStudentDate(student.createdAt)
+        ?: parseStudentDate(student.joinDate)
 }
 
 private fun movementYearMonth(monthKey: String?): YearMonth? = try {
@@ -4194,7 +4203,7 @@ private fun studentMatchesMovementFilter(student: Student, monthKey: String, typ
     val monthEnd = month.atEndOfMonth()
     val previousMonthEnd = monthStart.minusDays(1)
     val joinDate = parseStudentDate(student.joinDate)
-    val discontinuedAt = parseStudentDate(student.discontinuedAt)
+    val discontinuedAt = studentDiscontinuedMovementDate(student)
     return when (type) {
         "joined" -> joinDate != null && !joinDate.isBefore(monthStart) && !joinDate.isAfter(monthEnd)
         "left" -> discontinuedAt != null && !discontinuedAt.isBefore(monthStart) && !discontinuedAt.isAfter(monthEnd)

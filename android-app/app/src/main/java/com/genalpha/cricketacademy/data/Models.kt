@@ -45,6 +45,8 @@ data class Student(
     val updatedBy: String,
     val discontinued: Boolean,
     val discontinuedAt: String?,
+    val createdAt: String = "",
+    val updatedAt: String = "",
 )
 
 data class StudentDraft(
@@ -316,6 +318,8 @@ data class StudentDto(
     @Json(name = "updated_by") val updatedBy: String? = "Unknown",
     val discontinued: Boolean? = false,
     @Json(name = "discontinued_at") val discontinuedAt: String? = null,
+    @Json(name = "created_at") val createdAt: String? = "",
+    @Json(name = "updated_at") val updatedAt: String? = "",
 )
 
 fun StudentDto.toDomain(): Student = Student(
@@ -351,6 +355,8 @@ fun StudentDto.toDomain(): Student = Student(
     updatedBy = updatedBy ?: addedBy ?: "Unknown",
     discontinued = discontinued == true,
     discontinuedAt = discontinuedAt,
+    createdAt = createdAt.orEmpty(),
+    updatedAt = updatedAt.orEmpty(),
 )
 
 fun Student.toDraft(): StudentDraft = StudentDraft(

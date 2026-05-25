@@ -1594,6 +1594,8 @@ class SupabaseRepository(
             } else {
                 null
             },
+            createdAt = optSafeString("created_at"),
+            updatedAt = optSafeString("updated_at"),
         )
     }
 
