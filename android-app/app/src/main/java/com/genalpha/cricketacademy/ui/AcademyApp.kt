@@ -69,6 +69,7 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.PersonAddAlt1
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -5342,6 +5343,7 @@ private fun PlayerDetailSheet(
     onSendAdmissionReminder: suspend () -> Unit,
 ) {
     var actionInProgress by rememberSaveable(student.id) { mutableStateOf<String?>(null) }
+    var showDeleteConfirmation by rememberSaveable(student.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val fontScale = LocalDensity.current.fontScale
@@ -5387,6 +5389,42 @@ private fun PlayerDetailSheet(
     }
     val pendingFromDate = pendingFollowUp?.cycleStartDate?.takeIf { it.isNotBlank() } ?: student.nextRenewalCycleDate(payments)
     val pendingToDate = addMonthsForPlan(pendingFromDate, pendingMonths)
+
+    if (showDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text("Delete player?") },
+            text = {
+                Text(
+                    "Delete ${student.name}? This will permanently remove the player record.",
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = actionInProgress == null,
+                    onClick = {
+                        scope.launch {
+                            showDeleteConfirmation = false
+                            actionInProgress = "delete"
+                            onDelete()
+                            actionInProgress = null
+                        }
+                    },
+                ) {
+                    Text("Delete", color = BrandRed)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = actionInProgress == null,
+                    onClick = { showDeleteConfirmation = false },
+                ) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -5738,7 +5776,7 @@ private fun PlayerDetailSheet(
                     }
                     TextButton(
                         enabled = actionInProgress == null,
-                        onClick = { scope.launch { actionInProgress = "delete"; onDelete(); actionInProgress = null } },
+                        onClick = { showDeleteConfirmation = true },
                     ) {
                         if (actionInProgress == "delete") { CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = BrandRed); Spacer(Modifier.width(8.dp)) }
                         Text("Delete player", color = BrandRed)
