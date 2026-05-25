@@ -53,16 +53,27 @@ begin
   v_actor := coalesce(nullif(new.updated_by, ''), nullif(old.updated_by, ''), 'System');
 
   if new.discontinued is distinct from old.discontinued
-     or new.discontinued_at is distinct from old.discontinued_at then
+     or new.discontinued_at is distinct from old.discontinued_at
+     or new.rejoined_at is distinct from old.rejoined_at
+     or new.fee_pause_days is distinct from old.fee_pause_days then
     insert into public.student_timeline (student_id, event_type, event_date, title, details, changed_by)
     values (
       new.id,
       case when new.discontinued then 'student_discontinued' else 'student_rejoined' end,
-      coalesce(new.discontinued_at, current_date),
+      case
+        when new.discontinued then coalesce(new.discontinued_at, current_date)
+        else coalesce(new.rejoined_at, current_date)
+      end,
       case when new.discontinued then 'Player discontinued' else 'Player marked active' end,
       case
         when new.discontinued then concat('Paused from ', coalesce(new.discontinued_at::text, current_date::text), '.')
-        else 'Student is active again.'
+        else concat(
+          'Rejoined on ',
+          coalesce(new.rejoined_at::text, current_date::text),
+          '. Billing pause days: ',
+          coalesce(new.fee_pause_days, 0),
+          '.'
+        )
       end,
       v_actor
     );
