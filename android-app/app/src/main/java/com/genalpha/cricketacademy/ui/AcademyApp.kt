@@ -4563,17 +4563,32 @@ private data class AttendanceStreak(
 
 private const val AttendanceFollowUpDays = 5L
 
+private fun isAttendanceWeekday(date: LocalDate): Boolean {
+    return date.dayOfWeek.value in 1..5
+}
+
+private fun previousAttendanceWeekday(date: LocalDate): LocalDate {
+    var cursor = date.minusDays(1)
+    while (!isAttendanceWeekday(cursor)) {
+        cursor = cursor.minusDays(1)
+    }
+    return cursor
+}
+
 private fun attendanceDateSet(
     studentId: String,
     recentAttendanceDates: Map<String, List<String>>,
     todayAttendanceIds: Set<String>,
 ): Set<String> {
-    val today = LocalDate.now().toString()
+    val today = LocalDate.now()
     return buildSet {
         recentAttendanceDates[studentId].orEmpty().forEach { date ->
-            date.take(10).takeIf { it.isNotBlank() }?.let(::add)
+            runCatching { LocalDate.parse(date.take(10)) }.getOrNull()
+                ?.takeIf(::isAttendanceWeekday)
+                ?.toString()
+                ?.let(::add)
         }
-        if (todayAttendanceIds.contains(studentId)) add(today)
+        if (todayAttendanceIds.contains(studentId) && isAttendanceWeekday(today)) add(today.toString())
     }
 }
 
@@ -4583,11 +4598,16 @@ private fun attendanceStreakCount(
     todayAttendanceIds: Set<String>,
 ): Int {
     val dates = attendanceDateSet(studentId, recentAttendanceDates, todayAttendanceIds)
-    var cursor = if (todayAttendanceIds.contains(studentId)) LocalDate.now() else LocalDate.now().minusDays(1)
+    val today = LocalDate.now()
+    var cursor = if (todayAttendanceIds.contains(studentId) && isAttendanceWeekday(today)) {
+        today
+    } else {
+        previousAttendanceWeekday(today)
+    }
     var streak = 0
     while (dates.contains(cursor.toString())) {
         streak += 1
-        cursor = cursor.minusDays(1)
+        cursor = previousAttendanceWeekday(cursor)
     }
     return streak
 }
