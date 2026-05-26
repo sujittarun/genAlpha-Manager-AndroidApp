@@ -441,7 +441,7 @@ class AcademyViewModel(
 
     suspend fun loadRecentAttendanceDates() {
         try {
-            val since = LocalDate.now().minusDays(45).toString()
+            val since = LocalDate.now().minusDays(120).toString()
             val recentDates = repository.fetchRecentAttendanceDates(since)
             _uiState.update { it.copy(recentAttendanceDates = recentDates) }
         } catch (error: Exception) {

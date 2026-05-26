@@ -741,6 +741,9 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     val attendanceFollowUps = remember(activePlayers, uiState.recentAttendanceDates, uiState.todayAttendanceIds) {
         buildAttendanceFollowUps(activePlayers, uiState.recentAttendanceDates, uiState.todayAttendanceIds)
     }
+    val attendanceStreaks = remember(activePlayers, uiState.recentAttendanceDates, uiState.todayAttendanceIds) {
+        buildAttendanceStreaks(activePlayers, uiState.recentAttendanceDates, uiState.todayAttendanceIds)
+    }
 
     LaunchedEffect(uiState.errorMessage) {
         uiState.errorMessage?.let {
@@ -1181,6 +1184,11 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                 isRefreshing = uiState.isAttendanceRefreshing,
                             )
                         }
+                        if (attendanceStreaks.isNotEmpty()) {
+                            item {
+                                AttendanceStreakPodium(streaks = attendanceStreaks.take(3))
+                            }
+                        }
                         if (attendanceFollowUps.isNotEmpty()) {
                             item {
                                 AttendanceFollowUpNudge(followUps = attendanceFollowUps)
@@ -1211,9 +1219,11 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                     RosterSectionHeader(title = section.title, count = section.students.size)
                                 }
                                 items(section.students, key = { it.id }) { student ->
+                                    val streak = attendanceStreaks.firstOrNull { it.student.id == student.id }
                                     AttendancePlayerCard(
                                         student = student,
                                         isPresent = uiState.todayAttendanceIds.contains(student.id),
+                                        streak = streak,
                                         onMarkPresent = {
                                             scope.launch {
                                                 val result = viewModel.markAttendance(student)
@@ -4549,7 +4559,68 @@ private data class AttendanceFollowUp(
     val lastPresentDate: String?,
 )
 
+private data class AttendanceStreak(
+    val student: Student,
+    val days: Int,
+    val badgeLabel: String,
+    val tier: String,
+)
+
 private const val AttendanceFollowUpDays = 5L
+
+private fun attendanceDateSet(
+    studentId: String,
+    recentAttendanceDates: Map<String, List<String>>,
+    todayAttendanceIds: Set<String>,
+): Set<String> {
+    val today = LocalDate.now().toString()
+    return buildSet {
+        recentAttendanceDates[studentId].orEmpty().forEach { date ->
+            date.take(10).takeIf { it.isNotBlank() }?.let(::add)
+        }
+        if (todayAttendanceIds.contains(studentId)) add(today)
+    }
+}
+
+private fun attendanceStreakCount(
+    studentId: String,
+    recentAttendanceDates: Map<String, List<String>>,
+    todayAttendanceIds: Set<String>,
+): Int {
+    val dates = attendanceDateSet(studentId, recentAttendanceDates, todayAttendanceIds)
+    var cursor = if (todayAttendanceIds.contains(studentId)) LocalDate.now() else LocalDate.now().minusDays(1)
+    var streak = 0
+    while (dates.contains(cursor.toString())) {
+        streak += 1
+        cursor = cursor.minusDays(1)
+    }
+    return streak
+}
+
+private fun attendanceStreakBadge(streak: Int): Pair<String, String>? = when {
+    streak >= 30 -> "30d Legend" to "legend"
+    streak >= 15 -> "15d Gold" to "gold"
+    streak >= 7 -> "7d Star" to "star"
+    streak > 0 -> "${streak}d streak" to "warmup"
+    else -> null
+}
+
+private fun buildAttendanceStreaks(
+    activePlayers: List<Student>,
+    recentAttendanceDates: Map<String, List<String>>,
+    todayAttendanceIds: Set<String>,
+): List<AttendanceStreak> {
+    return activePlayers.mapNotNull { student ->
+        val streak = attendanceStreakCount(student.id, recentAttendanceDates, todayAttendanceIds)
+        val badge = attendanceStreakBadge(streak) ?: return@mapNotNull null
+        AttendanceStreak(
+            student = student,
+            days = streak,
+            badgeLabel = badge.first,
+            tier = badge.second,
+        )
+    }.sortedWith(compareByDescending<AttendanceStreak> { it.days }.thenBy { it.student.name.lowercase() })
+}
 
 private fun buildAttendanceFollowUps(
     activePlayers: List<Student>,
@@ -4575,6 +4646,115 @@ private fun buildAttendanceFollowUps(
             lastPresentDate = lastPresent?.takeIf { it != today }?.toString(),
         )
     }.sortedWith(compareByDescending<AttendanceFollowUp> { it.absentDays }.thenBy { it.student.name.lowercase() })
+}
+
+@Composable
+private fun AttendanceStreakBadge(streak: AttendanceStreak, compact: Boolean = false) {
+    val (container, textColor) = when (streak.tier) {
+        "legend" -> Color(0xFFECFDF5) to Color(0xFF047857)
+        "gold" -> Color(0xFFFFF7ED) to Color(0xFFB45309)
+        "star" -> Color(0xFFEEF2FF) to Color(0xFF4338CA)
+        else -> Color(0xFFF8FAFC) to Color(0xFF475569)
+    }
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = container,
+        border = BorderStroke(1.dp, textColor.copy(alpha = 0.16f)),
+    ) {
+        Text(
+            "★ ${streak.badgeLabel}",
+            modifier = Modifier.padding(horizontal = if (compact) 8.dp else 10.dp, vertical = if (compact) 4.dp else 6.dp),
+            color = textColor,
+            fontSize = if (compact) 10.sp else 11.sp,
+            fontWeight = FontWeight.Black,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AttendanceStreakPodium(streaks: List<AttendanceStreak>) {
+    Card(
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.14f)),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Surface(shape = CircleShape, color = BrandBlue.copy(alpha = 0.12f)) {
+                    Text(
+                        "★",
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        color = BrandBlue,
+                        fontWeight = FontWeight.Black,
+                    )
+                }
+                Column {
+                    Text(
+                        "Consistency stars",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 15.sp,
+                    )
+                    Text(
+                        "Top daily attendance streaks and earned badges.",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                        fontSize = 12.sp,
+                    )
+                }
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                streaks.forEachIndexed { index, streak ->
+                    val rankColor = if (index == 0) Color(0xFFD97706) else BrandBlue
+                    Surface(
+                        modifier = Modifier.weight(1f, fill = false),
+                        shape = RoundedCornerShape(18.dp),
+                        color = if (index == 0) Color(0xFFFFF7ED) else MaterialTheme.colorScheme.background.copy(alpha = 0.82f),
+                        border = BorderStroke(1.dp, rankColor.copy(alpha = 0.20f)),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .widthIn(min = 150.dp)
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(7.dp),
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                Surface(shape = CircleShape, color = rankColor) {
+                                    Text(
+                                        "${index + 1}",
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Black,
+                                    )
+                                }
+                                Text(
+                                    streak.student.name,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            Text("${streak.days} day streak", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), fontSize = 12.sp)
+                            AttendanceStreakBadge(streak)
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -4743,6 +4923,7 @@ private fun PlayerAttendanceToolbar(
 private fun AttendancePlayerCard(
     student: Student,
     isPresent: Boolean,
+    streak: AttendanceStreak?,
     onMarkPresent: () -> Unit,
     onUndoPresent: () -> Unit,
 ) {
@@ -4779,6 +4960,9 @@ private fun AttendancePlayerCard(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
                     fontSize = 14.sp,
                 )
+                streak?.let {
+                    AttendanceStreakBadge(it, compact = true)
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Badge(
