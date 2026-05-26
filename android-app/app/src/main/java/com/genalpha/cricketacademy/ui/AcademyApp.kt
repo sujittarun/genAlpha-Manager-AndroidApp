@@ -1184,11 +1184,6 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                 isRefreshing = uiState.isAttendanceRefreshing,
                             )
                         }
-                        if (attendanceStreaks.isNotEmpty()) {
-                            item {
-                                AttendanceStreakPodium(streaks = attendanceStreaks.take(3))
-                            }
-                        }
                         if (attendanceFollowUps.isNotEmpty()) {
                             item {
                                 AttendanceFollowUpNudge(followUps = attendanceFollowUps)
@@ -4675,95 +4670,11 @@ private fun AttendanceStreakBadge(streak: AttendanceStreak, compact: Boolean = f
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AttendanceStreakPodium(streaks: List<AttendanceStreak>) {
-    Card(
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.14f)),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Surface(shape = CircleShape, color = BrandBlue.copy(alpha = 0.12f)) {
-                    Text(
-                        "★",
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        color = BrandBlue,
-                        fontWeight = FontWeight.Black,
-                    )
-                }
-                Column {
-                    Text(
-                        "Consistency stars",
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 15.sp,
-                    )
-                    Text(
-                        "Top daily attendance streaks and earned badges.",
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-                        fontSize = 12.sp,
-                    )
-                }
-            }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                streaks.forEachIndexed { index, streak ->
-                    val rankColor = if (index == 0) Color(0xFFD97706) else BrandBlue
-                    Surface(
-                        modifier = Modifier.weight(1f, fill = false),
-                        shape = RoundedCornerShape(18.dp),
-                        color = if (index == 0) Color(0xFFFFF7ED) else MaterialTheme.colorScheme.background.copy(alpha = 0.82f),
-                        border = BorderStroke(1.dp, rankColor.copy(alpha = 0.20f)),
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .widthIn(min = 150.dp)
-                                .padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(7.dp),
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                                Surface(shape = CircleShape, color = rankColor) {
-                                    Text(
-                                        "${index + 1}",
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                        color = Color.White,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Black,
-                                    )
-                                }
-                                Text(
-                                    streak.student.name,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            Text("${streak.days} day streak", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), fontSize = 12.sp)
-                            AttendanceStreakBadge(streak)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
 private fun AttendanceFollowUpNudge(followUps: List<AttendanceFollowUp>) {
     Card(
         shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7ED)),
-        border = BorderStroke(1.dp, Color(0xFFD97706).copy(alpha = 0.22f)),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFEFF6FF)),
+        border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.18f)),
     ) {
         Column(
             modifier = Modifier
@@ -4778,19 +4689,19 @@ private fun AttendanceFollowUpNudge(followUps: List<AttendanceFollowUp>) {
                 Icon(
                     Icons.Outlined.Notifications,
                     contentDescription = null,
-                    tint = Color(0xFF92400E),
+                    tint = BrandBlue,
                     modifier = Modifier.size(18.dp),
                 )
                 Column {
                     Text(
                         "${followUps.size} player${if (followUps.size == 1) "" else "s"} need attendance follow-up",
-                        color = Color(0xFF7C2D12),
+                        color = BrandBlueDeep,
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 14.sp,
                     )
                     Text(
                         "No attendance marked for 5+ days. Review before marking discontinued.",
-                        color = Color(0xFF9A5B12),
+                        color = Color(0xFF416184),
                         fontSize = 12.sp,
                         lineHeight = 15.sp,
                     )
@@ -4801,12 +4712,12 @@ private fun AttendanceFollowUpNudge(followUps: List<AttendanceFollowUp>) {
                     Surface(
                         shape = RoundedCornerShape(999.dp),
                         color = Color.White.copy(alpha = 0.75f),
-                        border = BorderStroke(1.dp, Color(0xFFD97706).copy(alpha = 0.20f)),
+                        border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.16f)),
                     ) {
                         Text(
                             text = "${item.student.name} • ${item.absentDays}d${item.lastPresentDate?.let { " • last ${displayDate(it)}" } ?: " • never marked"}",
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            color = Color(0xFF7C2D12),
+                            color = BrandBlueDeep,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 2,
@@ -4816,7 +4727,7 @@ private fun AttendanceFollowUpNudge(followUps: List<AttendanceFollowUp>) {
                 }
                 val remaining = followUps.size - 6
                 if (remaining > 0) {
-                    Text("+$remaining more", color = Color(0xFF9A5B12), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("+$remaining more", color = Color(0xFF416184), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
