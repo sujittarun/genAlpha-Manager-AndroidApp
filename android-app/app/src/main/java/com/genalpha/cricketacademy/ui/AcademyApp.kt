@@ -4616,7 +4616,6 @@ private fun attendanceStreakBadge(streak: Int): Pair<String, String>? = when {
     streak >= 30 -> "30d Legend" to "legend"
     streak >= 15 -> "15d Gold" to "gold"
     streak >= 7 -> "7d Star" to "star"
-    streak > 0 -> "${streak}d streak" to "warmup"
     else -> null
 }
 
