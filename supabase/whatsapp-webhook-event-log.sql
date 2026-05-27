@@ -32,3 +32,4 @@ using (true)
 with check (true);
 
 grant select, insert, update, delete on public.whatsapp_webhook_events to authenticated;
+grant select, insert, update, delete on public.whatsapp_webhook_events to service_role;

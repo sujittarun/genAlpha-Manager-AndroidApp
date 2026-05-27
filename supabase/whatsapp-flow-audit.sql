@@ -93,7 +93,9 @@ to authenticated
 with check (true);
 
 grant select, insert on public.whatsapp_flow_events to authenticated;
+grant select, insert on public.whatsapp_flow_events to service_role;
 grant usage, select on sequence public.whatsapp_flow_events_flow_step_seq to authenticated;
+grant usage, select on sequence public.whatsapp_flow_events_flow_step_seq to service_role;
 
 create or replace function public.whatsapp_flow_event_title(p_event_type text, p_status text)
 returns text

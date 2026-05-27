@@ -59,5 +59,8 @@ for select
 to anon, authenticated
 using (true);
 
+grant select on table public.attendance to anon, authenticated;
+grant select, insert, update, delete on table public.attendance to service_role;
+
 grant execute on function public.mark_player_attendance(uuid, date) to anon, authenticated;
 grant execute on function public.unmark_player_attendance(uuid, date) to anon, authenticated;

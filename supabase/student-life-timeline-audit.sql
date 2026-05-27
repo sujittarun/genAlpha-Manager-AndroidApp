@@ -271,3 +271,4 @@ to authenticated
 with check (true);
 
 grant select, insert on public.student_timeline to authenticated;
+grant select, insert on public.student_timeline to service_role;

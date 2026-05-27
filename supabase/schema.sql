@@ -83,6 +83,7 @@ alter table public.registration_counters enable row level security;
 revoke all on table public.registration_counters from public;
 revoke all on table public.registration_counters from anon;
 revoke all on table public.registration_counters from authenticated;
+revoke all on table public.registration_counters from service_role;
 
 comment on table public.registration_counters is
   'Private registration sequence table. Direct PostgREST access is blocked by RLS; admission RPCs maintain the counter.';
@@ -393,6 +394,10 @@ for select
 to anon, authenticated
 using (true);
 
+grant select on table public.students to anon;
+grant select, insert, update, delete on table public.students to authenticated;
+grant select, insert, update, delete on table public.students to service_role;
+
 drop policy if exists "students_authenticated_insert" on public.students;
 create policy "students_authenticated_insert"
 on public.students
@@ -429,12 +434,19 @@ for select
 to authenticated
 using (true);
 
+grant select, insert on table public.admissions to anon;
+grant select, insert, update, delete on table public.admissions to authenticated;
+grant select, insert, update, delete on table public.admissions to service_role;
+
 drop policy if exists "attendance_public_read" on public.attendance;
 create policy "attendance_public_read"
 on public.attendance
 for select
 to anon, authenticated
 using (true);
+
+grant select on table public.attendance to anon, authenticated;
+grant select, insert, update, delete on table public.attendance to service_role;
 
 grant execute on function public.submit_admission_form(
   text, text, date, integer, text, text, text, text, text, text, text, text,

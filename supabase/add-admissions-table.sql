@@ -246,6 +246,10 @@ for select
 to authenticated
 using (true);
 
+grant select, insert on table public.admissions to anon;
+grant select, insert, update, delete on table public.admissions to authenticated;
+grant select, insert, update, delete on table public.admissions to service_role;
+
 grant execute on function public.submit_admission_form(
   text, text, date, integer, text, text, text, text, text, text, text, text,
   text, date, boolean, numeric, text, integer, text, text[], boolean, boolean, boolean

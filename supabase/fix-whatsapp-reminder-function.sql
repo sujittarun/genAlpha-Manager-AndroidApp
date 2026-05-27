@@ -87,3 +87,6 @@ with check (true);
 grant select, insert, update on public.system_settings to authenticated;
 grant select, insert, update, delete on public.reminder_events to authenticated;
 grant select, insert, update, delete on public.payment_link_requests to authenticated;
+grant select, insert, update on public.system_settings to service_role;
+grant select, insert, update, delete on public.reminder_events to service_role;
+grant select, insert, update, delete on public.payment_link_requests to service_role;

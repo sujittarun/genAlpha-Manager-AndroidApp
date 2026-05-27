@@ -12,6 +12,7 @@ alter table public.registration_counters enable row level security;
 revoke all on table public.registration_counters from public;
 revoke all on table public.registration_counters from anon;
 revoke all on table public.registration_counters from authenticated;
+revoke all on table public.registration_counters from service_role;
 
 comment on table public.registration_counters is
   'Private registration sequence table. Direct PostgREST access is blocked by RLS; admission RPCs maintain the counter.';

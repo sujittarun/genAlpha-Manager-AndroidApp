@@ -93,3 +93,5 @@ with check (true);
 
 grant select, insert, update, delete on public.student_payments to authenticated;
 grant select, insert, update, delete on public.academy_expenses to authenticated;
+grant select, insert, update, delete on public.student_payments to service_role;
+grant select, insert, update, delete on public.academy_expenses to service_role;
