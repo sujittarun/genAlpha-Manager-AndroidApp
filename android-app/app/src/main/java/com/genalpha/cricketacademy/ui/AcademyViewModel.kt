@@ -678,11 +678,15 @@ class AcademyViewModel(
                 if (editingStudent != null) {
                     val nextPairs = draft.jerseyPairs.toIntOrNull() ?: 0
                     if (nextPairs != editingStudent.jerseyPairs) {
+                        val previousJerseyAmount = editingStudent.jerseyAmount.coerceAtLeast(0.0)
+                        val nextJerseyAmount = draft.jerseyAmount.toDoubleOrNull()?.coerceAtLeast(0.0)
+                            ?: (nextPairs.coerceAtLeast(0) * JERSEY_PAIR_REVENUE)
                         jerseyPayment = repository.recordJerseyPairAdjustment(
                             student = editingStudent,
                             managerEmail = session.email,
                             session = session,
                             nextPairs = nextPairs,
+                            adjustmentAmount = kotlin.math.abs(nextJerseyAmount - previousJerseyAmount),
                             patchStudent = false,
                         )
                     }
@@ -749,7 +753,7 @@ class AcademyViewModel(
         }
     }
 
-    suspend fun updateJerseyPairs(student: Student, nextPairs: Int): OperationResult {
+    suspend fun updateJerseyPairs(student: Student, nextPairs: Int, adjustmentAmount: Double? = null): OperationResult {
         val safeNextPairs = nextPairs.coerceAtLeast(0)
         val delta = safeNextPairs - student.jerseyPairs.coerceAtLeast(0)
         val chargeableDelta = chargeableJerseyPairCount(safeNextPairs) -
@@ -765,6 +769,7 @@ class AcademyViewModel(
                     managerEmail = session.email,
                     session = session,
                     nextPairs = safeNextPairs,
+                    adjustmentAmount = adjustmentAmount,
                     patchStudent = true,
                 )
                 session to insertedPayment
@@ -774,10 +779,12 @@ class AcademyViewModel(
             if (payment != null) refreshFinanceInBackground()
             refreshInBackground()
 
-            val amount = kotlin.math.abs(chargeableDelta) * JERSEY_PAIR_REVENUE
+            val amount = (adjustmentAmount ?: (kotlin.math.abs(chargeableDelta) * JERSEY_PAIR_REVENUE)).coerceAtLeast(0.0)
             OperationResult(
                 true,
-                if (chargeableDelta > 0) {
+                if (amount == 0.0) {
+                    "Jersey pair count updated. No revenue entry was recorded."
+                } else if (chargeableDelta > 0) {
                     "Added ${kotlin.math.abs(chargeableDelta)} jersey pair${if (kotlin.math.abs(chargeableDelta) == 1) "" else "s"} and recorded Rs ${amount.toInt()}."
                 } else {
                     "Removed ${kotlin.math.abs(chargeableDelta)} jersey pair${if (kotlin.math.abs(chargeableDelta) == 1) "" else "s"} and subtracted Rs ${amount.toInt()}."

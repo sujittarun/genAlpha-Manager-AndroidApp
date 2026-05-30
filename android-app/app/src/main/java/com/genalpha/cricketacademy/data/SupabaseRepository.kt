@@ -1067,6 +1067,7 @@ class SupabaseRepository(
         managerEmail: String,
         session: ManagerSession,
         nextPairs: Int,
+        adjustmentAmount: Double? = null,
         patchStudent: Boolean = true,
     ): StudentPayment? {
         return withContext(Dispatchers.IO) {
@@ -1091,15 +1092,18 @@ class SupabaseRepository(
             if (chargeableDelta == 0) return@withContext null
 
             val increased = chargeableDelta > 0
+            val amount = (adjustmentAmount ?: (kotlin.math.abs(chargeableDelta) * 750.0)).coerceAtLeast(0.0)
+            if (amount == 0.0) return@withContext null
+
             val body = JSONObject()
                 .put("student_id", student.id)
                 .put("payment_type", if (increased) "jersey" else "jersey_refund")
                 .put("plan_type", "jersey_pair")
                 .put("cycle_start_date", todayIsoDate())
                 .put("months_covered", 1)
-                .put("amount", kotlin.math.abs(chargeableDelta) * 750.0)
+                .put("amount", amount)
                 .put("paid_on", todayIsoDate())
-                .put("comment", "${if (increased) "Jersey pair added" else "Jersey pair removed"}. Count $previousPairs to $safeNextPairs.")
+                .put("comment", "${if (increased) "Jersey pair added" else "Jersey pair removed"}. Count $previousPairs to $safeNextPairs. Amount Rs ${amount.toInt()}.")
                 .put("recorded_by", managerEmail)
 
             val responseBody = executeWriteRequestReturningBody(

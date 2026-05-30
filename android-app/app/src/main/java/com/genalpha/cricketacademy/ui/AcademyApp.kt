@@ -1131,9 +1131,9 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                         }
                                     },
                                     onJerseyPairsChange = if (viewModel.canEdit()) {
-                                        { nextPairs ->
+                                        { nextPairs, amount ->
                                             scope.launch {
-                                                val result = viewModel.updateJerseyPairs(student, nextPairs)
+                                                val result = viewModel.updateJerseyPairs(student, nextPairs, amount)
                                                 snackbarHostState.showSnackbar(result.message)
                                             }
                                         }
@@ -5102,7 +5102,7 @@ private fun RosterRow(
     onRenew: (() -> Unit)? = null,
     onSendReminder: (() -> Unit)? = null,
     onToggleStatus: (() -> Unit)? = null,
-    onJerseyPairsChange: ((Int) -> Unit)? = null,
+    onJerseyPairsChange: ((Int, Double) -> Unit)? = null,
 ) {
     val needsAttention = student.isFeesPending() || student.isRenewalPending(payments)
     val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
@@ -5121,6 +5121,12 @@ private fun RosterRow(
     val feeLabel = student.feeStatusLabel(paymentFollowUp, payments)
     val renewalStatusLabel = student.renewalStatus(payments)
     var showingActions by rememberSaveable(student.id) { mutableStateOf(false) }
+    var pendingJerseyPairs by rememberSaveable(student.id) { mutableStateOf<Int?>(null) }
+    var jerseyAdjustmentAmount by rememberSaveable(student.id) { mutableStateOf("") }
+    val previousJerseyPairs = student.jerseyPairs.coerceAtLeast(0)
+    val nextJerseyPairs = pendingJerseyPairs
+    val jerseyPairDelta = (nextJerseyPairs ?: previousJerseyPairs) - previousJerseyPairs
+    val jerseyAdjustmentAmountValue = jerseyAdjustmentAmount.toDoubleOrNull()
     val rotation by animateFloatAsState(
         targetValue = if (showingActions) 180f else 0f,
         animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
@@ -5133,6 +5139,52 @@ private fun RosterRow(
         needsAttention && isDarkTheme -> DarkAttentionCard
         needsAttention -> Color(0xFFFFFCF3)
         else -> MaterialTheme.colorScheme.surface
+    }
+    if (nextJerseyPairs != null) {
+        val confirmedNextPairs = nextJerseyPairs
+        AlertDialog(
+            onDismissRequest = { pendingJerseyPairs = null },
+            title = {
+                Text(if (jerseyPairDelta >= 0) "Record jersey amount" else "Record jersey adjustment")
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "Jersey pairs: $previousJerseyPairs to $confirmedNextPairs",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                        fontSize = 13.sp,
+                    )
+                    OutlinedTextField(
+                        value = jerseyAdjustmentAmount,
+                        onValueChange = { value ->
+                            jerseyAdjustmentAmount = value.filter { it.isDigit() || it == '.' }
+                        },
+                        label = { Text(if (jerseyPairDelta >= 0) "Amount received" else "Amount adjusted/refunded") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        supportingText = {
+                            Text("Use 0 for complimentary jersey. Default is ${admissionAmountLabel(JerseyExtraPairFee)} per pair.")
+                        },
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = jerseyAdjustmentAmountValue != null && jerseyAdjustmentAmountValue >= 0.0,
+                    onClick = {
+                        onJerseyPairsChange?.invoke(confirmedNextPairs, jerseyAdjustmentAmountValue ?: 0.0)
+                        pendingJerseyPairs = null
+                    },
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingJerseyPairs = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
     val baseBorder = when {
         highlighted -> BorderStroke(2.dp, highlightedBorder)
@@ -5437,11 +5489,19 @@ private fun RosterRow(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                onJerseyPairsChange?.let { updatePairs ->
+                                onJerseyPairsChange?.let {
                                     JerseyPairStepper(
                                         count = student.jerseyPairs.coerceAtLeast(0),
-                                        onDecrease = { updatePairs((student.jerseyPairs - 1).coerceAtLeast(0)) },
-                                        onIncrease = { updatePairs(student.jerseyPairs + 1) },
+                                        onDecrease = {
+                                            val nextPairs = (student.jerseyPairs - 1).coerceAtLeast(0)
+                                            pendingJerseyPairs = nextPairs
+                                            jerseyAdjustmentAmount = String.format(Locale.US, "%.0f", JerseyExtraPairFee)
+                                        },
+                                        onIncrease = {
+                                            val nextPairs = student.jerseyPairs + 1
+                                            pendingJerseyPairs = nextPairs
+                                            jerseyAdjustmentAmount = String.format(Locale.US, "%.0f", JerseyExtraPairFee)
+                                        },
                                     )
                                 }
                                 Surface(
