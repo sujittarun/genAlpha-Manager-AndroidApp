@@ -43,8 +43,8 @@ const PLAN_MONTHS: Record<string, number> = {
   halfyearly: 6,
 };
 const HEALTHY_ECOSYSTEM_ERROR_CODE = "131049";
-const HEALTHY_ECOSYSTEM_RETRY_HOURS = [24, 48, 72];
-const DEFAULT_REMINDER_MAX_RETRIES = HEALTHY_ECOSYSTEM_RETRY_HOURS.length;
+const HEALTHY_ECOSYSTEM_RETRY_MINUTES = [5, 60, 240];
+const DEFAULT_REMINDER_MAX_RETRIES = HEALTHY_ECOSYSTEM_RETRY_MINUTES.length;
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -867,12 +867,12 @@ function isHealthyEcosystemError(errorPayload: Record<string, any>): boolean {
     text.includes("healthy ecosystem engagement");
 }
 
-function retryDelayHours(retryCount: number): number {
+function retryDelayMinutes(retryCount: number): number {
   const index = Math.min(
     Math.max(0, retryCount),
-    HEALTHY_ECOSYSTEM_RETRY_HOURS.length - 1,
+    HEALTHY_ECOSYSTEM_RETRY_MINUTES.length - 1,
   );
-  return HEALTHY_ECOSYSTEM_RETRY_HOURS[index];
+  return HEALTHY_ECOSYSTEM_RETRY_MINUTES[index];
 }
 
 async function markReminderSendFailed(
@@ -937,12 +937,12 @@ async function scheduleHealthyEcosystemRetry(
     };
   }
 
-  const delayHours = retryDelayHours(retryCount);
+  const delayMinutes = retryDelayMinutes(retryCount);
   const nextRetryAt = new Date(
-    new Date(failedAt).getTime() + delayHours * 60 * 60 * 1000,
+    new Date(failedAt).getTime() + delayMinutes * 60 * 1000,
   ).toISOString();
   const retryReason =
-    `Meta healthy ecosystem engagement limit. Retry ${retryCount + 1} of ${maxRetryCount} scheduled after ${delayHours} hours.`;
+    `Meta healthy ecosystem engagement limit. Retry ${retryCount + 1} of ${maxRetryCount} scheduled after ${delayMinutes} minutes.`;
 
   await updateReminderEvent(event.id, {
     status: "retry_scheduled",
