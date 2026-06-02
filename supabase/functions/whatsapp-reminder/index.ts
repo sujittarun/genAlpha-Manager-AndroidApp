@@ -24,6 +24,8 @@ const ACADEMY_PAYMENT_PHONE = "9059962499";
 const ACADEMY_PAYMENT_ACCOUNT_NAME = "Srinivas";
 const ACADEMY_PAYMENT_BANK = "Kotak Mahindra Bank";
 const PAYMENT_PAGE_URL = "https://genalphaacademy.in/pay.html";
+const MANAGER_PAYMENT_ALERT_PHONE = "9985822772";
+const MANAGER_PAYMENT_ALERT_DELAY_MINUTES = 5;
 
 const PLAN_OPTIONS = ["monthly", "quarterly", "halfyearly", "need_help"];
 const PLAN_LABELS: Record<string, string> = {
@@ -1143,6 +1145,39 @@ async function sendTextMessage(to: string, text: string) {
   return await response.json();
 }
 
+async function sendMediaMessage(
+  to: string,
+  mediaKind: "image" | "document",
+  link: string,
+  caption: string,
+  filename = "payment-proof",
+) {
+  const token = env("META_WHATSAPP_TOKEN");
+  const phoneNumberId = env("META_WHATSAPP_PHONE_NUMBER_ID");
+  if (!token || !phoneNumberId || !link) return null;
+
+  const mediaPayload = mediaKind === "document"
+    ? { link, caption, filename }
+    : { link, caption };
+  const response = await fetch(
+    `https://graph.facebook.com/v20.0/${phoneNumberId}/messages`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to,
+        type: mediaKind,
+        [mediaKind]: mediaPayload,
+      }),
+    },
+  );
+  return await response.json();
+}
+
 function mediaIdFromMessage(message: any): string {
   return String(message?.image?.id || message?.document?.id || "");
 }
@@ -1242,6 +1277,29 @@ async function storePaymentProofMedia(message: any, reminderEvent: any) {
   }
 }
 
+async function createPaymentProofSignedUrl(bucket: string, path: string) {
+  if (!bucket || !path) return "";
+  const baseUrl = env("SUPABASE_URL").replace(/\/+$/, "");
+  try {
+    const response = await fetch(
+      `${baseUrl}/storage/v1/object/sign/${encodeURIComponent(bucket)}/${path}`,
+      {
+        method: "POST",
+        headers: serviceHeaders(),
+        body: JSON.stringify({ expiresIn: 60 * 60 }),
+      },
+    );
+    const body = await response.json();
+    const signedUrl = body?.signedURL || body?.signedUrl || "";
+    if (!response.ok || !signedUrl) return "";
+    return String(signedUrl).startsWith("http")
+      ? String(signedUrl)
+      : `${baseUrl}/storage/v1${signedUrl}`;
+  } catch (_error) {
+    return "";
+  }
+}
+
 async function createUpiPaymentLink(
   student: any,
   plan: string,
@@ -1299,6 +1357,142 @@ async function createUpiPaymentLink(
   });
 }
 
+function managerPaymentAlertText(student: any, hasProof: boolean, proofStored = true) {
+  const proofText = hasProof
+    ? (proofStored ? "Submitted" : "Submitted, but proof file could not be attached")
+    : "Not submitted yet";
+  return [
+    "Vempati Sandeep - Proud owner of Gen Alpha Academy - Payment vochindi babu chusko.",
+    `Player: ${student?.name || "Unknown player"}`,
+    `Proof: ${proofText}`,
+  ].join("\n");
+}
+
+async function sendManagerPaymentAlert(
+  reminderEvent: any,
+  options: { proofMedia?: any; forceWithProof?: boolean; forceWithoutProof?: boolean; source?: string } = {},
+) {
+  if (!reminderEvent?.id) return { sent: false, reason: "missing reminder event" };
+  const currentAlertStatus = String(reminderEvent.manager_payment_alert_status || "");
+  const proofMedia = options.proofMedia || reminderEvent?.meta_response?.payment_confirmation?.proof_media || null;
+  const proofPath = String(proofMedia?.storage_path || "");
+  const proofBucket = String(proofMedia?.storage_bucket || "payment-proofs");
+  const hasProof = Boolean(proofPath);
+  const proofWasSubmitted = hasProof || options.forceWithProof === true;
+
+  if (proofWasSubmitted && currentAlertStatus === "sent_with_proof") {
+    return { sent: false, reason: "manager already alerted with proof" };
+  }
+  if (!proofWasSubmitted && currentAlertStatus === "sent_without_proof") {
+    return { sent: false, reason: "manager already alerted without proof" };
+  }
+  if (!proofWasSubmitted && !options.forceWithoutProof && currentAlertStatus !== "scheduled") {
+    return { sent: false, reason: "manager alert not due" };
+  }
+
+  const student = reminderEvent.student_id
+    ? await fetchStudent(String(reminderEvent.student_id))
+    : { name: "Unknown player" };
+  const to = normalizePhone(MANAGER_PAYMENT_ALERT_PHONE);
+  const text = managerPaymentAlertText(student, proofWasSubmitted, hasProof);
+  const sentAt = new Date().toISOString();
+  const textResponse = await sendTextMessage(to, text);
+  let proofResponse = null;
+  let proofSignedUrl = "";
+
+  if (hasProof) {
+    proofSignedUrl = await createPaymentProofSignedUrl(proofBucket, proofPath);
+    if (proofSignedUrl) {
+      const mimeType = String(proofMedia?.mime_type || "");
+      const mediaKind = mimeType.includes("pdf") ? "document" : "image";
+      proofResponse = await sendMediaMessage(
+        to,
+        mediaKind,
+        proofSignedUrl,
+        text,
+        `${student?.name || "payment"}-proof`,
+      );
+    }
+  }
+
+  await updateReminderEvent(reminderEvent.id, {
+    manager_payment_alert_status: proofWasSubmitted ? "sent_with_proof" : "sent_without_proof",
+    manager_payment_alert_sent_at: sentAt,
+    manager_payment_alert_error: null,
+    manager_payment_alert_meta_response: {
+      source: options.source || "system",
+      proof_path: proofPath,
+      text_response: textResponse,
+      proof_response: proofResponse,
+      proof_signed_url_created: Boolean(proofSignedUrl),
+      sent_at: sentAt,
+    },
+  });
+  await insertWhatsappFlowEvent({
+    student_id: reminderEvent.student_id,
+    reminder_event_id: reminderEvent.id,
+    event_type: proofWasSubmitted
+      ? "manager_payment_alert_with_proof_sent"
+      : "manager_payment_alert_without_proof_sent",
+    direction: "outbound",
+    parent_phone: MANAGER_PAYMENT_ALERT_PHONE,
+    message_kind: hasProof ? "manager_alert_with_proof" : "manager_alert",
+    message_body: text,
+    message_id: String(textResponse?.messages?.[0]?.id || proofResponse?.messages?.[0]?.id || ""),
+    status: String(textResponse?.messages?.[0]?.id || proofResponse?.messages?.[0]?.id || "")
+      ? "accepted"
+      : "sent",
+    status_at: sentAt,
+    sent_at: sentAt,
+    proof_bucket: proofBucket,
+    proof_path: proofPath,
+    provider_payload: {
+      text_response: textResponse,
+      proof_response: proofResponse,
+    },
+    created_by: options.source || "system",
+  });
+
+  return { sent: true, hasProof, textResponse, proofResponse };
+}
+
+async function processDueManagerPaymentAlerts(limit = 20) {
+  const nowIso = new Date().toISOString();
+  let events: any[] = [];
+  try {
+    events = await rest(
+      `reminder_events?select=*&manager_payment_alert_status=eq.scheduled&manager_payment_alert_due_at=lte.${
+        encodeURIComponent(nowIso)
+      }&order=manager_payment_alert_due_at.asc&limit=${limit}`,
+    );
+  } catch (_error) {
+    return [];
+  }
+
+  const results = [];
+  for (const event of events || []) {
+    try {
+      const sent = await sendManagerPaymentAlert(event, { source: "system_cron" });
+      results.push({
+        reminderEventId: event.id,
+        status: sent.sent ? "sent_without_proof" : "skipped",
+        reason: sent.reason || "",
+      });
+    } catch (error) {
+      await updateReminderEvent(event.id, {
+        manager_payment_alert_status: "failed",
+        manager_payment_alert_error: parseProviderError(error),
+      });
+      results.push({
+        reminderEventId: event.id,
+        status: "failed",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return results;
+}
+
 async function handlePaymentAttempted(payload: any) {
   const eventId = String(payload.eventId || payload.reminderEventId || "");
   if (!eventId) return jsonResponse({ error: "eventId is required." }, 400);
@@ -1318,10 +1512,21 @@ async function handlePaymentAttempted(payload: any) {
     "payment_pending_verification",
     "payment_confirmed",
   ].includes(String(reminderEvent.status || ""));
+  const managerAlertStatus = String(reminderEvent.manager_payment_alert_status || "");
+  const shouldScheduleManagerAlert = ![
+    "sent_with_proof",
+    "sent_without_proof",
+  ].includes(managerAlertStatus);
 
   await updateReminderEvent(eventId, {
     status: "payment_attempted",
     payment_attempted_at: new Date().toISOString(),
+    manager_payment_alert_status: shouldScheduleManagerAlert
+      ? "scheduled"
+      : managerAlertStatus,
+    manager_payment_alert_due_at: shouldScheduleManagerAlert
+      ? new Date(Date.now() + MANAGER_PAYMENT_ALERT_DELAY_MINUTES * 60 * 1000).toISOString()
+      : reminderEvent.manager_payment_alert_due_at || null,
   });
   await updateLatestPaymentLinkRequest(eventId, {
     status: "payment_attempted",
@@ -1482,6 +1687,22 @@ async function handlePaymentConfirmationMessage(
       changed_by: "WhatsApp",
     });
   }
+
+  await sendManagerPaymentAlert(
+    {
+      ...reminderEvent,
+      meta_response: {
+        ...(reminderEvent.meta_response || {}),
+        payment_confirmation: paymentConfirmation,
+      },
+    },
+    {
+      proofMedia,
+      forceWithProof: Boolean(proofPath),
+      forceWithoutProof: !proofPath,
+      source: "WhatsApp",
+    },
+  );
 
   if (webhookLog?.id) {
     await rest(
@@ -2584,7 +2805,8 @@ Deno.serve(async (request) => {
     if (payload?.action === "retry_due_reminders") {
       await assertAuthenticatedOrServiceRole(request);
       const retries = await processDueReminderRetries();
-      return jsonResponse({ success: true, retries });
+      const managerPaymentAlerts = await processDueManagerPaymentAlerts();
+      return jsonResponse({ success: true, retries, managerPaymentAlerts });
     }
     if (payload?.action === "send_admission_reminder") {
       return await handleSendAdmissionReminder(request, payload);
