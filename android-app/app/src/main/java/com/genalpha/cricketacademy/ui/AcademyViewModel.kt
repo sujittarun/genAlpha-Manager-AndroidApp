@@ -477,7 +477,7 @@ class AcademyViewModel(
             .filter { item ->
                 val title = item.title.ifBlank { item.eventType }
                 val dateKey = item.eventDate.ifBlank { item.createdAt.orEmpty().take(10) }
-                val detailKey = if (title == "Reminder failed") item.details.orEmpty() else ""
+                val detailKey = if (title == "Reminder failed" || title == "Reminder retry scheduled") item.details.orEmpty() else ""
                 seen.add("$dateKey|$title|$detailKey")
             }
     }
@@ -488,6 +488,11 @@ class AcademyViewModel(
             "renewal reminder prepared" in eventText || "joining fee reminder prepared" in eventText -> null
             "reminder accepted" in eventText || " accepted " in eventText -> null
             "confirmation" in eventText && "failed" !in eventText -> null
+            "retry scheduled" in eventText -> copy(
+                title = "Reminder retry scheduled",
+                details = details.orEmpty().ifBlank { "Meta limited delivery. The reminder will retry later." },
+                changedBy = changedBy.orEmpty().ifBlank { "System" },
+            )
             "whatsapp reminder prepared" in eventText || "status: queued" in eventText -> copy(
                 title = "WhatsApp reminder prepared",
                 details = "",
@@ -969,12 +974,12 @@ class AcademyViewModel(
             return OperationResult(false, "${student.name} is not due for a renewal reminder.")
         }
 
-         return try {
-            val (settings, dueDate) = withFreshSession { session ->
+        return try {
+            val (settings, dueDate, reminderMessage) = withFreshSession { session ->
                 val reminderSettings = repository.fetchReminderSettings(session)
                 val nextDue = student.nextRenewalCycleDate(payments)
                 val overdueDays = maxOf(0, ChronoUnit.DAYS.between(LocalDate.parse(nextDue), LocalDate.now()).toInt())
-                repository.logRenewalReminder(
+                val resultMessage = repository.logRenewalReminder(
                     session = session,
                     student = student,
                     reminderType = "renewal",
@@ -983,11 +988,11 @@ class AcademyViewModel(
                     messagePreview = buildReminderPreview(student, nextDue, reminderSettings.managerPhone, false),
                     settings = reminderSettings,
                 )
-                reminderSettings to nextDue
+                Triple(reminderSettings, nextDue, resultMessage)
             }
             val mode = if (settings.dryRunMode || !settings.whatsappRemindersEnabled) "Reminder" else "WhatsApp"
             loadFinance()
-            OperationResult(true, "$mode sent for ${student.name} (${dueDate}).")
+            OperationResult(true, reminderMessage.ifBlank { "$mode sent for ${student.name} (${dueDate})." })
         } catch (error: Exception) {
             OperationResult(false, error.message ?: "Unable to log reminder.")
         }

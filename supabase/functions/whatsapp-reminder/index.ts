@@ -42,6 +42,9 @@ const PLAN_MONTHS: Record<string, number> = {
   quarterly: 3,
   halfyearly: 6,
 };
+const HEALTHY_ECOSYSTEM_ERROR_CODE = "131049";
+const HEALTHY_ECOSYSTEM_RETRY_HOURS = [24, 48, 72];
+const DEFAULT_REMINDER_MAX_RETRIES = HEALTHY_ECOSYSTEM_RETRY_HOURS.length;
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -806,6 +809,307 @@ async function sendTemplateMessage(
   return body;
 }
 
+function parseProviderError(input: unknown): Record<string, any> {
+  if (!input) return {};
+  if (input instanceof Error) {
+    const message = input.message || "";
+    try {
+      const parsed = JSON.parse(message);
+      return typeof parsed === "object" && parsed ? parsed : { message };
+    } catch (_error) {
+      return { message };
+    }
+  }
+  if (typeof input === "string") {
+    try {
+      const parsed = JSON.parse(input);
+      return typeof parsed === "object" && parsed ? parsed : { message: input };
+    } catch (_error) {
+      return { message: input };
+    }
+  }
+  if (typeof input === "object") return input as Record<string, any>;
+  return { message: String(input) };
+}
+
+function providerErrorCode(errorPayload: Record<string, any>): string {
+  const candidates = [
+    errorPayload?.code,
+    errorPayload?.error?.code,
+    errorPayload?.errors?.[0]?.code,
+    errorPayload?.statuses?.[0]?.errors?.[0]?.code,
+  ];
+  const code = candidates.map((value) => String(value || "")).find(Boolean);
+  if (code) return code;
+  const text = JSON.stringify(errorPayload || {});
+  return text.includes(HEALTHY_ECOSYSTEM_ERROR_CODE)
+    ? HEALTHY_ECOSYSTEM_ERROR_CODE
+    : "";
+}
+
+function providerErrorMessage(errorPayload: Record<string, any>): string {
+  const candidates = [
+    errorPayload?.message,
+    errorPayload?.title,
+    errorPayload?.error?.message,
+    errorPayload?.error?.error_data?.details,
+    errorPayload?.errors?.[0]?.message,
+    errorPayload?.errors?.[0]?.title,
+  ];
+  return candidates.map((value) => String(value || "").trim()).find(Boolean) ||
+    "Meta WhatsApp send failed.";
+}
+
+function isHealthyEcosystemError(errorPayload: Record<string, any>): boolean {
+  const code = providerErrorCode(errorPayload);
+  const text = JSON.stringify(errorPayload || {}).toLowerCase();
+  return code === HEALTHY_ECOSYSTEM_ERROR_CODE ||
+    text.includes("healthy ecosystem engagement");
+}
+
+function retryDelayHours(retryCount: number): number {
+  const index = Math.min(
+    Math.max(0, retryCount),
+    HEALTHY_ECOSYSTEM_RETRY_HOURS.length - 1,
+  );
+  return HEALTHY_ECOSYSTEM_RETRY_HOURS[index];
+}
+
+async function markReminderSendFailed(
+  event: any,
+  errorPayload: Record<string, any>,
+  failedAt: string,
+  createdBy: string,
+  finalReason = "",
+) {
+  const reason = finalReason || providerErrorMessage(errorPayload);
+  await updateReminderEvent(event.id, {
+    status: "send_failed",
+    dry_run: false,
+    meta_error: errorPayload,
+    failed_at: failedAt,
+    retry_count: Number(event?.retry_count || 0),
+    next_retry_at: null,
+    retry_reason: null,
+    manual_followup_required: true,
+  });
+  await insertWhatsappFlowEvent({
+    student_id: event.student_id,
+    reminder_event_id: event.id,
+    event_type: "reminder_send_failed",
+    direction: "outbound",
+    parent_phone: String(event.parent_phone || ""),
+    message_kind: "template",
+    message_body: event.message_preview || "",
+    status: "send_failed",
+    failed_at: failedAt,
+    error_code: providerErrorCode(errorPayload),
+    error_message: reason,
+    provider_payload: errorPayload,
+    created_by: createdBy,
+  });
+}
+
+async function scheduleHealthyEcosystemRetry(
+  event: any,
+  errorPayload: Record<string, any>,
+  failedAt: string,
+  createdBy: string,
+) {
+  const retryCount = Number(event?.retry_count || 0);
+  const maxRetryCount = Math.max(
+    1,
+    Number(event?.max_retry_count || DEFAULT_REMINDER_MAX_RETRIES),
+  );
+
+  if (retryCount >= maxRetryCount) {
+    await markReminderSendFailed(
+      event,
+      errorPayload,
+      failedAt,
+      createdBy,
+      "Meta kept this message blocked for healthy ecosystem engagement. Manual follow-up is required.",
+    );
+    return {
+      scheduled: false,
+      manualFollowupRequired: true,
+      reason: "Retry limit reached; manual follow-up required.",
+    };
+  }
+
+  const delayHours = retryDelayHours(retryCount);
+  const nextRetryAt = new Date(
+    new Date(failedAt).getTime() + delayHours * 60 * 60 * 1000,
+  ).toISOString();
+  const retryReason =
+    `Meta healthy ecosystem engagement limit. Retry ${retryCount + 1} of ${maxRetryCount} scheduled after ${delayHours} hours.`;
+
+  await updateReminderEvent(event.id, {
+    status: "retry_scheduled",
+    dry_run: false,
+    meta_error: errorPayload,
+    failed_at: failedAt,
+    next_retry_at: nextRetryAt,
+    retry_reason: retryReason,
+    max_retry_count: maxRetryCount,
+    manual_followup_required: false,
+  });
+  await insertWhatsappFlowEvent({
+    student_id: event.student_id,
+    reminder_event_id: event.id,
+    event_type: "reminder_retry_scheduled",
+    direction: "system",
+    parent_phone: String(event.parent_phone || ""),
+    message_kind: "template",
+    message_body: event.message_preview || "",
+    status: "retry_scheduled",
+    status_at: failedAt,
+    failed_at: failedAt,
+    error_code: providerErrorCode(errorPayload),
+    error_message: retryReason,
+    provider_payload: errorPayload,
+    created_by: createdBy,
+  });
+
+  return {
+    scheduled: true,
+    nextRetryAt,
+    reason: retryReason,
+  };
+}
+
+async function recordReminderAccepted(
+  event: any,
+  metaResponse: any,
+  createdBy: string,
+  eventType = "reminder_message_status",
+) {
+  const whatsappMessageId = String(metaResponse?.messages?.[0]?.id || "");
+  const acceptedAt = new Date().toISOString();
+  await updateReminderEvent(event.id, {
+    status: whatsappMessageId ? "accepted" : "sent",
+    whatsapp_message_id: whatsappMessageId,
+    meta_response: metaResponse,
+    accepted_at: acceptedAt,
+    next_retry_at: null,
+    retry_reason: null,
+    manual_followup_required: false,
+  });
+  await insertWhatsappFlowEvent({
+    student_id: event.student_id,
+    reminder_event_id: event.id,
+    event_type: eventType,
+    direction: "outbound",
+    parent_phone: String(event.parent_phone || ""),
+    message_kind: "template",
+    message_body: event.message_preview || "",
+    message_id: whatsappMessageId,
+    status: whatsappMessageId ? "accepted" : "sent",
+    status_at: acceptedAt,
+    accepted_at: acceptedAt,
+    provider_payload: metaResponse,
+    created_by: createdBy,
+  });
+  return whatsappMessageId;
+}
+
+async function processDueReminderRetries(limit = 20) {
+  const nowIso = new Date().toISOString();
+  let events: any[] = [];
+  try {
+    events = await rest(
+      `reminder_events?select=*&status=eq.retry_scheduled&next_retry_at=lte.${
+        encodeURIComponent(nowIso)
+      }&order=next_retry_at.asc&limit=${limit}`,
+    );
+  } catch (_error) {
+    return [];
+  }
+
+  const results = [];
+  for (const event of events || []) {
+    const retryStartedAt = new Date().toISOString();
+    const retryCount = Number(event.retry_count || 0) + 1;
+    try {
+      const student = await fetchStudent(String(event.student_id || ""));
+      const parentPhone = String(
+        event.parent_phone || student.parent_contact_no || "",
+      ).replace(/\D/g, "").slice(-10);
+      const to = normalizePhone(parentPhone);
+      if (!to) {
+        await markReminderSendFailed(
+          { ...event, parent_phone: parentPhone, retry_count: retryCount },
+          { message: "Parent phone number is missing." },
+          retryStartedAt,
+          "system_retry",
+        );
+        results.push({ student: student.name, status: "failed_missing_phone" });
+        continue;
+      }
+
+      await updateReminderEvent(event.id, {
+        status: "queued",
+        retry_count: retryCount,
+        last_retry_at: retryStartedAt,
+        next_retry_at: null,
+      });
+      const refreshedEvent = {
+        ...event,
+        parent_phone: parentPhone,
+        retry_count: retryCount,
+      };
+      const metaResponse = await sendTemplateMessage(
+        to,
+        event.id,
+        student,
+        String(event.due_date || localIsoDate()),
+        String(event.reminder_type || "renewal"),
+      );
+      await recordReminderAccepted(
+        refreshedEvent,
+        metaResponse,
+        "system_retry",
+        "reminder_retry_sent",
+      );
+      results.push({
+        student: student.name,
+        status: "retry_sent",
+        retryCount,
+      });
+    } catch (error) {
+      const errorPayload = parseProviderError(error);
+      const retryEvent = { ...event, retry_count: retryCount };
+      if (isHealthyEcosystemError(errorPayload)) {
+        const scheduled = await scheduleHealthyEcosystemRetry(
+          retryEvent,
+          errorPayload,
+          retryStartedAt,
+          "system_retry",
+        );
+        results.push({
+          studentId: event.student_id,
+          status: scheduled.scheduled ? "retry_scheduled" : "send_failed",
+          retryCount,
+          nextRetryAt: scheduled.nextRetryAt || null,
+        });
+      } else {
+        await markReminderSendFailed(
+          retryEvent,
+          errorPayload,
+          retryStartedAt,
+          "system_retry",
+        );
+        results.push({
+          studentId: event.student_id,
+          status: "send_failed",
+          error: providerErrorMessage(errorPayload),
+        });
+      }
+    }
+  }
+  return results;
+}
+
 async function sendTextMessage(to: string, text: string) {
   const token = env("META_WHATSAPP_TOKEN");
   const phoneNumberId = env("META_WHATSAPP_PHONE_NUMBER_ID");
@@ -1289,23 +1593,12 @@ async function handleSendReminder(request: Request, payload: any) {
 
   const to = normalizePhone(parentPhone);
   if (!to) {
-    await updateReminderEvent(event.id, {
-      status: "send_failed",
-      meta_error: { message: "Parent phone number is missing." },
-      failed_at: new Date().toISOString(),
-    });
-    await insertWhatsappFlowEvent({
-      student_id: student.id,
-      reminder_event_id: event.id,
-      event_type: "reminder_send_failed",
-      direction: "outbound",
-      parent_phone: parentPhone,
-      message_kind: "template",
-      status: "send_failed",
-      failed_at: new Date().toISOString(),
-      error_message: "Parent phone number is missing.",
-      created_by: managerEmail,
-    });
+    await markReminderSendFailed(
+      event,
+      { message: "Parent phone number is missing." },
+      new Date().toISOString(),
+      managerEmail,
+    );
     return jsonResponse({ error: "Parent phone number is missing." }, 400);
   }
   let metaResponse;
@@ -1318,59 +1611,34 @@ async function handleSendReminder(request: Request, payload: any) {
       reminderType,
     );
   } catch (error) {
-    const errorPayload = error instanceof Error
-      ? { message: error.message }
-      : { message: String(error) };
-    await updateReminderEvent(event.id, {
-      status: "send_failed",
-      dry_run: false,
-      meta_error: errorPayload,
-      failed_at: new Date().toISOString(),
-    });
-    await insertWhatsappFlowEvent({
-      student_id: student.id,
-      reminder_event_id: event.id,
-      event_type: "reminder_send_failed",
-      direction: "outbound",
-      parent_phone: parentPhone,
-      message_kind: "template",
-      status: "send_failed",
-      failed_at: new Date().toISOString(),
-      error_message: errorPayload.message,
-      provider_payload: errorPayload,
-      created_by: managerEmail,
-    });
-    const message = error instanceof Error
-      ? error.message
-      : "Meta WhatsApp send failed.";
+    const errorPayload = parseProviderError(error);
+    const failedAt = new Date().toISOString();
+    if (isHealthyEcosystemError(errorPayload)) {
+      const retry = await scheduleHealthyEcosystemRetry(
+        event,
+        errorPayload,
+        failedAt,
+        managerEmail,
+      );
+      return jsonResponse({
+        success: true,
+        source: "meta_whatsapp",
+        status: retry.scheduled ? "retry_scheduled" : "send_failed",
+        nextRetryAt: retry.nextRetryAt || null,
+        message: retry.scheduled
+          ? `Meta limited this reminder. Retry scheduled for ${retry.nextRetryAt}.`
+          : "Meta limited this reminder repeatedly. Manual follow-up is required.",
+      }, retry.scheduled ? 202 : 502);
+    }
+    await markReminderSendFailed(event, errorPayload, failedAt, managerEmail);
+    const message = providerErrorMessage(errorPayload);
     return jsonResponse({
       success: false,
       source: "meta_whatsapp",
       error: `Meta WhatsApp send failed: ${message}`,
     }, 502);
   }
-  const whatsappMessageId = String(metaResponse?.messages?.[0]?.id || "");
-  await updateReminderEvent(event.id, {
-    status: whatsappMessageId ? "accepted" : "sent",
-    whatsapp_message_id: whatsappMessageId,
-    meta_response: metaResponse,
-    accepted_at: new Date().toISOString(),
-  });
-  await insertWhatsappFlowEvent({
-    student_id: student.id,
-    reminder_event_id: event.id,
-    event_type: "reminder_message_status",
-    direction: "outbound",
-    parent_phone: parentPhone,
-    message_kind: "template",
-    message_body: event.message_preview || "",
-    message_id: whatsappMessageId,
-    status: whatsappMessageId ? "accepted" : "sent",
-    status_at: new Date().toISOString(),
-    accepted_at: new Date().toISOString(),
-    provider_payload: metaResponse,
-    created_by: managerEmail,
-  });
+  await recordReminderAccepted(event, metaResponse, managerEmail);
   return jsonResponse({
     success: true,
     dryRun: false,
@@ -1716,7 +1984,20 @@ async function handleWebhook(payload: any) {
           updatePayload[isConfirmationMessage ? "confirmation_meta_error" : "meta_error"] = statusUpdate;
         }
 
-        await updateReminderEvent(trackedReminder.id, updatePayload);
+        if (
+          status === "failed" &&
+          !isConfirmationMessage &&
+          isHealthyEcosystemError(parseProviderError(statusUpdate))
+        ) {
+          await scheduleHealthyEcosystemRetry(
+            trackedReminder,
+            parseProviderError(statusUpdate),
+            timestamp,
+            "Meta",
+          );
+        } else {
+          await updateReminderEvent(trackedReminder.id, updatePayload);
+        }
         await insertWhatsappFlowEvent({
           student_id: trackedReminder.student_id,
           reminder_event_id: trackedReminder.id,
@@ -1961,6 +2242,7 @@ async function handleAutoSchedule() {
     return jsonResponse({ success: true, message: "Auto-reminders disabled." });
   }
 
+  const retryResults = await processDueReminderRetries();
   const todayIso = localIsoDate();
 
   // Fetch all active students
@@ -2076,23 +2358,12 @@ async function handleAutoSchedule() {
           if (!dryRun) {
             const to = normalizePhone(parentPhone);
             if (!to) {
-              await updateReminderEvent(event.id, {
-                status: "send_failed",
-                meta_error: { message: "Parent phone number is missing." },
-                failed_at: new Date().toISOString(),
-              });
-              await insertWhatsappFlowEvent({
-                student_id: student.id,
-                reminder_event_id: event.id,
-                event_type: "reminder_send_failed",
-                direction: "outbound",
-                parent_phone: parentPhone,
-                message_kind: "template",
-                status: "send_failed",
-                failed_at: new Date().toISOString(),
-                error_message: "Parent phone number is missing.",
-                created_by: "system_auto",
-              });
+              await markReminderSendFailed(
+                event,
+                { message: "Parent phone number is missing." },
+                new Date().toISOString(),
+                "system_auto",
+              );
               return {
                 student: student.name,
                 error: "Parent phone number is missing.",
@@ -2113,51 +2384,36 @@ async function handleAutoSchedule() {
               dueDate,
               reminderType,
             );
-            const whatsappMessageId = String(
-              metaResponse?.messages?.[0]?.id || "",
+            await recordReminderAccepted(
+              { ...event, message_preview: messageBody },
+              metaResponse,
+              "system_auto",
             );
-            await updateReminderEvent(event.id, {
-              status: whatsappMessageId ? "accepted" : "sent",
-              whatsapp_message_id: whatsappMessageId,
-              accepted_at: new Date().toISOString(),
-            });
-            await insertWhatsappFlowEvent({
-              student_id: student.id,
-              reminder_event_id: event.id,
-              event_type: "reminder_message_status",
-              direction: "outbound",
-              parent_phone: parentPhone,
-              message_kind: "template",
-              message_body: messageBody,
-              message_id: whatsappMessageId,
-              status: whatsappMessageId ? "accepted" : "sent",
-              status_at: new Date().toISOString(),
-              accepted_at: new Date().toISOString(),
-              provider_payload: metaResponse,
-              created_by: "system_auto",
-            });
           }
           return { student: student.name, status: "sent" };
         } catch (e) {
           if (event?.id) {
-            await updateReminderEvent(event.id, {
-              status: "send_failed",
-              meta_error: { message: (e as Error).message },
-              failed_at: new Date().toISOString(),
-            });
-            await insertWhatsappFlowEvent({
-              student_id: student.id,
-              reminder_event_id: event.id,
-              event_type: "reminder_send_failed",
-              direction: "outbound",
-              parent_phone: parentPhone,
-              message_kind: "template",
-              status: "send_failed",
-              failed_at: new Date().toISOString(),
-              error_message: (e as Error).message,
-              provider_payload: { message: (e as Error).message },
-              created_by: "system_auto",
-            });
+            const errorPayload = parseProviderError(e);
+            const failedAt = new Date().toISOString();
+            if (isHealthyEcosystemError(errorPayload)) {
+              const retry = await scheduleHealthyEcosystemRetry(
+                event,
+                errorPayload,
+                failedAt,
+                "system_auto",
+              );
+              return {
+                student: student.name,
+                status: retry.scheduled ? "retry_scheduled" : "send_failed",
+                nextRetryAt: retry.nextRetryAt || null,
+              };
+            }
+            await markReminderSendFailed(
+              event,
+              errorPayload,
+              failedAt,
+              "system_auto",
+            );
           }
           return { student: student.name, error: (e as Error).message };
         }
@@ -2274,7 +2530,7 @@ async function handleAutoSchedule() {
 
   const processed = await Promise.all(results);
   console.log(`Auto-schedule finished. Processed ${processed.length} tasks.`);
-  return jsonResponse({ success: true, processed });
+  return jsonResponse({ success: true, processed, retries: retryResults });
 }
 
 Deno.serve(async (request) => {
@@ -2315,6 +2571,11 @@ Deno.serve(async (request) => {
     }
     if (payload?.action === "auto_schedule") {
       return await handleAutoSchedule();
+    }
+    if (payload?.action === "retry_due_reminders") {
+      await assertAuthenticated(request);
+      const retries = await processDueReminderRetries();
+      return jsonResponse({ success: true, retries });
     }
     if (payload?.action === "send_admission_reminder") {
       return await handleSendAdmissionReminder(request, payload);

@@ -5402,6 +5402,7 @@ private fun RosterRow(
                             label = feeLabel,
                             container = when {
                                 feeLabel == "Reminder failed" -> feeFailedTone.container
+                                feeLabel == "Retry scheduled" -> feeReminderTone.container
                                 feeLabel == "Reminder sent" -> feeReminderTone.container
                                 student.feesPaid -> feePaidTone.container
                                 feeLabel == "Pending verification" -> feeVerificationTone.container
@@ -5409,6 +5410,7 @@ private fun RosterRow(
                             },
                             color = when {
                                 feeLabel == "Reminder failed" -> feeFailedTone.text
+                                feeLabel == "Retry scheduled" -> feeReminderTone.text
                                 feeLabel == "Reminder sent" -> feeReminderTone.text
                                 student.feesPaid -> feePaidTone.text
                                 feeLabel == "Pending verification" -> feeVerificationTone.text
@@ -5786,6 +5788,7 @@ private fun PlayerDetailSheet(
                     feeLabel,
                     when (feeLabel) {
                         "Reminder failed" -> feeFailedTone.container
+                        "Retry scheduled" -> feeReminderTone.container
                         "Reminder sent" -> feeReminderTone.container
                         "Pending verification" -> feeVerificationTone.container
                         "Fees paid" -> renewalOkTone.container
@@ -5793,6 +5796,7 @@ private fun PlayerDetailSheet(
                     },
                     when (feeLabel) {
                         "Reminder failed" -> feeFailedTone.text
+                        "Retry scheduled" -> feeReminderTone.text
                         "Reminder sent" -> feeReminderTone.text
                         "Pending verification" -> feeVerificationTone.text
                         "Fees paid" -> renewalOkTone.text

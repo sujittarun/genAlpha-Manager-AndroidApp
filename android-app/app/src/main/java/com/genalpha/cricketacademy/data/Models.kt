@@ -249,12 +249,27 @@ data class PaymentFollowUp(
     val overdueDays: Int = 0,
     val failureReason: String = "",
     val failedAt: String = "",
+    val retryCount: Int = 0,
+    val maxRetryCount: Int = 0,
+    val nextRetryAt: String = "",
+    val lastRetryAt: String = "",
+    val retryReason: String = "",
+    val manualFollowupRequired: Boolean = false,
 ) {
-    fun isReminderFailed(): Boolean =
-        reminderStatus in setOf("failed", "send_failed", "delivery_failed", "undelivered") ||
+    fun isRetryScheduled(): Boolean =
+        reminderStatus == "retry_scheduled" && nextRetryAt.isNotBlank()
+
+    fun isReminderFailed(): Boolean {
+        if (isRetryScheduled()) return false
+        if (reminderStatus in setOf("queued", "accepted", "sent", "delivered", "read", "payment_link_sent", "payment_attempted", "help_requested")) {
+            return false
+        }
+        return reminderStatus in setOf("failed", "send_failed", "delivery_failed", "undelivered") ||
             linkStatus in setOf("failed", "send_failed", "delivery_failed", "undelivered") ||
+            manualFollowupRequired ||
             failureReason.isNotBlank() ||
             failedAt.isNotBlank()
+    }
 
     fun isPendingVerification(): Boolean =
         reminderStatus in setOf("payment_pending_verification", "pending_verification") ||
@@ -419,6 +434,7 @@ fun Student.feeStatusLabel(): String = when {
 
 fun Student.feeStatusLabel(followUp: PaymentFollowUp?, payments: List<StudentPayment>): String = when {
     followUp?.isPendingVerification() == true || isPaymentPendingVerification() -> "Pending verification"
+    followUp?.isRetryScheduled() == true && (isFeesPending() || isRenewalPending(payments)) -> "Retry scheduled"
     followUp?.isReminderFailed() == true && (isFeesPending() || isRenewalPending(payments)) -> "Reminder failed"
     followUp?.isReminderSent() == true && (isFeesPending() || isRenewalPending(payments)) -> "Reminder sent"
     feesPaid -> "Fees paid"

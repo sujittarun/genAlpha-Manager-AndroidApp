@@ -118,7 +118,7 @@ class SupabaseRepository(
     }
 
     suspend fun fetchPaymentFollowUps(accessToken: String): List<PaymentFollowUp> = withContext(Dispatchers.IO) {
-        val reminderRequest = baseRequest("$baseUrl/rest/v1/reminder_events?select=id,student_id,reminder_type,status,due_date,selected_plan,amount,created_at,overdue_days,meta_error,failed_at&order=created_at.desc&limit=300")
+        val reminderRequest = baseRequest("$baseUrl/rest/v1/reminder_events?select=id,student_id,reminder_type,status,due_date,selected_plan,amount,created_at,overdue_days,meta_error,failed_at,retry_count,max_retry_count,next_retry_at,last_retry_at,retry_reason,manual_followup_required&order=created_at.desc&limit=300")
             .header("Authorization", "Bearer $accessToken")
             .get()
             .build()
@@ -184,6 +184,12 @@ class SupabaseRepository(
                 overdueDays = reminder?.optInt("overdue_days", 0) ?: 0,
                 failureReason = reminder?.extractReminderFailureReason().orEmpty(),
                 failedAt = reminder?.optString("failed_at").orEmpty(),
+                retryCount = reminder?.optInt("retry_count", 0) ?: 0,
+                maxRetryCount = reminder?.optInt("max_retry_count", 0) ?: 0,
+                nextRetryAt = reminder?.optString("next_retry_at").orEmpty(),
+                lastRetryAt = reminder?.optString("last_retry_at").orEmpty(),
+                retryReason = reminder?.optString("retry_reason").orEmpty(),
+                manualFollowupRequired = reminder?.optBoolean("manual_followup_required", false) ?: false,
             )
         }
     }
@@ -223,7 +229,7 @@ class SupabaseRepository(
         overdueDays: Int,
         messagePreview: String,
         settings: ReminderSettings,
-    ) = withContext(Dispatchers.IO) {
+    ): String = withContext(Dispatchers.IO) {
         val functionResult = runCatching {
             val functionBody = JSONObject()
                 .put("action", "send_reminder")
@@ -243,7 +249,8 @@ class SupabaseRepository(
                     if (responseJson?.optBoolean("success", true) == false) {
                         throw SupabaseException(response.code, responseJson.optString("error", "WhatsApp reminder failed."))
                     }
-                    return@withContext
+                    return@withContext responseJson?.optString("message")?.takeIf { it.isNotBlank() }
+                        ?: "WhatsApp reminder sent."
                 }
                 if (response.code != 404) {
                     throw SupabaseException(response.code, parseError(responseBody))
@@ -296,6 +303,7 @@ class SupabaseRepository(
             method = "POST",
             body = linkBody,
         )
+        if (dryRun) "Reminder logged in dry-run mode." else "Reminder queued for WhatsApp."
     }
 
     suspend fun addExpense(
@@ -780,7 +788,7 @@ class SupabaseRepository(
             .header("Authorization", "Bearer $token")
             .get()
             .build()
-        val reminderFailuresRequest = baseRequest("$baseUrl/rest/v1/reminder_events?select=id,student_id,reminder_type,status,due_date,created_at,created_by,meta_error,failed_at&student_id=eq.$studentId&status=in.(failed,send_failed,delivery_failed,undelivered)&order=created_at.desc&limit=10")
+        val reminderFailuresRequest = baseRequest("$baseUrl/rest/v1/reminder_events?select=id,student_id,reminder_type,status,due_date,created_at,created_by,meta_error,failed_at,retry_count,max_retry_count,next_retry_at,last_retry_at,retry_reason,manual_followup_required&student_id=eq.$studentId&status=in.(failed,send_failed,delivery_failed,undelivered,retry_scheduled)&order=created_at.desc&limit=10")
             .header("Authorization", "Bearer $token")
             .get()
             .build()
@@ -799,15 +807,27 @@ class SupabaseRepository(
                 val rows = JSONArray(response.body?.string().orEmpty())
                 List(rows.length()) { index ->
                     val row = rows.getJSONObject(index)
-                    val reason = row.extractReminderFailureReason().ifBlank { "Provider did not return a detailed reason." }
-                    val createdAt = row.optSafeString("failed_at").ifBlank { row.optSafeString("created_at") }
+                    val status = row.optSafeString("status")
+                    val isRetryScheduled = status == "retry_scheduled"
+                    val reason = if (isRetryScheduled) {
+                        val nextRetry = row.optSafeString("next_retry_at")
+                        listOf(
+                            row.optSafeString("retry_reason").ifBlank { "Meta limited delivery. The reminder will retry later." },
+                            if (nextRetry.isNotBlank()) "Next retry: $nextRetry" else "",
+                        ).filter { it.isNotBlank() }.joinToString(" • ")
+                    } else {
+                        row.extractReminderFailureReason().ifBlank { "Provider did not return a detailed reason." }
+                    }
+                    val createdAt = row.optSafeString("failed_at")
+                        .ifBlank { row.optSafeString("next_retry_at") }
+                        .ifBlank { row.optSafeString("created_at") }
                     StudentTimelineItem(
-                        id = "reminder-failure-${row.optSafeString("id")}",
+                        id = "${if (isRetryScheduled) "reminder-retry" else "reminder-failure"}-${row.optSafeString("id")}",
                         studentId = studentId,
-                        eventType = "whatsapp_reminder_failed",
+                        eventType = if (isRetryScheduled) "whatsapp_reminder_retry_scheduled" else "whatsapp_reminder_failed",
                         eventDate = createdAt.take(10),
-                        title = "Reminder failed",
-                        details = "Status: ${row.optSafeString("status")} • Reason: $reason",
+                        title = if (isRetryScheduled) "Reminder retry scheduled" else "Reminder failed",
+                        details = if (isRetryScheduled) reason else "Status: $status • Reason: $reason",
                         changedBy = row.optSafeString("created_by").ifBlank { "WhatsApp" },
                         createdAt = createdAt,
                     )
