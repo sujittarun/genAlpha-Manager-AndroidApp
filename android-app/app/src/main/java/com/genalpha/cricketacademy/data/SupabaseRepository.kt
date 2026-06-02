@@ -20,6 +20,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
 
 class SupabaseRepository(
@@ -784,11 +785,15 @@ class SupabaseRepository(
 
     suspend fun fetchStudentTimeline(studentId: String, accessToken: String? = null): List<StudentTimelineItem> = withContext(Dispatchers.IO) {
         val token = accessToken?.takeIf { it.isNotBlank() } ?: anonKey
-        val request = baseRequest("$baseUrl/rest/v1/student_timeline?select=*&student_id=eq.$studentId&order=created_at.desc&limit=30")
+        val request = baseRequest("$baseUrl/rest/v1/student_timeline?select=*&student_id=eq.$studentId&event_type=neq.whatsapp_flow&order=created_at.desc&limit=30")
             .header("Authorization", "Bearer $token")
             .get()
             .build()
         val reminderFailuresRequest = baseRequest("$baseUrl/rest/v1/reminder_events?select=id,student_id,reminder_type,status,due_date,created_at,created_by,meta_error,failed_at,retry_count,max_retry_count,next_retry_at,last_retry_at,retry_reason,manual_followup_required&student_id=eq.$studentId&status=in.(failed,send_failed,delivery_failed,undelivered)&order=created_at.desc&limit=10")
+            .header("Authorization", "Bearer $token")
+            .get()
+            .build()
+        val whatsappFlowRequest = baseRequest("$baseUrl/rest/v1/whatsapp_flow_events?select=id,student_id,reminder_event_id,event_type,direction,status,status_at,accepted_at,delivered_at,read_at,failed_at,created_at,created_by,error_message,payment_plan,payment_amount,payment_months,payment_from_date,payment_to_date,proof_path&student_id=eq.$studentId&order=status_at.desc.nullslast&limit=40")
             .header("Authorization", "Bearer $token")
             .get()
             .build()
@@ -825,9 +830,122 @@ class SupabaseRepository(
                 }
             }
         }
-        (timeline + failures)
+        val whatsappFlowEvents = client.newCall(whatsappFlowRequest).execute().use { response ->
+            if (!response.isSuccessful) {
+                emptyList()
+            } else {
+                val rows = JSONArray(response.body?.string().orEmpty())
+                List(rows.length()) { index -> rows.getJSONObject(index).toWhatsappFlowTimelineItem() }
+                    .filterNotNull()
+            }
+        }
+        suppressSupersededReminderFailures(timeline + failures + whatsappFlowEvents)
             .sortedByDescending { it.createdAt }
             .take(30)
+            .sortedBy { it.createdAt }
+    }
+
+    private fun JSONObject.toWhatsappFlowTimelineItem(): StudentTimelineItem? {
+        val eventType = optSafeString("event_type")
+        val status = optSafeString("status")
+        val title = whatsappFlowTitle(eventType, status)
+        if (title.isBlank() || !shouldShowWhatsappFlowEvent(eventType, status)) return null
+        val createdAt = optSafeString("status_at")
+            .ifBlank { optSafeString("read_at") }
+            .ifBlank { optSafeString("delivered_at") }
+            .ifBlank { optSafeString("failed_at") }
+            .ifBlank { optSafeString("accepted_at") }
+            .ifBlank { optSafeString("created_at") }
+        val reminderEventId = optSafeString("reminder_event_id")
+        val details = whatsappFlowDetails(eventType, status, this)
+        return StudentTimelineItem(
+            id = listOf("whatsapp-flow", optSafeString("id"), reminderEventId)
+                .filter { it.isNotBlank() }
+                .joinToString("-"),
+            studentId = optSafeString("student_id"),
+            eventType = eventType.ifBlank { "whatsapp_flow" },
+            eventDate = createdAt.take(10),
+            title = title,
+            details = details,
+            changedBy = optSafeString("created_by").ifBlank {
+                if (optSafeString("direction") == "provider") "Meta" else "WhatsApp"
+            },
+            createdAt = createdAt,
+        )
+    }
+
+    private fun shouldShowWhatsappFlowEvent(eventType: String, status: String): Boolean {
+        if (eventType == "reminder_message_status" || eventType == "whatsapp_message_status") {
+            return status in setOf("delivered", "read", "failed")
+        }
+        return eventType in setOf(
+            "reminder_created",
+            "parent_plan_selected",
+            "payment_link_sent",
+            "payment_attempted",
+            "payment_pending_verification",
+            "payment_confirmed",
+            "parent_help_requested",
+        )
+    }
+
+    private fun whatsappFlowTitle(eventType: String, status: String): String = when (eventType) {
+        "reminder_created" -> "WhatsApp reminder prepared"
+        "reminder_message_status" -> when (status) {
+            "delivered", "read" -> "Reminder delivered"
+            "failed" -> "Reminder failed"
+            else -> ""
+        }
+        "whatsapp_message_status" -> when (status) {
+            "delivered", "read" -> "WhatsApp message delivered"
+            "failed" -> "WhatsApp message failed"
+            else -> ""
+        }
+        "parent_plan_selected" -> "Parent selected renewal plan"
+        "payment_link_sent" -> "Payment link sent"
+        "payment_attempted" -> "Parent tapped Pay Now"
+        "payment_pending_verification" -> "Parent payment proof received"
+        "payment_confirmed" -> "Payment confirmed by academy"
+        "parent_help_requested" -> "Parent requested help"
+        else -> ""
+    }
+
+    private fun whatsappFlowDetails(eventType: String, status: String, row: JSONObject): String {
+        if (eventType == "reminder_message_status" || eventType == "whatsapp_message_status") {
+            return if (status == "failed") {
+                row.optSafeString("error_message").ifBlank { "Provider did not return a detailed reason." }
+            } else {
+                ""
+            }
+        }
+        return listOf(
+            row.optSafeString("payment_plan").takeIf { it.isNotBlank() }?.let { "Plan: $it" },
+            row.optDoubleValue("payment_amount").takeIf { it > 0 }?.let { "Amount: Rs ${String.format(Locale.US, "%,.0f", it)}" },
+            row.optIntValue("payment_months").takeIf { it > 0 }?.let { "Months: $it" },
+            row.optSafeString("payment_from_date").takeIf { it.isNotBlank() }?.let { "From: $it" },
+            row.optSafeString("payment_to_date").takeIf { it.isNotBlank() }?.let { "To: $it" },
+            row.optSafeString("error_message").takeIf { it.isNotBlank() },
+            row.optSafeString("proof_path").takeIf { it.isNotBlank() }?.let { "payment-proofs/$it" },
+        ).filterNotNull().joinToString(" • ")
+    }
+
+    private fun suppressSupersededReminderFailures(items: List<StudentTimelineItem>): List<StudentTimelineItem> {
+        val successfulDateKeys = items.mapNotNull { item ->
+            val text = "${item.eventType} ${item.title} ${item.details.orEmpty()}".lowercase()
+            val successful = text.contains("reminder delivered") ||
+                text.contains("parent selected renewal plan") ||
+                text.contains("payment link sent") ||
+                text.contains("parent tapped pay now") ||
+                text.contains("parent payment proof received") ||
+                text.contains("payment confirmed")
+            if (successful) item.createdAt.orEmpty().take(10).ifBlank { item.eventDate }.takeIf { it.isNotBlank() } else null
+        }.toSet()
+        return items.filter { item ->
+            val text = "${item.eventType} ${item.title} ${item.details.orEmpty()}".lowercase()
+            if (!text.contains("reminder failed")) return@filter true
+            val dateKey = item.createdAt.orEmpty().take(10).ifBlank { item.eventDate }
+            dateKey !in successfulDateKeys
+        }
     }
 
     suspend fun createPaymentProofSignedUrl(accessToken: String, path: String): String = withContext(Dispatchers.IO) {
