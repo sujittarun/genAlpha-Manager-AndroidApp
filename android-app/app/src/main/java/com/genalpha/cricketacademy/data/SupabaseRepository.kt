@@ -842,7 +842,6 @@ class SupabaseRepository(
         suppressSupersededReminderFailures(timeline + failures + whatsappFlowEvents)
             .sortedByDescending { it.createdAt }
             .take(30)
-            .sortedBy { it.createdAt }
     }
 
     private fun JSONObject.toWhatsappFlowTimelineItem(): StudentTimelineItem? {
