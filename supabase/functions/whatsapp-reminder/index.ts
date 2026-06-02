@@ -445,6 +445,15 @@ async function assertAuthenticated(request: Request) {
   return user?.email || "manager";
 }
 
+async function assertAuthenticatedOrServiceRole(request: Request) {
+  const authHeader = request.headers.get("authorization") || "";
+  const token = authHeader.replace(/^Bearer\s+/i, "");
+  if (token && token === env("SUPABASE_SERVICE_ROLE_KEY")) {
+    return "system_cron";
+  }
+  return await assertAuthenticated(request);
+}
+
 async function loadSettings(): Promise<ReminderSettings> {
   const rows = await rest(
     "system_settings?select=setting_key,setting_value&setting_key=in.(whatsapp_reminders_enabled,payment_links_enabled,dry_run_mode)",
@@ -2573,7 +2582,7 @@ Deno.serve(async (request) => {
       return await handleAutoSchedule();
     }
     if (payload?.action === "retry_due_reminders") {
-      await assertAuthenticated(request);
+      await assertAuthenticatedOrServiceRole(request);
       const retries = await processDueReminderRetries();
       return jsonResponse({ success: true, retries });
     }
