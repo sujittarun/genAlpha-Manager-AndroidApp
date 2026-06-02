@@ -788,7 +788,7 @@ class SupabaseRepository(
             .header("Authorization", "Bearer $token")
             .get()
             .build()
-        val reminderFailuresRequest = baseRequest("$baseUrl/rest/v1/reminder_events?select=id,student_id,reminder_type,status,due_date,created_at,created_by,meta_error,failed_at,retry_count,max_retry_count,next_retry_at,last_retry_at,retry_reason,manual_followup_required&student_id=eq.$studentId&status=in.(failed,send_failed,delivery_failed,undelivered,retry_scheduled)&order=created_at.desc&limit=10")
+        val reminderFailuresRequest = baseRequest("$baseUrl/rest/v1/reminder_events?select=id,student_id,reminder_type,status,due_date,created_at,created_by,meta_error,failed_at,retry_count,max_retry_count,next_retry_at,last_retry_at,retry_reason,manual_followup_required&student_id=eq.$studentId&status=in.(failed,send_failed,delivery_failed,undelivered)&order=created_at.desc&limit=10")
             .header("Authorization", "Bearer $token")
             .get()
             .build()
@@ -808,26 +808,17 @@ class SupabaseRepository(
                 List(rows.length()) { index ->
                     val row = rows.getJSONObject(index)
                     val status = row.optSafeString("status")
-                    val isRetryScheduled = status == "retry_scheduled"
-                    val reason = if (isRetryScheduled) {
-                        val nextRetry = row.optSafeString("next_retry_at")
-                        listOf(
-                            row.optSafeString("retry_reason").ifBlank { "Meta limited delivery. The reminder will retry later." },
-                            if (nextRetry.isNotBlank()) "Next retry: $nextRetry" else "",
-                        ).filter { it.isNotBlank() }.joinToString(" • ")
-                    } else {
-                        row.extractReminderFailureReason().ifBlank { "Provider did not return a detailed reason." }
-                    }
+                    val reason = row.extractReminderFailureReason()
+                        .ifBlank { "Provider did not return a detailed reason." }
                     val createdAt = row.optSafeString("failed_at")
-                        .ifBlank { row.optSafeString("next_retry_at") }
                         .ifBlank { row.optSafeString("created_at") }
                     StudentTimelineItem(
-                        id = "${if (isRetryScheduled) "reminder-retry" else "reminder-failure"}-${row.optSafeString("id")}",
+                        id = "reminder-failure-${row.optSafeString("id")}",
                         studentId = studentId,
-                        eventType = if (isRetryScheduled) "whatsapp_reminder_retry_scheduled" else "whatsapp_reminder_failed",
+                        eventType = "whatsapp_reminder_failed",
                         eventDate = createdAt.take(10),
-                        title = if (isRetryScheduled) "Reminder retry scheduled" else "Reminder failed",
-                        details = if (isRetryScheduled) reason else "Status: $status • Reason: $reason",
+                        title = "Reminder failed",
+                        details = "Status: $status • Reason: $reason",
                         changedBy = row.optSafeString("created_by").ifBlank { "WhatsApp" },
                         createdAt = createdAt,
                     )

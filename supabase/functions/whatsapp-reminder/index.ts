@@ -45,8 +45,10 @@ const PLAN_MONTHS: Record<string, number> = {
   halfyearly: 6,
 };
 const HEALTHY_ECOSYSTEM_ERROR_CODE = "131049";
-const HEALTHY_ECOSYSTEM_RETRY_MINUTES = [5, 60, 240];
+const HEALTHY_ECOSYSTEM_RETRY_MINUTES = [5, 30, 60];
 const DEFAULT_REMINDER_MAX_RETRIES = HEALTHY_ECOSYSTEM_RETRY_MINUTES.length;
+const RETRY_WORKER_LIMIT = 100;
+const RETRY_RECOVERY_MINUTES = 10;
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -448,12 +450,40 @@ async function assertAuthenticated(request: Request) {
 }
 
 async function assertAuthenticatedOrServiceRole(request: Request) {
+  const cronSecret = env("WHATSAPP_CRON_SECRET");
+  const providedCronSecret = request.headers.get("x-cron-secret") || "";
+  if (cronSecret && providedCronSecret && providedCronSecret === cronSecret) {
+    return "system_cron_secret";
+  }
+
   const authHeader = request.headers.get("authorization") || "";
   const token = authHeader.replace(/^Bearer\s+/i, "");
   if (token && token === env("SUPABASE_SERVICE_ROLE_KEY")) {
     return "system_cron";
   }
+  if (token) {
+    const payload = decodeJwtPayload(token);
+    const role = String(payload?.role || "").toLowerCase();
+    if (role === "service_role") {
+      return "system_cron_service_role";
+    }
+  }
   return await assertAuthenticated(request);
+}
+
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  const payload = token.split(".")[1] || "";
+  if (!payload) return null;
+  try {
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(
+      normalized.length + ((4 - normalized.length % 4) % 4),
+      "=",
+    );
+    return JSON.parse(atob(padded));
+  } catch (_error) {
+    return null;
+  }
 }
 
 async function loadSettings(): Promise<ReminderSettings> {
@@ -1064,15 +1094,41 @@ async function recordReminderAccepted(
   return whatsappMessageId;
 }
 
-async function processDueReminderRetries(limit = 20) {
+function dedupeById(rows: any[]): any[] {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    const id = String(row?.id || "");
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+async function processDueReminderRetries(limit = RETRY_WORKER_LIMIT) {
   const nowIso = new Date().toISOString();
+  const recoveryCutoffIso = new Date(
+    Date.now() - RETRY_RECOVERY_MINUTES * 60 * 1000,
+  ).toISOString();
   let events: any[] = [];
   try {
-    events = await rest(
+    const dueScheduled = await rest(
       `reminder_events?select=*&status=eq.retry_scheduled&next_retry_at=lte.${
         encodeURIComponent(nowIso)
       }&order=next_retry_at.asc&limit=${limit}`,
     );
+    const scheduledWithoutDate = await rest(
+      `reminder_events?select=*&status=eq.retry_scheduled&next_retry_at=is.null&order=created_at.asc&limit=${limit}`,
+    );
+    const interruptedQueuedRetries = await rest(
+      `reminder_events?select=*&status=eq.queued&retry_count=gt.0&last_retry_at=lte.${
+        encodeURIComponent(recoveryCutoffIso)
+      }&order=last_retry_at.asc&limit=${limit}`,
+    );
+    events = dedupeById([
+      ...(dueScheduled || []),
+      ...(scheduledWithoutDate || []),
+      ...(interruptedQueuedRetries || []),
+    ]).slice(0, limit);
   } catch (_error) {
     return [];
   }
@@ -1103,6 +1159,9 @@ async function processDueReminderRetries(limit = 20) {
         retry_count: retryCount,
         last_retry_at: retryStartedAt,
         next_retry_at: null,
+        retry_reason: `Retry attempt ${retryCount} of ${
+          Math.max(1, Number(event.max_retry_count || DEFAULT_REMINDER_MAX_RETRIES))
+        } started.`,
       });
       const refreshedEvent = {
         ...event,
@@ -1142,6 +1201,7 @@ async function processDueReminderRetries(limit = 20) {
           status: scheduled.scheduled ? "retry_scheduled" : "send_failed",
           retryCount,
           nextRetryAt: scheduled.nextRetryAt || null,
+          reason: scheduled.reason || null,
         });
       } else {
         await markReminderSendFailed(
@@ -2843,6 +2903,7 @@ Deno.serve(async (request) => {
       return await handlePaymentAttempted(payload);
     }
     if (payload?.action === "auto_schedule") {
+      await assertAuthenticatedOrServiceRole(request);
       return await handleAutoSchedule();
     }
     if (payload?.action === "retry_due_reminders") {

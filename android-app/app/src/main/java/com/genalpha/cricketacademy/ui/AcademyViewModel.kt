@@ -477,7 +477,7 @@ class AcademyViewModel(
             .filter { item ->
                 val title = item.title.ifBlank { item.eventType }
                 val dateKey = item.eventDate.ifBlank { item.createdAt.orEmpty().take(10) }
-                val detailKey = if (title == "Reminder failed" || title == "Reminder retry scheduled") item.details.orEmpty() else ""
+                val detailKey = if (title == "Reminder failed") item.details.orEmpty() else ""
                 seen.add("$dateKey|$title|$detailKey")
             }
     }
@@ -488,11 +488,7 @@ class AcademyViewModel(
             "renewal reminder prepared" in eventText || "joining fee reminder prepared" in eventText -> null
             "reminder accepted" in eventText || " accepted " in eventText -> null
             "confirmation" in eventText && "failed" !in eventText -> null
-            "retry scheduled" in eventText -> copy(
-                title = "Reminder retry scheduled",
-                details = details.orEmpty().ifBlank { "Meta limited delivery. The reminder will retry later." },
-                changedBy = changedBy.orEmpty().ifBlank { "System" },
-            )
+            "retry scheduled" in eventText -> null
             "whatsapp reminder prepared" in eventText || "status: queued" in eventText -> copy(
                 title = "WhatsApp reminder prepared",
                 details = "",
