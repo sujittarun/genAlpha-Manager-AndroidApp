@@ -49,7 +49,6 @@ const HEALTHY_ECOSYSTEM_RETRY_MINUTES = [5, 30, 60];
 const DEFAULT_REMINDER_MAX_RETRIES = HEALTHY_ECOSYSTEM_RETRY_MINUTES.length;
 const RETRY_WORKER_LIMIT = 20;
 const RETRY_RECOVERY_MINUTES = 10;
-const FAILED_RETRY_RECOVERY_MINUTES = 12 * 60;
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -1111,7 +1110,7 @@ async function processDueReminderRetries(limit = RETRY_WORKER_LIMIT) {
     Date.now() - RETRY_RECOVERY_MINUTES * 60 * 1000,
   ).toISOString();
   const failedRecoveryCutoffIso = new Date(
-    Date.now() - FAILED_RETRY_RECOVERY_MINUTES * 60 * 1000,
+    `${localIsoDate()}T00:00:00+05:30`,
   ).toISOString();
   let events: any[] = [];
   try {
