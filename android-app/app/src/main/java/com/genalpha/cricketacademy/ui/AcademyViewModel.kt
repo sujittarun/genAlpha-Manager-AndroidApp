@@ -499,8 +499,13 @@ class AcademyViewModel(
                 details = extractReminderTimelineReason(details.orEmpty()).ifBlank { "Provider did not return a detailed reason." },
                 changedBy = changedBy.orEmpty().ifBlank { "WhatsApp" },
             )
-            "delivered" in eventText || "read" in eventText -> copy(
-                title = "Reminder delivered",
+            "read" in eventText -> copy(
+                title = if ("whatsapp message" in eventText) "WhatsApp message read" else "Reminder read",
+                details = "",
+                changedBy = changedBy.orEmpty().ifBlank { "WhatsApp" },
+            )
+            "delivered" in eventText -> copy(
+                title = if ("whatsapp message" in eventText) "WhatsApp message delivered" else "Reminder delivered",
                 details = "",
                 changedBy = changedBy.orEmpty().ifBlank { "WhatsApp" },
             )

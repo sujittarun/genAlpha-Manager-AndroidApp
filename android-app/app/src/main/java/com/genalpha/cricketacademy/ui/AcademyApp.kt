@@ -175,6 +175,7 @@ import com.genalpha.cricketacademy.data.cardTimelineLabel
 import com.genalpha.cricketacademy.data.currentDatePickerValues
 import com.genalpha.cricketacademy.data.daysSince
 import com.genalpha.cricketacademy.data.displayDate
+import com.genalpha.cricketacademy.data.displayTimelineStamp
 import com.genalpha.cricketacademy.data.feeStatusLabel
 import com.genalpha.cricketacademy.data.isActive
 import com.genalpha.cricketacademy.data.isSpecialTraining
@@ -6190,7 +6191,7 @@ private fun PlayerTimelineEvent(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    TimelineMetaChip(displayDate(item.eventDate), dotColor)
+                    TimelineMetaChip(displayTimelineStamp(item.createdAt, item.eventDate), dotColor)
                     TimelineMetaChip(item.changedBy.orEmpty().ifBlank { "System" }, dotColor)
                 }
                 if (!item.details.isNullOrBlank()) {

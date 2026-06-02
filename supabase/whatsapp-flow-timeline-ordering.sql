@@ -11,13 +11,15 @@ as $$
     when p_event_type = 'reminder_send_failed' then 'WhatsApp reminder failed'
     when p_event_type = 'reminder_message_status' then
       case
-        when p_status in ('delivered', 'read') then 'Reminder delivered'
+        when p_status = 'delivered' then 'Reminder delivered'
+        when p_status = 'read' then 'Reminder read'
         when p_status = 'failed' then 'Reminder failed'
         else ''
       end
     when p_event_type = 'whatsapp_message_status' then
       case
-        when p_status in ('delivered', 'read') then 'WhatsApp message delivered'
+        when p_status = 'delivered' then 'WhatsApp message delivered'
+        when p_status = 'read' then 'WhatsApp message read'
         when p_status = 'failed' then 'WhatsApp message failed'
         else ''
       end

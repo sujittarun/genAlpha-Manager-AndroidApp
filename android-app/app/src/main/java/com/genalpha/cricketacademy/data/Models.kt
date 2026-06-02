@@ -5,6 +5,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 private const val JERSEY_PAIR_REVENUE = 750.0
@@ -614,6 +615,35 @@ fun displayDate(value: String?): String {
     }
 }
 
+fun displayTimelineStamp(createdAt: String?, eventDate: String?): String {
+    val dateSource = eventDate?.takeIf { it.isNotBlank() }
+        ?: createdAt?.takeIf { it.isNotBlank() }?.take(10)
+    val dateLabel = dateSource?.let { displayDate(it) } ?: "No date"
+    val timeLabel = parseTimelineDateTime(createdAt)?.let { DISPLAY_TIME_FORMAT.format(it) }.orEmpty()
+    return if (timeLabel.isBlank()) dateLabel else "$dateLabel • $timeLabel"
+}
+
+private fun parseTimelineDateTime(value: String?): Date? {
+    if (value.isNullOrBlank() || value.length < 19) return null
+    val patterns = listOf(
+        "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+        "yyyy-MM-dd'T'HH:mm:ssXXX",
+        "yyyy-MM-dd HH:mm:ss.SSSXXX",
+        "yyyy-MM-dd HH:mm:ssXXX",
+        "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+        "yyyy-MM-dd'T'HH:mm:ss'Z'",
+    )
+    return patterns.firstNotNullOfOrNull { pattern ->
+        try {
+            SimpleDateFormat(pattern, Locale.US).apply {
+                if (pattern.endsWith("'Z'")) timeZone = TimeZone.getTimeZone("UTC")
+            }.parse(value)
+        } catch (_: Exception) {
+            null
+        }
+    }
+}
+
 fun daysBetweenIso(startValue: String?, endValue: String?): Int {
     return try {
         val start = ISO_DATE_FORMAT.parse(startValue?.take(10).orEmpty()) ?: return 0
@@ -749,3 +779,6 @@ private fun stripTime(date: Date): Date {
 
 private val ISO_DATE_FORMAT = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 private val DISPLAY_DATE_FORMAT = SimpleDateFormat("dd MMM yyyy", Locale("en", "IN"))
+private val DISPLAY_TIME_FORMAT = SimpleDateFormat("HH:mm:ss", Locale("en", "IN")).apply {
+    timeZone = TimeZone.getTimeZone("Asia/Kolkata")
+}

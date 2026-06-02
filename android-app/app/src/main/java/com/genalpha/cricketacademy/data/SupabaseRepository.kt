@@ -892,12 +892,14 @@ class SupabaseRepository(
     private fun whatsappFlowTitle(eventType: String, status: String): String = when (eventType) {
         "reminder_created" -> "WhatsApp reminder prepared"
         "reminder_message_status" -> when (status) {
-            "delivered", "read" -> "Reminder delivered"
+            "delivered" -> "Reminder delivered"
+            "read" -> "Reminder read"
             "failed" -> "Reminder failed"
             else -> ""
         }
         "whatsapp_message_status" -> when (status) {
-            "delivered", "read" -> "WhatsApp message delivered"
+            "delivered" -> "WhatsApp message delivered"
+            "read" -> "WhatsApp message read"
             "failed" -> "WhatsApp message failed"
             else -> ""
         }
@@ -933,6 +935,9 @@ class SupabaseRepository(
         val successfulDateKeys = items.mapNotNull { item ->
             val text = "${item.eventType} ${item.title} ${item.details.orEmpty()}".lowercase()
             val successful = text.contains("reminder delivered") ||
+                text.contains("reminder read") ||
+                text.contains("whatsapp message delivered") ||
+                text.contains("whatsapp message read") ||
                 text.contains("parent selected renewal plan") ||
                 text.contains("payment link sent") ||
                 text.contains("parent tapped pay now") ||

@@ -47,8 +47,9 @@ const PLAN_MONTHS: Record<string, number> = {
 const HEALTHY_ECOSYSTEM_ERROR_CODE = "131049";
 const HEALTHY_ECOSYSTEM_RETRY_MINUTES = [5, 30, 60];
 const DEFAULT_REMINDER_MAX_RETRIES = HEALTHY_ECOSYSTEM_RETRY_MINUTES.length;
-const RETRY_WORKER_LIMIT = 100;
+const RETRY_WORKER_LIMIT = 20;
 const RETRY_RECOVERY_MINUTES = 10;
+const FAILED_RETRY_RECOVERY_MINUTES = 12 * 60;
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -1109,6 +1110,9 @@ async function processDueReminderRetries(limit = RETRY_WORKER_LIMIT) {
   const recoveryCutoffIso = new Date(
     Date.now() - RETRY_RECOVERY_MINUTES * 60 * 1000,
   ).toISOString();
+  const failedRecoveryCutoffIso = new Date(
+    Date.now() - FAILED_RETRY_RECOVERY_MINUTES * 60 * 1000,
+  ).toISOString();
   let events: any[] = [];
   try {
     const dueScheduled = await rest(
@@ -1124,10 +1128,28 @@ async function processDueReminderRetries(limit = RETRY_WORKER_LIMIT) {
         encodeURIComponent(recoveryCutoffIso)
       }&order=last_retry_at.asc&limit=${limit}`,
     );
+    const recentRetryableFailures = await rest(
+      `reminder_events?select=*&status=in.(failed,send_failed,delivery_failed,undelivered)&failed_at=gte.${
+        encodeURIComponent(failedRecoveryCutoffIso)
+      }&delivered_at=is.null&read_at=is.null&order=failed_at.asc&limit=${limit}`,
+    );
+    const recoverableFailures = (recentRetryableFailures || []).filter((event: any) => {
+      const retryCount = Number(event.retry_count || 0);
+      const maxRetryCount = Math.max(
+        1,
+        Number(event.max_retry_count || DEFAULT_REMINDER_MAX_RETRIES),
+      );
+      if (retryCount >= maxRetryCount) return false;
+      const errorPayload = parseProviderError(
+        event.meta_error || { message: event.retry_reason || "" },
+      );
+      return isHealthyEcosystemError(errorPayload);
+    });
     events = dedupeById([
       ...(dueScheduled || []),
       ...(scheduledWithoutDate || []),
       ...(interruptedQueuedRetries || []),
+      ...recoverableFailures,
     ]).slice(0, limit);
   } catch (_error) {
     return [];
@@ -1217,6 +1239,7 @@ async function processDueReminderRetries(limit = RETRY_WORKER_LIMIT) {
         });
       }
     }
+    await new Promise((resolve) => setTimeout(resolve, 350));
   }
   return results;
 }
