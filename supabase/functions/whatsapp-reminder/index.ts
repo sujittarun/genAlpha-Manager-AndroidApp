@@ -820,6 +820,46 @@ async function sendTemplateMessage(
   return body;
 }
 
+async function sendTemplatePayload(
+  to: string,
+  templateName: string,
+  components: Record<string, unknown>[] = [],
+) {
+  const token = env("META_WHATSAPP_TOKEN");
+  const phoneNumberId = env("META_WHATSAPP_PHONE_NUMBER_ID");
+  const languageCode = env("META_WHATSAPP_TEMPLATE_LANGUAGE") || "en";
+  if (!token || !phoneNumberId) {
+    throw new Error("Meta WhatsApp secrets are missing.");
+  }
+
+  const response = await fetch(
+    `https://graph.facebook.com/v20.0/${phoneNumberId}/messages`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to,
+        type: "template",
+        template: {
+          name: templateName,
+          language: { code: languageCode },
+          components,
+        },
+      }),
+    },
+  );
+
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(JSON.stringify(body?.error || body));
+  }
+  return body;
+}
+
 function parseProviderError(input: unknown): Record<string, any> {
   if (!input) return {};
   if (input instanceof Error) {
@@ -1357,17 +1397,6 @@ async function createUpiPaymentLink(
   });
 }
 
-function managerPaymentAlertText(student: any, hasProof: boolean, proofStored = true) {
-  const proofText = hasProof
-    ? (proofStored ? "Submitted" : "Submitted, but proof file could not be attached")
-    : "Not submitted yet";
-  return [
-    "Vempati Sandeep - Proud owner of Gen Alpha Academy - Payment vochindi babu chusko.",
-    `Player: ${student?.name || "Unknown player"}`,
-    `Proof: ${proofText}`,
-  ].join("\n");
-}
-
 async function sendManagerPaymentAlert(
   reminderEvent: any,
   options: { proofMedia?: any; forceWithProof?: boolean; forceWithoutProof?: boolean; source?: string } = {},
@@ -1394,26 +1423,39 @@ async function sendManagerPaymentAlert(
     ? await fetchStudent(String(reminderEvent.student_id))
     : { name: "Unknown player" };
   const to = normalizePhone(MANAGER_PAYMENT_ALERT_PHONE);
-  const text = managerPaymentAlertText(student, proofWasSubmitted, hasProof);
+  const playerName = String(student?.name || "Unknown player");
   const sentAt = new Date().toISOString();
-  const textResponse = await sendTextMessage(to, text);
-  let proofResponse = null;
   let proofSignedUrl = "";
+  const bodyComponent = {
+    type: "body",
+    parameters: [
+      { type: "text", text: playerName },
+    ],
+  };
 
-  if (hasProof) {
+  if (proofWasSubmitted && hasProof) {
     proofSignedUrl = await createPaymentProofSignedUrl(proofBucket, proofPath);
-    if (proofSignedUrl) {
-      const mimeType = String(proofMedia?.mime_type || "");
-      const mediaKind = mimeType.includes("pdf") ? "document" : "image";
-      proofResponse = await sendMediaMessage(
-        to,
-        mediaKind,
-        proofSignedUrl,
-        text,
-        `${student?.name || "payment"}-proof`,
-      );
-    }
   }
+  const shouldUseProofTemplate = proofWasSubmitted && Boolean(proofSignedUrl);
+  const templateName = shouldUseProofTemplate
+    ? (env("META_MANAGER_PAYMENT_ALERT_WITH_PROOF_TEMPLATE_NAME") || "manager_payment_alert_with_proof")
+    : (env("META_MANAGER_PAYMENT_ALERT_TEMPLATE_NAME") || "manager_payment_alert");
+  const components = shouldUseProofTemplate
+    ? [
+      {
+        type: "header",
+        parameters: [
+          {
+            type: "image",
+            image: { link: proofSignedUrl },
+          },
+        ],
+      },
+      bodyComponent,
+    ]
+    : [bodyComponent];
+
+  const templateResponse = await sendTemplatePayload(to, templateName, components);
 
   await updateReminderEvent(reminderEvent.id, {
     manager_payment_alert_status: proofWasSubmitted ? "sent_with_proof" : "sent_without_proof",
@@ -1421,9 +1463,9 @@ async function sendManagerPaymentAlert(
     manager_payment_alert_error: null,
     manager_payment_alert_meta_response: {
       source: options.source || "system",
+      template_name: templateName,
       proof_path: proofPath,
-      text_response: textResponse,
-      proof_response: proofResponse,
+      template_response: templateResponse,
       proof_signed_url_created: Boolean(proofSignedUrl),
       sent_at: sentAt,
     },
@@ -1436,10 +1478,10 @@ async function sendManagerPaymentAlert(
       : "manager_payment_alert_without_proof_sent",
     direction: "outbound",
     parent_phone: MANAGER_PAYMENT_ALERT_PHONE,
-    message_kind: hasProof ? "manager_alert_with_proof" : "manager_alert",
-    message_body: text,
-    message_id: String(textResponse?.messages?.[0]?.id || proofResponse?.messages?.[0]?.id || ""),
-    status: String(textResponse?.messages?.[0]?.id || proofResponse?.messages?.[0]?.id || "")
+    message_kind: proofWasSubmitted ? "manager_alert_with_proof_template" : "manager_alert_template",
+    message_body: `${templateName}: ${playerName}`,
+    message_id: String(templateResponse?.messages?.[0]?.id || ""),
+    status: String(templateResponse?.messages?.[0]?.id || "")
       ? "accepted"
       : "sent",
     status_at: sentAt,
@@ -1447,13 +1489,14 @@ async function sendManagerPaymentAlert(
     proof_bucket: proofBucket,
     proof_path: proofPath,
     provider_payload: {
-      text_response: textResponse,
-      proof_response: proofResponse,
+      template_name: templateName,
+      template_response: templateResponse,
+      proof_signed_url_created: Boolean(proofSignedUrl),
     },
     created_by: options.source || "system",
   });
 
-  return { sent: true, hasProof, textResponse, proofResponse };
+  return { sent: true, hasProof, templateName, templateResponse };
 }
 
 async function processDueManagerPaymentAlerts(limit = 20) {
