@@ -26,7 +26,6 @@ const ACADEMY_PAYMENT_BANK = "Kotak Mahindra Bank";
 const PAYMENT_PAGE_URL = "https://genalphaacademy.in/pay.html";
 const MANAGER_PAYMENT_ALERT_PHONE = "9985822772";
 const MANAGER_PAYMENT_ALERT_DELAY_MINUTES = 5;
-const ENABLE_AUTO_ADMISSION_NUDGES = env("ENABLE_AUTO_ADMISSION_NUDGES") === "true";
 
 const PLAN_OPTIONS = ["monthly", "quarterly", "halfyearly", "need_help"];
 const PLAN_LABELS: Record<string, string> = {
@@ -2780,111 +2779,6 @@ async function handleAutoSchedule() {
       results.push(sendTask);
       // Small stagger to not hit Meta all at once, but don't await the whole thing
       await new Promise((r) => setTimeout(r, 200)); 
-    }
-  }
-
-  // --- Automated Admission Reminders (Milestone Nudges) ---
-  // This sends direct WhatsApp messages to admission applicants, so keep it
-  // off unless the project explicitly enables it.
-  const pendingAdmissions = ENABLE_AUTO_ADMISSION_NUDGES
-    ? await rest("admissions?review_status=eq.pending&fees_paid=is.false")
-    : [];
-  
-  for (const admission of pendingAdmissions) {
-    const createdDate = admission.created_at.slice(0, 10);
-    const daysSince = getDaysSinceDate(createdDate);
-    const lastNudgeAt = admission.last_nudge_at ? new Date(admission.last_nudge_at) : null;
-    const isRecentlyNudged = lastNudgeAt && (new Date().getTime() - lastNudgeAt.getTime() < 48 * 60 * 60 * 1000);
-
-    if (isRecentlyNudged) continue;
-    
-    let message = "";
-    let nudgeType = "";
-
-    if (daysSince >= 2 && daysSince < 5) {
-      nudgeType = "initial_nudge";
-      const amount = Number(admission.amount_paid > 0 ? admission.amount_paid : 4000);
-      const plan = "monthly";
-      const paymentPageUrl = `${PAYMENT_PAGE_URL}?a=${amount}&name=${encodeURIComponent(admission.applicant_name)}&p=${encodeURIComponent(plan)}&id=${admission.id}`;
-      message = `🏏 *Gen Alpha Cricket Academy - Registration Reminder*\n\nHi! Just a friendly nudge from Gen Alpha regarding *${admission.applicant_name}'s* registration. We'd love to have *${admission.applicant_name}* join the academy! The spot in the *${admission.time_slot}* slot is confirmed once the registration fee is paid here: ${paymentPageUrl}\n\nSee you on the field! 🏏`;
-    } else if (daysSince >= 5 && daysSince < 8) {
-      nudgeType = "followup_nudge";
-      const amount = Number(admission.amount_paid > 0 ? admission.amount_paid : 4000);
-      const plan = "monthly";
-      const paymentPageUrl = `${PAYMENT_PAGE_URL}?a=${amount}&name=${encodeURIComponent(admission.applicant_name)}&p=${encodeURIComponent(plan)}&id=${admission.id}`;
-      message = `🏏 *Gen Alpha Cricket Academy - Follow up*\n\nHi! Coach here—just following up on *${admission.applicant_name}'s* admission. We're excited to start training! Please complete the payment to secure the spot: ${paymentPageUrl}\n\nLet us know if you have any questions!`;
-    } else if (daysSince >= 8) {
-      nudgeType = "final_nudge";
-      const amount = Number(admission.amount_paid > 0 ? admission.amount_paid : 4000);
-      const plan = "monthly";
-      const paymentPageUrl = `${PAYMENT_PAGE_URL}?a=${amount}&name=${encodeURIComponent(admission.applicant_name)}&p=${encodeURIComponent(plan)}&id=${admission.id}`;
-      message = `🏏 *Gen Alpha Cricket Academy - Final Reminder*\n\nHi! We noticed *${admission.applicant_name}'s* registration is still pending. We can only hold the spot for a bit longer. If you're still interested, please complete the payment here: ${paymentPageUrl}\n\nLooking forward to having you! 🏏`;
-    }
-
-    if (message) {
-      results.push((async () => {
-        const to = normalizePhone(String(admission.parent_contact_no || admission.emergency_contact_no || ""));
-        try {
-          if (!to) {
-            await insertWhatsappFlowEvent({
-              admission_id: admission.id,
-              event_type: "admission_reminder_failed",
-              direction: "outbound",
-              parent_phone: "",
-              message_kind: "text",
-              message_body: message,
-              status: "send_failed",
-              failed_at: new Date().toISOString(),
-              error_message: "Parent contact number is missing.",
-              created_by: "system_auto",
-            });
-            return {
-              student: admission.applicant_name,
-              error: "Parent contact number is missing.",
-            };
-          }
-          const metaResponse = await sendTextMessage(to, message);
-          await insertWhatsappFlowEvent({
-            admission_id: admission.id,
-            event_type: "admission_reminder_sent",
-            direction: "outbound",
-            parent_phone: to.slice(-10),
-            message_kind: "text",
-            message_body: message,
-            message_id: String(metaResponse?.messages?.[0]?.id || ""),
-            status: String(metaResponse?.messages?.[0]?.id || "")
-              ? "accepted"
-              : "sent",
-            status_at: new Date().toISOString(),
-            sent_at: new Date().toISOString(),
-            provider_payload: metaResponse,
-            created_by: "system_auto",
-          });
-          await rest(`admissions?id=eq.${admission.id}`, {
-            method: "PATCH",
-            body: JSON.stringify({ 
-              last_nudge_at: new Date().toISOString(),
-              comments: (admission.comments || "") + `\n[Auto Nudge ${nudgeType} sent ${localIsoDate()}]`
-            })
-          });
-          return { student: admission.applicant_name, status: nudgeType };
-        } catch (e) {
-          await insertWhatsappFlowEvent({
-            admission_id: admission.id,
-            event_type: "admission_reminder_failed",
-            direction: "outbound",
-            parent_phone: to.slice(-10),
-            message_kind: "text",
-            message_body: message,
-            status: "send_failed",
-            failed_at: new Date().toISOString(),
-            error_message: (e as Error).message,
-            provider_payload: { message: (e as Error).message },
-            created_by: "system_auto",
-          });
-          return { student: admission.applicant_name, error: (e as Error).message };
-        }
-      })());
     }
   }
 

@@ -66,18 +66,14 @@ flowchart TD
   M7 --> A1
   A1 --> M8["MESSAGE: payment confirmation text to parent<br/>Only after manager confirms payment"]
 
-  ADG{"ENABLE_AUTO_ADMISSION_NUDGES = true?"} --> AD0["Pending admission form<br/>fees_paid = false"]
-  ADG -- "No" --> ADS["Do not send admission auto-nudges"]
-  AD0 --> AD1{"Days since admission form"}
-  AD1 -- "Day 2-4, if not nudged in last 48h" --> AD2["MESSAGE: Registration Reminder text<br/>initial_nudge + payment page link"]
-  AD1 -- "Day 5-7, if not nudged in last 48h" --> AD3["MESSAGE: Follow up text<br/>followup_nudge + payment page link"]
-  AD1 -- "Day 8+, if not nudged in last 48h" --> AD4["MESSAGE: Final Reminder text<br/>final_nudge + payment page link"]
+  AD0["Pending admission forms"] --> AD1["No automatic WhatsApp nudges from daily cron"]
+  AD1 --> AD2["Only explicit manager action may send an admission reminder"]
 
   classDef message fill:#e8f7ff,stroke:#0877a8,stroke-width:2px,color:#06283d;
   classDef retry fill:#fff4d6,stroke:#b7791f,stroke-width:2px,color:#3d2600;
   classDef fail fill:#fff0f0,stroke:#c53030,stroke-width:2px,color:#4a0505;
   classDef stop fill:#f3f4f6,stroke:#6b7280,color:#111827;
-  class M1,M2,M2R,M3,M3R,M4,M4R,M5,M6,M7,M8,AD2,AD3,AD4 message;
+  class M1,M2,M2R,M3,M3R,M4,M4R,M5,M6,M7,M8,AD2 message;
   class RT1,RTC retry;
   class F1 fail;
   class STOP stop;
@@ -102,13 +98,11 @@ flowchart TD
 - Manager payment alert with proof: sent 5 minutes after pending verification when proof media is available.
 - Payment confirmation text: sent to parent only after the manager confirms the payment in the app.
 
-### Admission Nudges
+### Admission Reminders
 
-- Initial registration reminder text: day 2-4 after admission form submission.
-- Follow-up registration text: day 5-7 after admission form submission.
-- Final registration reminder text: day 8+ after admission form submission.
-- Admission nudges are skipped if another nudge was sent in the last 48 hours.
-- Automated admission nudges are disabled unless `ENABLE_AUTO_ADMISSION_NUDGES=true` is set on the Edge Function.
+- The daily auto-reminder cron does not send admission-form WhatsApp nudges.
+- Admission reminders are only sent when a manager explicitly triggers `send_admission_reminder`.
+- This keeps parent messaging tied to a manager action while the normal player fee reminder flow stays automated.
 
 ## Retry Rules
 
