@@ -487,25 +487,25 @@ class AcademyViewModel(
         return when {
             "renewal reminder prepared" in eventText || "joining fee reminder prepared" in eventText -> null
             "reminder accepted" in eventText || " accepted " in eventText -> null
-            "confirmation" in eventText && "failed" !in eventText -> null
+            "confirmation" in eventText && "failed" !in eventText && "delivered" !in eventText && "read" !in eventText -> null
             "retry scheduled" in eventText -> null
             "whatsapp reminder prepared" in eventText || "status: queued" in eventText -> copy(
-                title = "WhatsApp reminder prepared",
+                title = "Fee reminder prepared",
                 details = "",
                 changedBy = changedBy.orEmpty().ifBlank { "System" },
             )
             "failed" in eventText || "send_failed" in eventText || "delivery_failed" in eventText -> copy(
-                title = "Reminder failed",
+                title = title.takeIf { it != "Reminder failed" } ?: "Fee reminder failed to parent",
                 details = extractReminderTimelineReason(details.orEmpty()).ifBlank { "Provider did not return a detailed reason." },
                 changedBy = changedBy.orEmpty().ifBlank { "WhatsApp" },
             )
             "read" in eventText -> copy(
-                title = if ("payment confirmation" in eventText) title else if ("whatsapp message" in eventText) "WhatsApp message read" else "Reminder read",
+                title = title.ifBlank { "WhatsApp follow-up read by parent" },
                 details = details.orEmpty(),
                 changedBy = changedBy.orEmpty().ifBlank { "WhatsApp" },
             )
             "delivered" in eventText -> copy(
-                title = if ("payment confirmation" in eventText) title else if ("whatsapp message" in eventText) "WhatsApp message delivered" else "Reminder delivered",
+                title = title.ifBlank { "WhatsApp follow-up delivered to parent" },
                 details = details.orEmpty(),
                 changedBy = changedBy.orEmpty().ifBlank { "WhatsApp" },
             )

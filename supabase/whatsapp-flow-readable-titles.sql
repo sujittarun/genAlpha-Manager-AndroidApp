@@ -1,37 +1,5 @@
--- Preserve exact outbound WhatsApp message text on provider status rows.
+-- Make WhatsApp timeline titles business-facing instead of provider-facing.
 -- Safe to run multiple times.
-
-with source_rows as (
-  select distinct on (status_row.id)
-    status_row.id,
-    source.message_body
-  from public.whatsapp_flow_events status_row
-  join public.whatsapp_flow_events source
-    on source.message_id = status_row.message_id
-   and source.message_body is not null
-   and btrim(source.message_body) <> ''
-  where status_row.event_type in (
-    'reminder_message_status',
-    'whatsapp_message_status',
-    'confirmation_message_status'
-  )
-    and status_row.status in ('delivered', 'read')
-    and status_row.message_id is not null
-    and btrim(status_row.message_id) <> ''
-    and (status_row.message_body is null or btrim(status_row.message_body) = '')
-  order by
-    status_row.id,
-    case
-      when source.direction = 'outbound' then 0
-      when source.status in ('accepted', 'sent') then 1
-      else 2
-    end,
-    source.created_at asc
-)
-update public.whatsapp_flow_events status_row
-set message_body = source_rows.message_body
-from source_rows
-where status_row.id = source_rows.id;
 
 create or replace function public.whatsapp_flow_event_title(p_event_type text, p_status text)
 returns text

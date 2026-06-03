@@ -793,7 +793,7 @@ class SupabaseRepository(
             .header("Authorization", "Bearer $token")
             .get()
             .build()
-        val whatsappFlowRequest = baseRequest("$baseUrl/rest/v1/whatsapp_flow_events?select=id,student_id,reminder_event_id,event_type,direction,status,status_at,accepted_at,delivered_at,read_at,failed_at,created_at,created_by,error_message,message_body,payment_plan,payment_amount,payment_months,payment_from_date,payment_to_date,proof_path&student_id=eq.$studentId&order=status_at.desc.nullslast&limit=40")
+        val whatsappFlowRequest = baseRequest("$baseUrl/rest/v1/whatsapp_flow_events?select=id,student_id,reminder_event_id,event_type,direction,status,status_at,accepted_at,delivered_at,read_at,failed_at,created_at,created_by,error_message,message_kind,message_body,payment_plan,payment_amount,payment_months,payment_from_date,payment_to_date,proof_path&student_id=eq.$studentId&order=status_at.desc.nullslast&limit=40")
             .header("Authorization", "Bearer $token")
             .get()
             .build()
@@ -847,7 +847,8 @@ class SupabaseRepository(
     private fun JSONObject.toWhatsappFlowTimelineItem(): StudentTimelineItem? {
         val eventType = optSafeString("event_type")
         val status = optSafeString("status")
-        val title = whatsappFlowTitle(eventType, status)
+        val messageKind = optSafeString("message_kind")
+        val title = whatsappFlowTitle(eventType, status, messageKind)
         if (title.isBlank() || !shouldShowWhatsappFlowEvent(eventType, status)) return null
         val createdAt = optSafeString("status_at")
             .ifBlank { optSafeString("read_at") }
@@ -879,6 +880,9 @@ class SupabaseRepository(
         }
         return eventType in setOf(
             "reminder_created",
+            "manager_payment_alert_with_proof_sent",
+            "manager_payment_alert_without_proof_sent",
+            "payment_verification_reply_sent",
             "parent_plan_selected",
             "payment_link_sent",
             "payment_attempted",
@@ -888,30 +892,54 @@ class SupabaseRepository(
         )
     }
 
-    private fun whatsappFlowTitle(eventType: String, status: String): String = when (eventType) {
-        "reminder_created" -> "WhatsApp reminder prepared"
+    private fun whatsappStatusTitle(status: String, delivered: String, read: String, failed: String): String = when (status) {
+        "delivered" -> delivered
+        "read" -> read
+        "failed" -> failed
+        else -> ""
+    }
+
+    private fun whatsappFlowTitle(eventType: String, status: String, messageKind: String): String = when (eventType) {
+        "reminder_created" -> "Fee reminder prepared"
         "reminder_message_status" -> when (status) {
-            "delivered" -> "Reminder delivered"
-            "read" -> "Reminder read"
-            "failed" -> "Reminder failed"
+            "delivered" -> "Fee reminder delivered to parent"
+            "read" -> "Fee reminder read by parent"
+            "failed" -> "Fee reminder failed to parent"
             else -> ""
         }
-        "whatsapp_message_status" -> when (status) {
-            "delivered" -> "WhatsApp message delivered"
-            "read" -> "WhatsApp message read"
-            "failed" -> "WhatsApp message failed"
-            else -> ""
+        "whatsapp_message_status" -> when {
+            messageKind.contains("manager_alert") -> whatsappStatusTitle(
+                status,
+                "Manager payment alert delivered",
+                "Manager payment alert read",
+                "Manager payment alert failed",
+            )
+            messageKind == "payment_link" -> whatsappStatusTitle(
+                status,
+                "Payment link delivered to parent",
+                "Payment link read by parent",
+                "Payment link failed to parent",
+            )
+            else -> whatsappStatusTitle(
+                status,
+                "WhatsApp follow-up delivered to parent",
+                "WhatsApp follow-up read by parent",
+                "WhatsApp follow-up failed to parent",
+            )
         }
         "confirmation_message_status" -> when (status) {
-            "delivered" -> "Payment confirmation delivered"
-            "read" -> "Payment confirmation read"
-            "failed" -> "Payment confirmation failed"
+            "delivered" -> "Payment confirmation delivered to parent"
+            "read" -> "Payment confirmation read by parent"
+            "failed" -> "Payment confirmation failed to parent"
             else -> ""
         }
-        "parent_plan_selected" -> "Parent selected renewal plan"
-        "payment_link_sent" -> "Payment link sent"
+        "manager_payment_alert_with_proof_sent" -> "Manager payment alert sent with proof"
+        "manager_payment_alert_without_proof_sent" -> "Manager payment alert sent"
+        "payment_verification_reply_sent" -> "Payment proof reply sent to parent"
+        "parent_plan_selected" -> "Parent selected payment plan"
+        "payment_link_sent" -> "Payment link sent to parent"
         "payment_attempted" -> "Parent tapped Pay Now"
-        "payment_pending_verification" -> "Parent payment proof received"
+        "payment_pending_verification" -> "Payment proof received from parent"
         "payment_confirmed" -> "Payment confirmed by academy"
         "parent_help_requested" -> "Parent requested help"
         else -> ""
@@ -924,6 +952,9 @@ class SupabaseRepository(
             } else {
                 row.optSafeString("message_body")
             }
+        }
+        if (eventType in setOf("payment_link_sent", "manager_payment_alert_with_proof_sent", "manager_payment_alert_without_proof_sent", "payment_verification_reply_sent")) {
+            return row.optSafeString("message_body")
         }
         return listOf(
             row.optSafeString("payment_plan").takeIf { it.isNotBlank() }?.let { "Plan: $it" },
@@ -941,11 +972,17 @@ class SupabaseRepository(
             val text = "${item.eventType} ${item.title} ${item.details.orEmpty()}".lowercase()
             val successful = text.contains("reminder delivered") ||
                 text.contains("reminder read") ||
+                text.contains("fee reminder delivered") ||
+                text.contains("fee reminder read") ||
                 text.contains("whatsapp message delivered") ||
                 text.contains("whatsapp message read") ||
+                text.contains("payment link delivered") ||
+                text.contains("payment link read") ||
+                text.contains("parent selected payment plan") ||
                 text.contains("parent selected renewal plan") ||
                 text.contains("payment link sent") ||
                 text.contains("parent tapped pay now") ||
+                text.contains("payment proof received from parent") ||
                 text.contains("parent payment proof received") ||
                 text.contains("payment confirmed")
             if (successful) item.createdAt.orEmpty().take(10).ifBlank { item.eventDate }.takeIf { it.isNotBlank() } else null
