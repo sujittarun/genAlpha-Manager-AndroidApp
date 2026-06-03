@@ -66,7 +66,9 @@ flowchart TD
   M7 --> A1
   A1 --> M8["MESSAGE: payment confirmation text to parent<br/>Only after manager confirms payment"]
 
-  AD0["Pending admission form<br/>fees_paid = false"] --> AD1{"Days since admission form"}
+  ADG{"ENABLE_AUTO_ADMISSION_NUDGES = true?"} --> AD0["Pending admission form<br/>fees_paid = false"]
+  ADG -- "No" --> ADS["Do not send admission auto-nudges"]
+  AD0 --> AD1{"Days since admission form"}
   AD1 -- "Day 2-4, if not nudged in last 48h" --> AD2["MESSAGE: Registration Reminder text<br/>initial_nudge + payment page link"]
   AD1 -- "Day 5-7, if not nudged in last 48h" --> AD3["MESSAGE: Follow up text<br/>followup_nudge + payment page link"]
   AD1 -- "Day 8+, if not nudged in last 48h" --> AD4["MESSAGE: Final Reminder text<br/>final_nudge + payment page link"]
@@ -106,6 +108,7 @@ flowchart TD
 - Follow-up registration text: day 5-7 after admission form submission.
 - Final registration reminder text: day 8+ after admission form submission.
 - Admission nudges are skipped if another nudge was sent in the last 48 hours.
+- Automated admission nudges are disabled unless `ENABLE_AUTO_ADMISSION_NUDGES=true` is set on the Edge Function.
 
 ## Retry Rules
 

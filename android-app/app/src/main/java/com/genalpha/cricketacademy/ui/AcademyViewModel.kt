@@ -500,13 +500,13 @@ class AcademyViewModel(
                 changedBy = changedBy.orEmpty().ifBlank { "WhatsApp" },
             )
             "read" in eventText -> copy(
-                title = if ("whatsapp message" in eventText) "WhatsApp message read" else "Reminder read",
-                details = "",
+                title = if ("payment confirmation" in eventText) title else if ("whatsapp message" in eventText) "WhatsApp message read" else "Reminder read",
+                details = details.orEmpty(),
                 changedBy = changedBy.orEmpty().ifBlank { "WhatsApp" },
             )
             "delivered" in eventText -> copy(
-                title = if ("whatsapp message" in eventText) "WhatsApp message delivered" else "Reminder delivered",
-                details = "",
+                title = if ("payment confirmation" in eventText) title else if ("whatsapp message" in eventText) "WhatsApp message delivered" else "Reminder delivered",
+                details = details.orEmpty(),
                 changedBy = changedBy.orEmpty().ifBlank { "WhatsApp" },
             )
             "message: template" in eventText -> copy(details = "")

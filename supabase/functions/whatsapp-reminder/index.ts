@@ -26,6 +26,7 @@ const ACADEMY_PAYMENT_BANK = "Kotak Mahindra Bank";
 const PAYMENT_PAGE_URL = "https://genalphaacademy.in/pay.html";
 const MANAGER_PAYMENT_ALERT_PHONE = "9985822772";
 const MANAGER_PAYMENT_ALERT_DELAY_MINUTES = 5;
+const ENABLE_AUTO_ADMISSION_NUDGES = env("ENABLE_AUTO_ADMISSION_NUDGES") === "true";
 
 const PLAN_OPTIONS = ["monthly", "quarterly", "halfyearly", "need_help"];
 const PLAN_LABELS: Record<string, string> = {
@@ -2362,6 +2363,8 @@ async function handleWebhook(payload: any) {
           direction: "provider",
           parent_phone: String(trackedReminder.parent_phone || ""),
           message_kind: isConfirmationMessage ? "confirmation_text" : "template",
+          message_body: trackedFlowEvent?.message_body ||
+            (isConfirmationMessage ? "" : trackedReminder.message_preview || ""),
           message_id: messageId,
           status,
           status_at: timestamp,
@@ -2781,9 +2784,11 @@ async function handleAutoSchedule() {
   }
 
   // --- Automated Admission Reminders (Milestone Nudges) ---
-  const pendingAdmissions = await rest(
-    "admissions?review_status=eq.pending&fees_paid=is.false",
-  );
+  // This sends direct WhatsApp messages to admission applicants, so keep it
+  // off unless the project explicitly enables it.
+  const pendingAdmissions = ENABLE_AUTO_ADMISSION_NUDGES
+    ? await rest("admissions?review_status=eq.pending&fees_paid=is.false")
+    : [];
   
   for (const admission of pendingAdmissions) {
     const createdDate = admission.created_at.slice(0, 10);

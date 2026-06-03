@@ -793,7 +793,7 @@ class SupabaseRepository(
             .header("Authorization", "Bearer $token")
             .get()
             .build()
-        val whatsappFlowRequest = baseRequest("$baseUrl/rest/v1/whatsapp_flow_events?select=id,student_id,reminder_event_id,event_type,direction,status,status_at,accepted_at,delivered_at,read_at,failed_at,created_at,created_by,error_message,payment_plan,payment_amount,payment_months,payment_from_date,payment_to_date,proof_path&student_id=eq.$studentId&order=status_at.desc.nullslast&limit=40")
+        val whatsappFlowRequest = baseRequest("$baseUrl/rest/v1/whatsapp_flow_events?select=id,student_id,reminder_event_id,event_type,direction,status,status_at,accepted_at,delivered_at,read_at,failed_at,created_at,created_by,error_message,message_body,payment_plan,payment_amount,payment_months,payment_from_date,payment_to_date,proof_path&student_id=eq.$studentId&order=status_at.desc.nullslast&limit=40")
             .header("Authorization", "Bearer $token")
             .get()
             .build()
@@ -874,7 +874,7 @@ class SupabaseRepository(
     }
 
     private fun shouldShowWhatsappFlowEvent(eventType: String, status: String): Boolean {
-        if (eventType == "reminder_message_status" || eventType == "whatsapp_message_status") {
+        if (eventType == "reminder_message_status" || eventType == "whatsapp_message_status" || eventType == "confirmation_message_status") {
             return status in setOf("delivered", "read", "failed")
         }
         return eventType in setOf(
@@ -902,6 +902,12 @@ class SupabaseRepository(
             "failed" -> "WhatsApp message failed"
             else -> ""
         }
+        "confirmation_message_status" -> when (status) {
+            "delivered" -> "Payment confirmation delivered"
+            "read" -> "Payment confirmation read"
+            "failed" -> "Payment confirmation failed"
+            else -> ""
+        }
         "parent_plan_selected" -> "Parent selected renewal plan"
         "payment_link_sent" -> "Payment link sent"
         "payment_attempted" -> "Parent tapped Pay Now"
@@ -912,11 +918,11 @@ class SupabaseRepository(
     }
 
     private fun whatsappFlowDetails(eventType: String, status: String, row: JSONObject): String {
-        if (eventType == "reminder_message_status" || eventType == "whatsapp_message_status") {
+        if (eventType == "reminder_message_status" || eventType == "whatsapp_message_status" || eventType == "confirmation_message_status") {
             return if (status == "failed") {
                 row.optSafeString("error_message").ifBlank { "Provider did not return a detailed reason." }
             } else {
-                ""
+                row.optSafeString("message_body")
             }
         }
         return listOf(
