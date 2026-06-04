@@ -49,6 +49,7 @@ const HEALTHY_ECOSYSTEM_RETRY_MINUTES = [5, 30, 60];
 const DEFAULT_REMINDER_MAX_RETRIES = HEALTHY_ECOSYSTEM_RETRY_MINUTES.length;
 const RETRY_WORKER_LIMIT = 20;
 const RETRY_RECOVERY_MINUTES = 10;
+const MANUAL_FOLLOWUP_OVERDUE_DAYS = 15;
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -2692,11 +2693,23 @@ async function handleAutoSchedule() {
         isRenewalDay = true;
         shouldSend = true;
       }
+    } else if (overdueDays >= MANUAL_FOLLOWUP_OVERDUE_DAYS) {
+      // Stop the existing daily reminder flow after 15 overdue days and hand it to staff.
+      if (lastFollowUp?.id && lastFollowUp?.manual_followup_required !== true) {
+        await updateReminderEvent(lastFollowUp.id, {
+          status: "manual_followup",
+          manual_followup_required: true,
+          next_retry_at: null,
+          retry_reason: `Overdue ${overdueDays} days. Automatic reminders paused; manual follow-up required.`,
+        });
+      }
+      console.log(`Skipping ${student.name}: overdue ${overdueDays} days, manual follow-up required.`);
+      continue;
     } else if (overdueDays === 5) {
       // 5-day overdue nudge
       shouldSend = true;
     } else if (overdueDays >= 7) {
-      // Daily nudge from Day 7 onwards
+      // Daily nudge from Day 7 until the manual follow-up cutoff.
       shouldSend = true;
     }
 

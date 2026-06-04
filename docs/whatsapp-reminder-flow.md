@@ -20,12 +20,14 @@ flowchart TD
 
   J0 -- "Due day: rawDaysSince = 0" --> M2["MESSAGE: utility_for_fee_reminder<br/>Joining fee due today<br/>Body: Player + Admission + 1st Month"]
   J0 -- "Overdue day 5" --> M3["MESSAGE: utility_for_fee_reminder<br/>5-day joining overdue nudge"]
-  J0 -- "Overdue day 7+" --> M4["MESSAGE: utility_for_fee_reminder<br/>Daily joining overdue nudge"]
+  J0 -- "Overdue day 7-14" --> M4["MESSAGE: utility_for_fee_reminder<br/>Daily joining overdue nudge"]
+  J0 -- "Overdue day 15+" --> MFJ["Manual follow-up<br/>Auto reminders paused"]
 
   R0 -- "2 days before: rawDaysSince = -2" --> M1["MESSAGE: utility_fee_headsup<br/>Soft heads-up before renewal"]
   R0 -- "Renewal day: rawDaysSince = 0" --> M2R["MESSAGE: utility_renewal_day<br/>Renewal due today"]
   R0 -- "Overdue day 5" --> M3R["MESSAGE: utility_for_fee_reminder<br/>5-day overdue nudge"]
-  R0 -- "Overdue day 7+" --> M4R["MESSAGE: utility_for_fee_reminder<br/>Daily overdue nudge"]
+  R0 -- "Overdue day 7-14" --> M4R["MESSAGE: utility_for_fee_reminder<br/>Daily overdue nudge"]
+  R0 -- "Overdue day 15+" --> MFR["Manual follow-up<br/>Auto reminders paused"]
 
   M1 --> S0["Insert reminder_events + whatsapp_flow_events: reminder_created"]
   M2 --> S0
@@ -34,6 +36,8 @@ flowchart TD
   M3R --> S0
   M4 --> S0
   M4R --> S0
+  MFJ --> STOP
+  MFR --> STOP
 
   S0 --> S1{"Dry run or WhatsApp disabled?"}
   S1 -- "Yes" --> S2["Log dry_run and stop"]
@@ -76,7 +80,7 @@ flowchart TD
   class M1,M2,M2R,M3,M3R,M4,M4R,M5,M6,M7,M8,AD2 message;
   class RT1,RTC retry;
   class F1 fail;
-  class STOP stop;
+  class STOP,MFJ,MFR stop;
 ```
 
 ## Message Schedule
@@ -87,7 +91,8 @@ flowchart TD
 - `utility_renewal_day`: sent on renewal due day.
 - `utility_for_fee_reminder`: sent on joining-fee due day.
 - `utility_for_fee_reminder`: sent again on overdue day 5.
-- `utility_for_fee_reminder`: sent daily from overdue day 7 onward.
+- `utility_for_fee_reminder`: sent daily from overdue day 7 through overdue day 14.
+- Overdue day 15+ stops automatic reminders and marks the player for manual follow-up.
 - Same player is skipped if any reminder was already sent today.
 - Joining-fee reminders are skipped if the joining payment already has an amount/reference pending verification.
 

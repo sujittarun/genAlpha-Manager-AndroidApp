@@ -23,6 +23,12 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 - Kept `manager_payment_alert` and `manager_payment_alert_with_proof` unchanged because those Meta templates are already utility.
 - Removed discount wording from internal WhatsApp plan labels so reminders/payment notes use `1 Month`, `3 Months`, `6 Months`, and `Need Help`.
 
+### Manual Follow-Up Cutoff
+
+- Automatic joining-fee and renewal reminders now stop once a player reaches 15+ overdue days.
+- The existing reminder row is marked `manual_followup_required` when available, and web/Android fee chips show `Manual follow-up`.
+- Day 7 through day 14 still use the existing daily reminder branch.
+
 ## 2026-05-25
 
 ### Student Life Timeline and Attendance Calendar

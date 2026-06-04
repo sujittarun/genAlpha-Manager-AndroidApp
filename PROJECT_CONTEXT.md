@@ -193,7 +193,7 @@ Current utility reminder templates:
 
 - `utility_fee_headsup`: 2 days before a renewal date.
 - `utility_renewal_day`: renewal due day.
-- `utility_for_fee_reminder`: joining-fee due day, overdue day 5, and daily overdue day 7+.
+- `utility_for_fee_reminder`: joining-fee due day, overdue day 5, and daily overdue day 7 through day 14.
 - `manager_payment_alert`: manager payment alert without proof.
 - `manager_payment_alert_with_proof`: manager payment alert with proof image header.
 - Language: `en`.
@@ -203,10 +203,13 @@ Current utility reminder templates:
 - Buttons/options:
   - 1 Month, 3 Months, 6 Months, Need Help.
   - If Need Help: log it and provide manager/help flow.
-- Automatic scheduled reminders are NOT enabled yet. The user wants manual send only for now.
-- Reminder policy planned for future automation:
-  - reminders at overdue day 3, day 5, then daily until day 10.
-  - after day 10, highlight in apps with immediate follow-up banner.
+- Automatic fee reminders are enabled through the Supabase WhatsApp reminder scheduler; manual reminders can also be triggered from the app.
+- Reminder policy:
+  - heads-up 2 days before renewal.
+  - renewal/joining due day.
+  - overdue day 5.
+  - daily from overdue day 7 through overdue day 14.
+  - overdue day 15+ stops automatic reminders and shows `Manual follow-up` in web/Android.
 - Do not reintroduce dry-run UI/buttons unless requested. Current defaults in function are live/manual.
 - Always log reminder activity to DB/timeline when applicable.
 

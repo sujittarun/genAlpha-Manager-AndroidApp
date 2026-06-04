@@ -9,6 +9,7 @@ import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 private const val JERSEY_PAIR_REVENUE = 750.0
+private const val MANUAL_FOLLOWUP_OVERDUE_DAYS = 15
 
 private fun chargeableJerseyPairCount(pairCount: Int): Int =
     pairCount.coerceAtLeast(0)
@@ -435,11 +436,23 @@ fun Student.feeStatusLabel(): String = when {
 
 fun Student.feeStatusLabel(followUp: PaymentFollowUp?, payments: List<StudentPayment>): String = when {
     followUp?.isPendingVerification() == true || isPaymentPendingVerification() -> "Pending verification"
+    isManualFollowUpDue(followUp, payments) -> "Manual follow-up"
     followUp?.isRetryScheduled() == true && (isFeesPending() || isRenewalPending(payments)) -> "Retry scheduled"
     followUp?.isReminderFailed() == true && (isFeesPending() || isRenewalPending(payments)) -> "Reminder failed"
     followUp?.isReminderSent() == true && (isFeesPending() || isRenewalPending(payments)) -> "Reminder sent"
     feesPaid -> "Fees paid"
     else -> "Fees pending"
+}
+
+fun Student.isManualFollowUpDue(followUp: PaymentFollowUp?, payments: List<StudentPayment>): Boolean {
+    if (!isActive()) return false
+    if (followUp?.isPendingVerification() == true || isPaymentPendingVerification()) return false
+    if (!isFeesPending() && !isRenewalPending(payments)) return false
+    val dueDate = if (isFeesPending()) joinDate else nextRenewalCycleDate(payments)
+    val overdueDays = daysSince(dueDate).coerceAtLeast(0)
+    return followUp?.manualFollowupRequired == true ||
+        followUp?.reminderStatus == "manual_followup" ||
+        overdueDays >= MANUAL_FOLLOWUP_OVERDUE_DAYS
 }
 
 fun PendingAdmission.isPaymentPendingVerification(): Boolean =
@@ -505,6 +518,8 @@ fun Student.isRenewalPending(payments: List<StudentPayment>): Boolean {
 fun Student.renewalStatus(payments: List<StudentPayment>): String = when {
     discontinued -> "Tracking paused"
     isPaymentPendingVerification() -> "Payment pending verification"
+    (!feesPaid || isRenewalPending(payments)) &&
+        daysSince(if (!feesPaid) joinDate else paidThroughDate(payments)) >= MANUAL_FOLLOWUP_OVERDUE_DAYS -> "Manual follow-up"
     !feesPaid -> "Join fee pending"
     else -> renewalLabelForDueDate(paidThroughDate(payments))
 }

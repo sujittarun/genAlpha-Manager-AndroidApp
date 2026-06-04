@@ -5117,6 +5117,7 @@ private fun RosterRow(
     val feeVerificationTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
     val feeReminderTone = themedBadgeTone(Color(0xFFEAF2FF), BrandBlueDeep, DarkInfoContainer, DarkInfoText)
     val feeFailedTone = themedBadgeTone(Color(0xFFEAEFF6), BrandRed, DarkMutedContainer, BrandRed)
+    val feeManualTone = themedBadgeTone(Color(0xFFEAEFF6), Color(0xFF9A5B00), DarkMutedContainer, DarkWarningText)
     val renewalOkTone = themedBadgeTone(Color(0xFFEAF8F2), BrandGreen, DarkSuccessContainer, DarkSuccessText)
     val renewalPendingTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
     val feeLabel = student.feeStatusLabel(paymentFollowUp, payments)
@@ -5402,6 +5403,7 @@ private fun RosterRow(
                         Badge(
                             label = feeLabel,
                             container = when {
+                                feeLabel == "Manual follow-up" -> feeManualTone.container
                                 feeLabel == "Reminder failed" -> feeFailedTone.container
                                 feeLabel == "Retry scheduled" -> feeReminderTone.container
                                 feeLabel == "Reminder sent" -> feeReminderTone.container
@@ -5410,6 +5412,7 @@ private fun RosterRow(
                                 else -> feePendingTone.container
                             },
                             color = when {
+                                feeLabel == "Manual follow-up" -> feeManualTone.text
                                 feeLabel == "Reminder failed" -> feeFailedTone.text
                                 feeLabel == "Retry scheduled" -> feeReminderTone.text
                                 feeLabel == "Reminder sent" -> feeReminderTone.text
@@ -5655,6 +5658,7 @@ private fun PlayerDetailSheet(
     val renewalPendingTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
     val feeReminderTone = themedBadgeTone(Color(0xFFEAF2FF), BrandBlueDeep, DarkInfoContainer, DarkInfoText)
     val feeFailedTone = themedBadgeTone(Color(0xFFEAEFF6), BrandRed, DarkMutedContainer, BrandRed)
+    val feeManualTone = themedBadgeTone(Color(0xFFEAEFF6), Color(0xFF9A5B00), DarkMutedContainer, DarkWarningText)
     val feeVerificationTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
     val paymentRows = remember(student, payments) { buildPlayerPaymentRows(student, payments) }
     val totalPaid = paymentRows.sumOf { it.amount }
@@ -5788,6 +5792,7 @@ private fun PlayerDetailSheet(
                 Badge(
                     feeLabel,
                     when (feeLabel) {
+                        "Manual follow-up" -> feeManualTone.container
                         "Reminder failed" -> feeFailedTone.container
                         "Retry scheduled" -> feeReminderTone.container
                         "Reminder sent" -> feeReminderTone.container
@@ -5796,6 +5801,7 @@ private fun PlayerDetailSheet(
                         else -> renewalPendingTone.container
                     },
                     when (feeLabel) {
+                        "Manual follow-up" -> feeManualTone.text
                         "Reminder failed" -> feeFailedTone.text
                         "Retry scheduled" -> feeReminderTone.text
                         "Reminder sent" -> feeReminderTone.text
