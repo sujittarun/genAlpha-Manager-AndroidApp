@@ -18,14 +18,14 @@ flowchart TD
   C -- "Joining fee unpaid" --> J0{"Join date due?"}
   C -- "Renewal" --> R0{"Renewal date state"}
 
-  J0 -- "Due day: rawDaysSince = 0" --> M2["MESSAGE: gen_alpha_fee_reminder<br/>Joining fee due today<br/>Body: Player + Admission + 1st Month"]
-  J0 -- "Overdue day 5" --> M3["MESSAGE: gen_alpha_fee_reminder<br/>5-day joining overdue nudge"]
-  J0 -- "Overdue day 7+" --> M4["MESSAGE: gen_alpha_fee_reminder<br/>Daily joining overdue nudge"]
+  J0 -- "Due day: rawDaysSince = 0" --> M2["MESSAGE: utility_for_fee_reminder<br/>Joining fee due today<br/>Body: Player + Admission + 1st Month"]
+  J0 -- "Overdue day 5" --> M3["MESSAGE: utility_for_fee_reminder<br/>5-day joining overdue nudge"]
+  J0 -- "Overdue day 7+" --> M4["MESSAGE: utility_for_fee_reminder<br/>Daily joining overdue nudge"]
 
-  R0 -- "2 days before: rawDaysSince = -2" --> M1["MESSAGE: gen_alpha_fee_heads_up<br/>Soft heads-up before renewal"]
-  R0 -- "Renewal day: rawDaysSince = 0" --> M2R["MESSAGE: gen_alpha_fee_reminder<br/>Renewal due today"]
-  R0 -- "Overdue day 5" --> M3R["MESSAGE: gen_alpha_fee_reminder<br/>5-day overdue nudge"]
-  R0 -- "Overdue day 7+" --> M4R["MESSAGE: gen_alpha_fee_reminder<br/>Daily overdue nudge"]
+  R0 -- "2 days before: rawDaysSince = -2" --> M1["MESSAGE: utility_fee_headsup<br/>Soft heads-up before renewal"]
+  R0 -- "Renewal day: rawDaysSince = 0" --> M2R["MESSAGE: utility_renewal_day<br/>Renewal due today"]
+  R0 -- "Overdue day 5" --> M3R["MESSAGE: utility_for_fee_reminder<br/>5-day overdue nudge"]
+  R0 -- "Overdue day 7+" --> M4R["MESSAGE: utility_for_fee_reminder<br/>Daily overdue nudge"]
 
   M1 --> S0["Insert reminder_events + whatsapp_flow_events: reminder_created"]
   M2 --> S0
@@ -83,10 +83,11 @@ flowchart TD
 
 ### Fee Reminders
 
-- `gen_alpha_fee_heads_up`: sent 2 days before a renewal date. Not sent for joining-fee dues.
-- `gen_alpha_fee_reminder`: sent on due day for renewal and joining fee.
-- `gen_alpha_fee_reminder`: sent again on overdue day 5.
-- `gen_alpha_fee_reminder`: sent daily from overdue day 7 onward.
+- `utility_fee_headsup`: sent 2 days before a renewal date. Not sent for joining-fee dues.
+- `utility_renewal_day`: sent on renewal due day.
+- `utility_for_fee_reminder`: sent on joining-fee due day.
+- `utility_for_fee_reminder`: sent again on overdue day 5.
+- `utility_for_fee_reminder`: sent daily from overdue day 7 onward.
 - Same player is skipped if any reminder was already sent today.
 - Joining-fee reminders are skipped if the joining payment already has an amount/reference pending verification.
 

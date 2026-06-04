@@ -30,8 +30,8 @@ const MANAGER_PAYMENT_ALERT_DELAY_MINUTES = 5;
 const PLAN_OPTIONS = ["monthly", "quarterly", "halfyearly", "need_help"];
 const PLAN_LABELS: Record<string, string> = {
   monthly: "1 Month",
-  quarterly: "3 Months (5% off)",
-  halfyearly: "6 Months (10% off)",
+  quarterly: "3 Months",
+  halfyearly: "6 Months",
   need_help: "Need Help",
 };
 const PLAN_AMOUNTS: Record<string, number> = {
@@ -722,6 +722,40 @@ function buildReminderDueText(reminderType: string, dueDate: string) {
   return dateFormatted;
 }
 
+function resolveTemplateName(
+  envName: string,
+  utilityTemplateName: string,
+  legacyTemplateNames: string[] = [],
+) {
+  const configured = env(envName);
+  if (!configured || legacyTemplateNames.includes(configured)) {
+    return utilityTemplateName;
+  }
+  return configured;
+}
+
+function reminderTemplateName(reminderType: string) {
+  if (reminderType === "heads_up") {
+    return resolveTemplateName(
+      "META_WHATSAPP_HEADS_UP_TEMPLATE_NAME",
+      "utility_fee_headsup",
+      ["gen_alpha_fee_heads_up"],
+    );
+  }
+  if (reminderType === "renewal_day") {
+    return resolveTemplateName(
+      "META_WHATSAPP_RENEWAL_DAY_TEMPLATE_NAME",
+      "utility_renewal_day",
+      ["gen_alpha_renewal_day"],
+    );
+  }
+  return resolveTemplateName(
+    "META_WHATSAPP_TEMPLATE_NAME",
+    "utility_for_fee_reminder",
+    ["gen_alpha_fee_reminder"],
+  );
+}
+
 function displayDate(value: string): string {
   const [year, month, day] = String(value || "").split("-").map(Number);
   if (!year || !month || !day) return String(value || "");
@@ -754,9 +788,7 @@ async function sendTemplateMessage(
   const token = env("META_WHATSAPP_TOKEN");
   const phoneNumberId = env("META_WHATSAPP_PHONE_NUMBER_ID");
   const isHeadsUp = reminderType === "heads_up";
-  const templateName = isHeadsUp
-    ? (env("META_WHATSAPP_HEADS_UP_TEMPLATE_NAME") || "gen_alpha_fee_heads_up")
-    : (env("META_WHATSAPP_TEMPLATE_NAME") || "gen_alpha_fee_reminder");
+  const templateName = reminderTemplateName(reminderType);
   const languageCode = env("META_WHATSAPP_TEMPLATE_LANGUAGE") || "en";
   if (!token || !phoneNumberId) {
     throw new Error("Meta WhatsApp secrets are missing.");
@@ -2730,7 +2762,7 @@ async function handleAutoSchedule() {
             let messageBody = event.message_preview || "";
             if (reminderType === "heads_up") {
               messageBody =
-                `Template gen_alpha_fee_heads_up: ${student.name || "Player"} / ${
+                `Template ${reminderTemplateName(reminderType)}: ${student.name || "Player"} / ${
                   buildReminderDueText(reminderType, dueDate)
                 }`;
             }

@@ -189,17 +189,17 @@ Renewal logic:
 
 Provider selected: Meta WhatsApp Cloud API direct, not Twilio/WATI/360Dialog.
 
-Current reminder template:
+Current utility reminder templates:
 
-- Template name: `gen_alpha_fee_reminder`.
+- `utility_fee_headsup`: 2 days before a renewal date.
+- `utility_renewal_day`: renewal due day.
+- `utility_for_fee_reminder`: joining-fee due day, overdue day 5, and daily overdue day 7+.
+- `manager_payment_alert`: manager payment alert without proof.
+- `manager_payment_alert_with_proof`: manager payment alert with proof image header.
 - Language: `en`.
-- Body has exactly 2 variables:
+- Parent fee reminder bodies have exactly 2 variables:
   - `{{1}}` parent/player display name.
-  - `{{2}}` due date only, e.g. `5th May`. Do not send text like "joining fee due from 2026-05-05".
-- Template text:
-  - `Hi {{1}}, your Gen Alpha Cricket Academy fee is due from {{2}}.`
-  - Then it asks parent to choose renewal plan: 1 Month, 3 Months, 6 Months.
-  - Need Help button is supported.
+  - `{{2}}` utility-safe due date/fee period text, e.g. `5th May`.
 - Buttons/options:
   - 1 Month, 3 Months, 6 Months, Need Help.
   - If Need Help: log it and provide manager/help flow.
@@ -360,7 +360,6 @@ Android build/test commands:
 - AI/OCR upload/import for old handwritten admission forms is removed/paused. Do not re-add "AI Assist Upload old admission form" unless the user asks.
 - Scan/upload document can be kept only as plain attachment if requested, but OCR/AI extraction was not good enough without paid/strong AI.
 - Razorpay is paused/not integrated live.
-- Automatic WhatsApp reminders are paused; manual send only.
 - Do not bring back raw OCR text UI.
 - Do not show parent-facing manager/internal helper text like "Manager tools stay locked" on public admission page.
 

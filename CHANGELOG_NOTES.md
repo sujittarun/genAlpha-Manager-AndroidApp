@@ -1,6 +1,6 @@
 # Gen Alpha Manager Changelog Notes
 
-Last updated: 2026-05-25
+Last updated: 2026-06-04
 
 This file records meaningful project changes and decisions so future Codex sessions can understand recent work without rereading the full chat. It is not a release changelog for users; it is a developer/manager memory log.
 
@@ -12,6 +12,16 @@ Use this file when:
 - A future agent needs to understand why a design or business rule exists.
 
 For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
+
+## 2026-06-04
+
+### WhatsApp Utility Template Mapping
+
+- Replaced fee heads-up template fallback with `utility_fee_headsup`.
+- Replaced generic fee reminder template fallback with `utility_for_fee_reminder`.
+- Added distinct renewal-day template fallback `utility_renewal_day` for `reminder_type = renewal_day`.
+- Kept `manager_payment_alert` and `manager_payment_alert_with_proof` unchanged because those Meta templates are already utility.
+- Removed discount wording from internal WhatsApp plan labels so reminders/payment notes use `1 Month`, `3 Months`, `6 Months`, and `Need Help`.
 
 ## 2026-05-25
 
