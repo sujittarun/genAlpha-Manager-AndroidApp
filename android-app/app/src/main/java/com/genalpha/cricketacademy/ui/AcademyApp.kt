@@ -229,7 +229,6 @@ private fun adaptiveSp(base: Float, fontScale: Float, minRatio: Float = 0.72f): 
         .sp
 }
 private val DarkAttentionBorder = Color(0x66D7A12B)
-private val AlertBlue = Color(0xFF2266C9)
 private const val MANAGER_VIEW_PIN = "290326"
 private const val CompactMaxFontScale = 0.90f
 
@@ -950,14 +949,6 @@ fun AcademyApp(viewModel: AcademyViewModel) {
 
                     item {
                         CriticalAlertSection(
-                            alertKids = alertKids,
-                            payments = uiState.payments,
-                            onStudentClick = jumpToRosterStudent,
-                        )
-                    }
-
-                    item {
-                        AlertSection(
                             alertKids = alertKids,
                             payments = uiState.payments,
                             onStudentClick = jumpToRosterStudent,
@@ -1693,80 +1684,6 @@ private fun CriticalAlertSection(
                 students = criticalKids,
                 onStudentClick = onStudentClick,
             )
-        }
-    }
-}
-
-@Composable
-private fun AlertSection(
-    alertKids: List<Student>,
-    payments: List<StudentPayment>,
-    onStudentClick: (Student) -> Unit,
-) {
-    val standardAlertKids = alertKids.filterNot { it.isCriticalReminder(payments) }
-    val feesPendingKids = standardAlertKids.filter { it.isFeesPending() }
-    val renewalPendingKids = standardAlertKids.filter { it.isRenewalPending(payments) }
-    val alertCount = standardAlertKids.size
-    val hasCriticalOnly = alertCount == 0 && alertKids.any { it.isCriticalReminder(payments) }
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF2266C9)),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text(
-                text = "Alert",
-                color = Color.White.copy(alpha = 0.78f),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.9.sp,
-            )
-            Text(
-                text = when (alertCount) {
-                    0 -> "No regular alerts"
-                    1 -> "1 regular alert"
-                    else -> "$alertCount regular alerts"
-                },
-                color = Color.White,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.ExtraBold,
-                lineHeight = 26.sp,
-            )
-
-            if (alertKids.isEmpty()) {
-                Text(
-                    text = "All current join fees and renewals are up to date.",
-                    color = Color.White.copy(alpha = 0.88f),
-                    fontSize = 13.sp,
-                    lineHeight = 19.sp,
-                )
-            } else if (hasCriticalOnly) {
-                Text(
-                    text = "Regular alerts are clear. Immediate follow-up is shown above.",
-                    color = Color.White.copy(alpha = 0.88f),
-                    fontSize = 13.sp,
-                    lineHeight = 19.sp,
-                )
-            } else {
-                if (feesPendingKids.isNotEmpty()) {
-                    AlertNameSection(
-                        title = "Fees to collect",
-                        students = feesPendingKids,
-                        onStudentClick = onStudentClick,
-                    )
-                }
-                if (renewalPendingKids.isNotEmpty()) {
-                    AlertNameSection(
-                        title = "Renewal follow-up",
-                        students = renewalPendingKids,
-                        onStudentClick = onStudentClick,
-                    )
-                }
-            }
         }
     }
 }

@@ -29,6 +29,11 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 - The existing reminder row is marked `manual_followup_required` when available, and web/Android fee chips show `Manual follow-up`.
 - Day 7 through day 14 still use the existing daily reminder branch.
 
+### Android Dashboard Alerts
+
+- Removed the regular blue alert card from the Android manager dashboard.
+- Kept only the immediate follow-up card for players over the critical follow-up threshold.
+
 ## 2026-05-25
 
 ### Student Life Timeline and Attendance Calendar
