@@ -673,13 +673,7 @@ function buildReminderPreview(
   settings: ReminderSettings,
   reminderType: string,
 ) {
-  const choices = PLAN_OPTIONS.map((option) => PLAN_LABELS[option]).join(" / ");
-  const isJoining = reminderType === "joining_fee";
-  const dueText = isJoining
-    ? `admission & 1st cycle (Joined: ${dueDate})`
-    : `renewal due ${dueDate}`;
-  const amountNote = isJoining ? " [Incl. Rs 500 Admission Fee]" : "";
-  return `Gen Alpha Academy reminder for ${student.name}: ${dueText}.${amountNote} Parent can choose ${choices}. Help: ${settings.managerPhone}.`;
+  return buildReminderMessageBody(student, dueDate, reminderType, settings.managerPhone);
 }
 
 function ordinalDay(day: number): string {
@@ -717,10 +711,41 @@ function buildReminderDueText(reminderType: string, dueDate: string) {
   }
   
   if (reminderType === "renewal_day") {
-    return `today, ${dateFormatted}`;
+    return dateFormatted;
   }
 
   return dateFormatted;
+}
+
+function renderTemplateBody(pattern: string, values: Record<string, string>) {
+  return String(pattern || "").replace(/\{\{\s*(\d+)\s*\}\}/g, (_match, key) => {
+    return values[String(key)] ?? "";
+  });
+}
+
+function reminderTemplateBodyPattern(reminderType: string) {
+  if (reminderType === "heads_up") {
+    return env("META_WHATSAPP_HEADS_UP_TEMPLATE_BODY") ||
+      "Academy fee renewal notice for {{1}}.\n\nDue date: {{2}}\n\nPlease select a payment option below to complete the fee payment. For billing help, tap Need Help.";
+  }
+  if (reminderType === "renewal_day") {
+    return env("META_WHATSAPP_RENEWAL_DAY_TEMPLATE_BODY") ||
+      "Today is {{1}}'s academy fee renewal date for {{2}}.\n\nPlease select a payment option below to complete the fee renewal. For billing help, tap Need Help.";
+  }
+  return env("META_WHATSAPP_TEMPLATE_BODY") ||
+    "Hi {{1}}, this is an academy fee payment reminder from Gen Alpha Cricket Academy.\n\nFee due from: {{2}}\n\nPlease select a payment option below to complete the fee renewal. If payment is already completed or you need billing help, tap Need Help.";
+}
+
+function buildReminderMessageBody(
+  student: any,
+  dueDate: string,
+  reminderType: string,
+  _managerPhone = "",
+) {
+  return renderTemplateBody(reminderTemplateBodyPattern(reminderType), {
+    "1": String(student?.name || "Player"),
+    "2": buildReminderDueText(reminderType, dueDate),
+  });
 }
 
 function resolveTemplateName(
@@ -791,6 +816,7 @@ async function sendTemplateMessage(
   const isHeadsUp = reminderType === "heads_up";
   const templateName = reminderTemplateName(reminderType);
   const languageCode = env("META_WHATSAPP_TEMPLATE_LANGUAGE") || "en";
+  const renderedMessageBody = buildReminderMessageBody(student, dueDate, reminderType);
   if (!token || !phoneNumberId) {
     throw new Error("Meta WhatsApp secrets are missing.");
   }
@@ -880,7 +906,12 @@ async function sendTemplateMessage(
   if (!response.ok) {
     throw new Error(JSON.stringify(body?.error || body));
   }
-  return body;
+  return {
+    ...body,
+    local_template_name: templateName,
+    local_template_language: languageCode,
+    local_message_body: renderedMessageBody,
+  };
 }
 
 async function sendTemplatePayload(
@@ -1116,7 +1147,7 @@ async function recordReminderAccepted(
     direction: "outbound",
     parent_phone: String(event.parent_phone || ""),
     message_kind: "template",
-    message_body: event.message_preview || "",
+    message_body: metaResponse?.local_message_body || event.message_preview || "",
     message_id: whatsappMessageId,
     status: whatsappMessageId ? "accepted" : "sent",
     status_at: acceptedAt,
@@ -2771,15 +2802,7 @@ async function handleAutoSchedule() {
                 error: "Parent phone number is missing.",
               };
             }
-            let metaResponse;
-            let messageBody = event.message_preview || "";
-            if (reminderType === "heads_up") {
-              messageBody =
-                `Template ${reminderTemplateName(reminderType)}: ${student.name || "Player"} / ${
-                  buildReminderDueText(reminderType, dueDate)
-                }`;
-            }
-            metaResponse = await sendTemplateMessage(
+            const metaResponse = await sendTemplateMessage(
               to,
               event.id,
               student,
@@ -2787,7 +2810,7 @@ async function handleAutoSchedule() {
               reminderType,
             );
             await recordReminderAccepted(
-              { ...event, message_preview: messageBody },
+              event,
               metaResponse,
               "system_auto",
             );

@@ -34,6 +34,12 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 - Removed the regular blue alert card from the Android manager dashboard.
 - Kept only the immediate follow-up card for players over the critical follow-up threshold.
 
+### WhatsApp Timeline Message Bodies
+
+- Template reminders now store the rendered parent-facing message body in `whatsapp_flow_events.message_body` instead of only storing the old preview text.
+- Web and Android timelines now show the stored reminder body for `Fee reminder prepared` rows.
+- Added a focused backfill for utility-template reminder rows from June 4, 2026 onward.
+
 ## 2026-05-25
 
 ### Student Life Timeline and Attendance Calendar

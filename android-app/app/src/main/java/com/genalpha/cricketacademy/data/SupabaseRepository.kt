@@ -946,6 +946,9 @@ class SupabaseRepository(
     }
 
     private fun whatsappFlowDetails(eventType: String, status: String, row: JSONObject): String {
+        if (eventType == "reminder_created") {
+            return row.optSafeString("message_body")
+        }
         if (eventType == "reminder_message_status" || eventType == "whatsapp_message_status" || eventType == "confirmation_message_status") {
             return if (status == "failed") {
                 row.optSafeString("error_message").ifBlank { "Provider did not return a detailed reason." }
