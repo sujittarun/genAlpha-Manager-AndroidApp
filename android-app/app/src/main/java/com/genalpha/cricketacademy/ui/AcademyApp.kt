@@ -1083,7 +1083,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                         selectedStudent = student
                                         showEditorSheet = true
                                     },
-                                    onRenew = if ((student.isFeesPending() || student.isRenewalPending(uiState.payments)) && student.isActive()) {
+                                    onRenew = if ((student.isFeesPending() || student.feesPaid) && student.isActive()) {
                                         {
                                             renewalStudent = student
                                             selectedStudent = student
@@ -3425,7 +3425,7 @@ private fun RenewalPaymentDialog(
                 if (isJoiningFee) {
                     "${student.name} first fee starts from ${displayDate(cycleDate)}. Payment date is used for finance reports."
                 } else {
-                    "${student.name} cycle starts ${displayDate(cycleDate)}. Late payment will not change the usual fee date."
+                    "${student.name} cycle starts ${displayDate(cycleDate)}. Early or late payment will not change the usual fee date."
                 },
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
                 fontSize = 13.sp,
@@ -5736,7 +5736,7 @@ private fun PlayerDetailSheet(
                         Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp)); Text("Edit")
                     }
-                    if ((student.isFeesPending() || student.isRenewalPending(payments)) && student.isActive()) {
+                    if ((student.isFeesPending() || student.feesPaid) && student.isActive()) {
                         ElevatedButton(
                             enabled = actionInProgress == null,
                             onClick = { scope.launch { actionInProgress = "renew"; onRenew(); actionInProgress = null } },

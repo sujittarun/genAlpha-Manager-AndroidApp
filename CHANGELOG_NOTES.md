@@ -40,6 +40,11 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 - Web and Android timelines now show the stored reminder body for `Fee reminder prepared` rows.
 - Added a focused backfill for utility-template reminder rows from June 4, 2026 onward.
 
+### Early Renewal Payments
+
+- Android renewal payment action is now available for any active player whose joining fee is already paid, even before the due date.
+- Renewal payments still use the next cycle date, so early collection extends from the current paid-through date instead of today.
+
 ## 2026-05-25
 
 ### Student Life Timeline and Attendance Calendar
