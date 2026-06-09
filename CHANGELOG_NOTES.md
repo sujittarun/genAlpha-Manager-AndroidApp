@@ -45,6 +45,11 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 - Android renewal payment action is now available for any active player whose joining fee is already paid, even before the due date.
 - Renewal payments still use the next cycle date, so early collection extends from the current paid-through date instead of today.
 
+### Reminder Pause Control
+
+- Live Supabase reminders were paused by setting `system_settings.whatsapp_reminders_enabled = false` and unscheduling the `daily-whatsapp-reminder` and `whatsapp-retry-reminders` cron jobs.
+- Updated the WhatsApp reminder Edge Function so the `retry_due_reminders` action also respects the global pause flag before sending retry templates.
+
 ## 2026-05-25
 
 ### Student Life Timeline and Attendance Calendar

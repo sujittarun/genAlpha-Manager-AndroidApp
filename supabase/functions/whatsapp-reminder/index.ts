@@ -2897,9 +2897,20 @@ Deno.serve(async (request) => {
     }
     if (payload?.action === "retry_due_reminders") {
       await assertAuthenticatedOrServiceRole(request);
-      const retries = await processDueReminderRetries();
+      const settings = await loadSettings();
+      const retries = settings.whatsappRemindersEnabled
+        ? await processDueReminderRetries()
+        : [];
       const managerPaymentAlerts = await processDueManagerPaymentAlerts();
-      return jsonResponse({ success: true, retries, managerPaymentAlerts });
+      return jsonResponse({
+        success: true,
+        remindersPaused: !settings.whatsappRemindersEnabled,
+        message: settings.whatsappRemindersEnabled
+          ? "Due reminder retries processed."
+          : "Reminder retries paused by global reminder setting.",
+        retries,
+        managerPaymentAlerts,
+      });
     }
     if (payload?.action === "send_admission_reminder") {
       return await handleSendAdmissionReminder(request, payload);
