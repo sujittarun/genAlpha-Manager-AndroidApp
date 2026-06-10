@@ -49,6 +49,7 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 
 - Live Supabase reminders were paused by setting `system_settings.whatsapp_reminders_enabled = false` and unscheduling the `daily-whatsapp-reminder` and `whatsapp-retry-reminders` cron jobs.
 - Updated the WhatsApp reminder Edge Function so the `retry_due_reminders` action also respects the global pause flag before sending retry templates.
+- Added `supabase/resume-whatsapp-reminders.sql` to restore the global flag and both schedules using a Vault-backed cron secret instead of embedding credentials in source or cron definitions.
 
 ## 2026-05-25
 
