@@ -191,7 +191,7 @@ Provider selected: Meta WhatsApp Cloud API direct, not Twilio/WATI/360Dialog.
 
 Current utility reminder templates:
 
-- `utility_fee_headsup`: 2 days before a renewal date.
+- `utlity_fee_headsup`: 2 days before a renewal date. Keep this exact spelling because it matches the Meta template name.
 - `utility_renewal_day`: renewal due day.
 - `utility_for_fee_reminder`: joining-fee due day, overdue day 5, and daily overdue day 7 through day 14.
 - `manager_payment_alert`: manager payment alert without proof.

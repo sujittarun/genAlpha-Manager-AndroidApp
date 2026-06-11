@@ -764,8 +764,8 @@ function reminderTemplateName(reminderType: string) {
   if (reminderType === "heads_up") {
     return resolveTemplateName(
       "META_WHATSAPP_HEADS_UP_TEMPLATE_NAME",
-      "utility_fee_headsup",
-      ["gen_alpha_fee_heads_up"],
+      "utlity_fee_headsup",
+      ["gen_alpha_fee_heads_up", "utility_fee_headsup"],
     );
   }
   if (reminderType === "renewal_day") {
@@ -1135,6 +1135,8 @@ async function recordReminderAccepted(
     status: whatsappMessageId ? "accepted" : "sent",
     whatsapp_message_id: whatsappMessageId,
     meta_response: metaResponse,
+    meta_error: {},
+    failed_at: null,
     accepted_at: acceptedAt,
     next_retry_at: null,
     retry_reason: null,
@@ -2401,6 +2403,13 @@ async function handleWebhook(payload: any) {
         if (status === "failed") {
           updatePayload[isConfirmationMessage ? "confirmation_failed_at" : "failed_at"] = timestamp;
           updatePayload[isConfirmationMessage ? "confirmation_meta_error" : "meta_error"] = statusUpdate;
+          if (!isConfirmationMessage) {
+            updatePayload.next_retry_at = null;
+            updatePayload.retry_reason = providerErrorMessage(
+              parseProviderError(statusUpdate),
+            );
+            updatePayload.manual_followup_required = true;
+          }
         }
 
         if (
@@ -2719,9 +2728,11 @@ async function handleAutoSchedule() {
       }
     } else if (rawDaysSince === 0) {
       // Formal reminder on due day (for both joining and renewal)
-      const alreadySentRenewalDay = lastFollowUp?.reminder_type === "renewal_day" && lastFollowUp?.due_date === dueDate;
-      if (!alreadySentRenewalDay) {
-        isRenewalDay = true;
+      const dueReminderType = isJoiningFee ? "joining_fee" : "renewal_day";
+      const alreadySentDueDay = lastFollowUp?.reminder_type === dueReminderType &&
+        lastFollowUp?.due_date === dueDate;
+      if (!alreadySentDueDay) {
+        isRenewalDay = !isJoiningFee;
         shouldSend = true;
       }
     } else if (overdueDays >= MANUAL_FOLLOWUP_OVERDUE_DAYS) {

@@ -51,6 +51,19 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 - Updated the WhatsApp reminder Edge Function so the `retry_due_reminders` action also respects the global pause flag before sending retry templates.
 - Added `supabase/resume-whatsapp-reminders.sql` to restore the global flag and both schedules using a Vault-backed cron secret instead of embedding credentials in source or cron definitions.
 
+### Joining Fee Due-Day Reminder
+
+- Fixed the automatic due-day branch so unpaid joining fees use `reminder_type = joining_fee` and the joining-fee template instead of being incorrectly classified as `renewal_day`.
+- Joining-fee reminders remain scheduled on the join date, overdue day 5, and daily from overdue day 7 through day 14; day 15+ remains manual follow-up.
+- Non-retryable Meta delivery failures such as `131026 Message undeliverable` now clear retry scheduling and explicitly set `manual_followup_required = true`; only temporary `131049` failures remain eligible for automatic retry.
+- Corrected the live heads-up template mapping to `utlity_fee_headsup`, matching the exact Meta template name; the previous `utility_fee_headsup` mapping caused Meta error `132001`.
+- Successful reminder retries now clear stale `meta_error` and `failed_at` values from the current reminder row so web and Android do not continue showing a recovered reminder as failed.
+
+### Pending Admission Roster Isolation
+
+- Added `supabase/fix-pending-admission-roster-leak.sql` to remove the legacy `admissions_create_student` insert trigger so pending admissions stay out of the roster until `approve_admission()` is used.
+- The migration removes only dependency-free student rows linked to still-pending admissions while preserving the admission record for manager review or rejection.
+
 ## 2026-05-25
 
 ### Student Life Timeline and Attendance Calendar

@@ -23,7 +23,7 @@ flowchart TD
   J0 -- "Overdue day 7-14" --> M4["MESSAGE: utility_for_fee_reminder<br/>Daily joining overdue nudge"]
   J0 -- "Overdue day 15+" --> MFJ["Manual follow-up<br/>Auto reminders paused"]
 
-  R0 -- "2 days before: rawDaysSince = -2" --> M1["MESSAGE: utility_fee_headsup<br/>Soft heads-up before renewal"]
+  R0 -- "2 days before: rawDaysSince = -2" --> M1["MESSAGE: utlity_fee_headsup<br/>Soft heads-up before renewal"]
   R0 -- "Renewal day: rawDaysSince = 0" --> M2R["MESSAGE: utility_renewal_day<br/>Renewal due today"]
   R0 -- "Overdue day 5" --> M3R["MESSAGE: utility_for_fee_reminder<br/>5-day overdue nudge"]
   R0 -- "Overdue day 7-14" --> M4R["MESSAGE: utility_for_fee_reminder<br/>Daily overdue nudge"]
@@ -87,7 +87,7 @@ flowchart TD
 
 ### Fee Reminders
 
-- `utility_fee_headsup`: sent 2 days before a renewal date. Not sent for joining-fee dues.
+- `utlity_fee_headsup`: sent 2 days before a renewal date. Not sent for joining-fee dues. The spelling matches the approved Meta template name.
 - `utility_renewal_day`: sent on renewal due day.
 - `utility_for_fee_reminder`: sent on joining-fee due day.
 - `utility_for_fee_reminder`: sent again on overdue day 5.
