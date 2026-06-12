@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "genalpha-glass-web (v2 glass app)",
+      "runtimeExecutable": "/opt/homebrew/bin/python3",
+      "runtimeArgs": ["-m", "http.server", "8080", "-d", "genalpha-glass-web"],
+      "port": 8080
+    },
+    {
+      "name": "web-app-repo (old live site)",
+      "runtimeExecutable": "/opt/homebrew/bin/python3",
+      "runtimeArgs": ["-m", "http.server", "8081", "-d", "web-app-repo"],
+      "port": 8081
+    },
+    {
+      "name": "supabase-edge-functions",
+      "runtimeExecutable": "supabase",
+      "runtimeArgs": ["functions", "serve"],
+      "port": 54321
+    }
+  ]
+}
