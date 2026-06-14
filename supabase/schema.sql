@@ -18,6 +18,8 @@ create table if not exists public.students (
   comments text not null default '',
   father_guardian_name text not null default '',
   parent_contact_no text not null default '',
+  whatsapp_contact_status text not null default 'active'
+    check (whatsapp_contact_status in ('active', 'wrong_number', 'opted_out')),
   alternate_contact_no text not null default '',
   school_college text not null default '',
   grade text not null default '',

@@ -26,6 +26,7 @@ import com.genalpha.cricketacademy.data.buildStats
 import com.genalpha.cricketacademy.data.calculateAgeFromDate
 import com.genalpha.cricketacademy.data.daysBetweenIso
 import com.genalpha.cricketacademy.data.isFutureDate
+import com.genalpha.cricketacademy.data.hasBlockedWhatsappContact
 import com.genalpha.cricketacademy.data.isActive
 import com.genalpha.cricketacademy.data.isPaymentPendingVerification
 import com.genalpha.cricketacademy.data.isFeesPending
@@ -657,6 +658,10 @@ class AcademyViewModel(
     }
 
     suspend fun sendAdmissionReminder(admission: PendingAdmission): OperationResult {
+        val rosterStudent = _uiState.value.kids.firstOrNull { it.id == admission.id }
+        if (rosterStudent?.hasBlockedWhatsappContact() == true) {
+            return OperationResult(false, "Wrong phone number. Update the player contact before sending another reminder.")
+        }
         val session = _uiState.value.session ?: return OperationResult(false, "Login to send reminders.")
         return try {
             repository.sendAdmissionReminder(admission.id, session)
@@ -719,6 +724,7 @@ class AcademyViewModel(
                         jerseyPairs = draft.jerseyPairs.toIntOrNull() ?: 0,
                         fatherGuardianName = if (profileFieldsSaved) draft.fatherGuardianName.trim() else editingStudent.fatherGuardianName,
                         parentContactNo = if (profileFieldsSaved) draft.parentContactNo.filter(Char::isDigit).take(10) else editingStudent.parentContactNo,
+                        whatsappContactStatus = if (profileFieldsSaved) draft.whatsappContactStatus else editingStudent.whatsappContactStatus,
                         alternateContactNo = if (profileFieldsSaved) draft.alternateContactNo.filter(Char::isDigit).take(10) else editingStudent.alternateContactNo,
                         schoolCollege = if (profileFieldsSaved) draft.schoolCollege.trim() else editingStudent.schoolCollege,
                         grade = if (profileFieldsSaved) draft.grade.trim() else editingStudent.grade,
@@ -969,6 +975,9 @@ class AcademyViewModel(
     }
 
     suspend fun sendRenewalReminder(student: Student): OperationResult {
+        if (student.hasBlockedWhatsappContact()) {
+            return OperationResult(false, "Wrong phone number. Update the player contact before sending another reminder.")
+        }
         val payments = _uiState.value.payments
         val isRenewalDue = student.isRenewalPending(payments)
         if (!isRenewalDue) {

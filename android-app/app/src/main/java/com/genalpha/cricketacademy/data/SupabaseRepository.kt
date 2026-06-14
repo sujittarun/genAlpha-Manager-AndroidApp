@@ -119,7 +119,7 @@ class SupabaseRepository(
     }
 
     suspend fun fetchPaymentFollowUps(accessToken: String): List<PaymentFollowUp> = withContext(Dispatchers.IO) {
-        val reminderRequest = baseRequest("$baseUrl/rest/v1/reminder_events?select=id,student_id,reminder_type,status,due_date,selected_plan,amount,created_at,overdue_days,meta_error,failed_at,retry_count,max_retry_count,next_retry_at,last_retry_at,retry_reason,manual_followup_required&order=created_at.desc&limit=300")
+        val reminderRequest = baseRequest("$baseUrl/rest/v1/reminder_events?select=id,student_id,reminder_type,status,due_date,selected_plan,amount,created_at,overdue_days,meta_error,failed_at,retry_count,max_retry_count,next_retry_at,last_retry_at,retry_reason,manual_followup_required,manual_followup_reason&order=created_at.desc&limit=300")
             .header("Authorization", "Bearer $accessToken")
             .get()
             .build()
@@ -191,6 +191,7 @@ class SupabaseRepository(
                 lastRetryAt = reminder?.optString("last_retry_at").orEmpty(),
                 retryReason = reminder?.optString("retry_reason").orEmpty(),
                 manualFollowupRequired = reminder?.optBoolean("manual_followup_required", false) ?: false,
+                manualFollowupReason = reminder?.optString("manual_followup_reason").orEmpty(),
             )
         }
     }
@@ -231,6 +232,9 @@ class SupabaseRepository(
         messagePreview: String,
         settings: ReminderSettings,
     ): String = withContext(Dispatchers.IO) {
+        if (student.hasBlockedWhatsappContact()) {
+            throw SupabaseException(409, "Wrong phone number. Update the player contact before sending another reminder.")
+        }
         val functionResult = runCatching {
             val functionBody = JSONObject()
                 .put("action", "send_reminder")
@@ -789,7 +793,7 @@ class SupabaseRepository(
             .header("Authorization", "Bearer $token")
             .get()
             .build()
-        val reminderFailuresRequest = baseRequest("$baseUrl/rest/v1/reminder_events?select=id,student_id,reminder_type,status,due_date,created_at,created_by,meta_error,failed_at,retry_count,max_retry_count,next_retry_at,last_retry_at,retry_reason,manual_followup_required&student_id=eq.$studentId&status=in.(failed,send_failed,delivery_failed,undelivered)&order=created_at.desc&limit=10")
+        val reminderFailuresRequest = baseRequest("$baseUrl/rest/v1/reminder_events?select=id,student_id,reminder_type,status,due_date,created_at,created_by,meta_error,failed_at,retry_count,max_retry_count,next_retry_at,last_retry_at,retry_reason,manual_followup_required,manual_followup_reason&student_id=eq.$studentId&status=in.(failed,send_failed,delivery_failed,undelivered)&order=created_at.desc&limit=10")
             .header("Authorization", "Bearer $token")
             .get()
             .build()
@@ -1504,6 +1508,7 @@ class SupabaseRepository(
             body
                 .put("father_guardian_name", draft.fatherGuardianName.trim())
                 .put("parent_contact_no", draft.parentContactNo.filter(Char::isDigit).take(10))
+                .put("whatsapp_contact_status", draft.whatsappContactStatus)
                 .put("alternate_contact_no", draft.alternateContactNo.filter(Char::isDigit).take(10))
                 .put("school_college", draft.schoolCollege.trim())
                 .put("grade", draft.grade.trim())
@@ -1821,6 +1826,7 @@ class SupabaseRepository(
             filledBy = optSafeString("filled_by"),
             fatherGuardianName = optSafeString("father_guardian_name"),
             parentContactNo = optSafeString("parent_contact_no"),
+            whatsappContactStatus = optSafeString("whatsapp_contact_status").ifBlank { "active" },
             alternateContactNo = optSafeString("alternate_contact_no"),
             schoolCollege = optSafeString("school_college"),
             grade = optSafeString("grade"),

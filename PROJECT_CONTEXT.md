@@ -204,6 +204,8 @@ Current utility reminder templates:
   - 1 Month, 3 Months, 6 Months, Need Help.
   - If Need Help: log it and provide manager/help flow.
 - Automatic fee reminders are enabled through the Supabase WhatsApp reminder scheduler; manual reminders can also be triggered from the app.
+- `students.whatsapp_contact_status` is the durable parent-contact gate. `wrong_number` and `opted_out` block automatic reminders, manual sends, queued retries, and payment confirmation WhatsApp until staff reactivate the contact.
+- `reminder_events.manual_followup_reason` explains manual follow-up (`wrong_phone_number`, `whatsapp_opted_out`, `overdue_15_days`, `retry_exhausted`, `delivery_failure`, or `missing_phone`). Web and Android must show the reason without replacing the separate Next fee due day count.
 - Reminder policy:
   - heads-up 2 days before renewal.
   - renewal/joining due day.

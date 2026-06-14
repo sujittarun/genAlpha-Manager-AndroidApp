@@ -177,6 +177,7 @@ import com.genalpha.cricketacademy.data.daysSince
 import com.genalpha.cricketacademy.data.displayDate
 import com.genalpha.cricketacademy.data.displayTimelineStamp
 import com.genalpha.cricketacademy.data.feeStatusLabel
+import com.genalpha.cricketacademy.data.hasBlockedWhatsappContact
 import com.genalpha.cricketacademy.data.isActive
 import com.genalpha.cricketacademy.data.isSpecialTraining
 import com.genalpha.cricketacademy.data.isFeesPending
@@ -184,6 +185,7 @@ import com.genalpha.cricketacademy.data.isPaymentPendingVerification
 import com.genalpha.cricketacademy.data.isRenewalPending
 import com.genalpha.cricketacademy.data.latestRenewal
 import com.genalpha.cricketacademy.data.membershipDateLabel
+import com.genalpha.cricketacademy.data.manualFollowUpReasonLabel
 import com.genalpha.cricketacademy.data.nextRenewalCycleDate
 import com.genalpha.cricketacademy.data.renewalStatus
 import com.genalpha.cricketacademy.data.studentType
@@ -1089,7 +1091,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                             selectedStudent = student
                                         }
                                     } else null,
-                                    onSendReminder = if ((student.isFeesPending() || student.isRenewalPending(uiState.payments)) && student.isActive()) {
+                                    onSendReminder = if ((student.isFeesPending() || student.isRenewalPending(uiState.payments)) && student.isActive() && !student.hasBlockedWhatsappContact()) {
                                         {
                                             scope.launch {
                                                 val result = if (student.isFeesPending()) {
@@ -5038,6 +5040,7 @@ private fun RosterRow(
     val renewalOkTone = themedBadgeTone(Color(0xFFEAF8F2), BrandGreen, DarkSuccessContainer, DarkSuccessText)
     val renewalPendingTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
     val feeLabel = student.feeStatusLabel(paymentFollowUp, payments)
+    val manualFollowUpReason = student.manualFollowUpReasonLabel(paymentFollowUp, payments)
     val renewalStatusLabel = student.renewalStatus(payments)
     var showingActions by rememberSaveable(student.id) { mutableStateOf(false) }
     var pendingJerseyPairs by rememberSaveable(student.id) { mutableStateOf<Int?>(null) }
@@ -5354,6 +5357,14 @@ private fun RosterRow(
                             },
                         )
                     }
+                    if (feeLabel == "Manual follow-up" && !manualFollowUpReason.isNullOrBlank()) {
+                        Text(
+                            text = manualFollowUpReason,
+                            color = feeManualTone.text,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
 
                     student.cardTimelineLabel(payments)?.let { timeline ->
                         Text(
@@ -5583,6 +5594,7 @@ private fun PlayerDetailSheet(
     val reminderDue = student.isRenewalPending(payments)
     val reminderOverdueDays = remember(student, payments) { reminderOverdueDays(student, payments) }
     val feeLabel = student.feeStatusLabel(paymentFollowUp, payments)
+    val manualFollowUpReason = student.manualFollowUpReasonLabel(paymentFollowUp, payments)
     val pendingFollowUp = paymentFollowUp?.takeIf { it.isPendingVerification() }
         ?: if (student.isPaymentPendingVerification()) {
             PaymentFollowUp(
@@ -5728,6 +5740,14 @@ private fun PlayerDetailSheet(
                     },
                 )
             }
+            if (feeLabel == "Manual follow-up" && !manualFollowUpReason.isNullOrBlank()) {
+                Text(
+                    text = manualFollowUpReason,
+                    color = feeManualTone.text,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
 
             // ── Quick Actions (top) ──
             if (isManager) {
@@ -5746,7 +5766,7 @@ private fun PlayerDetailSheet(
                             Spacer(Modifier.width(6.dp)); Text(if (student.isFeesPending()) "Joining payment" else "Renew")
                         }
                     }
-                    if (reminderDue && student.isActive()) {
+                    if (reminderDue && student.isActive() && !student.hasBlockedWhatsappContact()) {
                         OutlinedButton(
                             enabled = actionInProgress == null,
                             onClick = { scope.launch { actionInProgress = "reminder"; onSendReminder(); actionInProgress = null } },
@@ -5756,7 +5776,7 @@ private fun PlayerDetailSheet(
                             Spacer(Modifier.width(6.dp)); Text("Send reminder")
                         }
                     }
-                    if (!student.feesPaid && student.isActive()) {
+                    if (!student.feesPaid && student.isActive() && !student.hasBlockedWhatsappContact()) {
                         OutlinedButton(
                             enabled = actionInProgress == null,
                             onClick = { scope.launch { actionInProgress = "joining_reminder"; onSendAdmissionReminder(); actionInProgress = null } },
@@ -7005,6 +7025,9 @@ private fun PlayerEditorSheet(
     var jerseyPairs by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.jerseyPairs?.toString() ?: "0") }
     var fatherGuardianName by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.fatherGuardianName.orEmpty()) }
     var parentContactNo by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.parentContactNo.orEmpty()) }
+    var wrongWhatsappNumber by rememberSaveable(editingStudent?.id) {
+        mutableStateOf(editingStudent?.whatsappContactStatus == "wrong_number")
+    }
     var alternateContactNo by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.alternateContactNo.orEmpty()) }
     var schoolCollege by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.schoolCollege.orEmpty()) }
     var grade by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.grade.orEmpty()) }
@@ -7209,6 +7232,35 @@ private fun PlayerEditorSheet(
                     label = { Text("Mobile number") },
                     singleLine = true,
                 )
+                if (editingStudent != null) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("Wrong phone number", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text(
+                                    "Stops WhatsApp reminders and queued retries until this is switched off.",
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp,
+                                )
+                            }
+                            Switch(
+                                checked = wrongWhatsappNumber,
+                                onCheckedChange = { wrongWhatsappNumber = it },
+                            )
+                        }
+                    }
+                }
                 OutlinedTextField(
                     value = alternateContactNo,
                     onValueChange = { alternateContactNo = it.filter(Char::isDigit).take(10) },
@@ -7279,6 +7331,7 @@ private fun PlayerEditorSheet(
                                             comments = editingStudent?.comments.orEmpty(),
                                             fatherGuardianName = fatherGuardianName,
                                             parentContactNo = parentContactNo,
+                                            whatsappContactStatus = if (wrongWhatsappNumber) "wrong_number" else "active",
                                             alternateContactNo = alternateContactNo,
                                             schoolCollege = schoolCollege,
                                             grade = grade,

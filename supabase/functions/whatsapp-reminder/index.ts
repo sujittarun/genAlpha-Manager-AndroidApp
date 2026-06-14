@@ -80,6 +80,18 @@ function normalizePhone(value: string): string {
   return digits ? `91${digits}` : "";
 }
 
+function isWhatsappContactBlocked(student: any): boolean {
+  return ["wrong_number", "opted_out"].includes(
+    String(student?.whatsapp_contact_status || "active").toLowerCase(),
+  );
+}
+
+function whatsappContactBlockedMessage(student: any): string {
+  return String(student?.whatsapp_contact_status || "") === "opted_out"
+    ? "Parent has opted out of WhatsApp reminders."
+    : "Saved WhatsApp number is marked wrong.";
+}
+
 function localIsoDate(date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Kolkata',
@@ -611,6 +623,22 @@ async function updateReminderEvent(
   });
 }
 
+async function markReminderContactBlocked(event: any, student: any) {
+  if (!event?.id) return;
+  const optedOut = String(student?.whatsapp_contact_status || "") === "opted_out";
+  await updateReminderEvent(event.id, {
+    status: "manual_followup",
+    manual_followup_required: true,
+    manual_followup_reason: optedOut
+      ? "whatsapp_opted_out"
+      : "wrong_phone_number",
+    next_retry_at: null,
+    retry_reason: optedOut
+      ? "Parent opted out. Automatic WhatsApp reminders and retries are paused."
+      : "Wrong phone number. Automatic WhatsApp reminders and retries are paused.",
+  });
+}
+
 async function findReminderByAnyWhatsappMessageId(messageId: string) {
   if (!messageId) return null;
   const encoded = encodeURIComponent(messageId);
@@ -1026,6 +1054,7 @@ async function markReminderSendFailed(
   failedAt: string,
   createdBy: string,
   finalReason = "",
+  manualFollowupReason = "delivery_failure",
 ) {
   const reason = finalReason || providerErrorMessage(errorPayload);
   await updateReminderEvent(event.id, {
@@ -1037,6 +1066,7 @@ async function markReminderSendFailed(
     next_retry_at: null,
     retry_reason: null,
     manual_followup_required: true,
+    manual_followup_reason: manualFollowupReason,
   });
   await insertWhatsappFlowEvent({
     student_id: event.student_id,
@@ -1061,6 +1091,16 @@ async function scheduleHealthyEcosystemRetry(
   failedAt: string,
   createdBy: string,
 ) {
+  const student = await fetchStudent(String(event?.student_id || ""));
+  if (isWhatsappContactBlocked(student)) {
+    await markReminderContactBlocked(event, student);
+    return {
+      scheduled: false,
+      manualFollowupRequired: true,
+      reason: whatsappContactBlockedMessage(student),
+    };
+  }
+
   const retryCount = Number(event?.retry_count || 0);
   const maxRetryCount = Math.max(
     1,
@@ -1074,6 +1114,7 @@ async function scheduleHealthyEcosystemRetry(
       failedAt,
       createdBy,
       "Meta kept this message blocked for healthy ecosystem engagement. Manual follow-up is required.",
+      "retry_exhausted",
     );
     return {
       scheduled: false,
@@ -1098,6 +1139,7 @@ async function scheduleHealthyEcosystemRetry(
     retry_reason: retryReason,
     max_retry_count: maxRetryCount,
     manual_followup_required: false,
+    manual_followup_reason: "",
   });
   await insertWhatsappFlowEvent({
     student_id: event.student_id,
@@ -1141,6 +1183,7 @@ async function recordReminderAccepted(
     next_retry_at: null,
     retry_reason: null,
     manual_followup_required: false,
+    manual_followup_reason: "",
   });
   await insertWhatsappFlowEvent({
     student_id: event.student_id,
@@ -1226,6 +1269,14 @@ async function processDueReminderRetries(limit = RETRY_WORKER_LIMIT) {
     const retryCount = Number(event.retry_count || 0) + 1;
     try {
       const student = await fetchStudent(String(event.student_id || ""));
+      if (isWhatsappContactBlocked(student)) {
+        await markReminderContactBlocked(event, student);
+        results.push({
+          student: student.name,
+          status: "manual_followup_wrong_phone",
+        });
+        continue;
+      }
       const parentPhone = String(
         event.parent_phone || student.parent_contact_no || "",
       ).replace(/\D/g, "").slice(-10);
@@ -1236,6 +1287,8 @@ async function processDueReminderRetries(limit = RETRY_WORKER_LIMIT) {
           { message: "Parent phone number is missing." },
           retryStartedAt,
           "system_retry",
+          "",
+          "missing_phone",
         );
         results.push({ student: student.name, status: "failed_missing_phone" });
         continue;
@@ -1934,6 +1987,14 @@ async function handleSendReminder(request: Request, payload: any) {
 
   const settings = await loadSettings();
   const student = await fetchStudent(String(studentId));
+  if (isWhatsappContactBlocked(student)) {
+    return jsonResponse({
+      success: false,
+      status: "manual_followup",
+      reason: String(student.whatsapp_contact_status || "wrong_number"),
+      error: `${whatsappContactBlockedMessage(student)} Update the player contact before sending another reminder.`,
+    }, 409);
+  }
   const reminderType = String(
     inputType || (student.fees_paid ? "renewal" : "joining_fee"),
   );
@@ -2134,6 +2195,11 @@ async function handleRenewalVerified(request: Request, payload: any) {
   if (!studentId) return jsonResponse({ error: "studentId is required." }, 400);
 
   const student = await fetchStudent(studentId);
+  if (isWhatsappContactBlocked(student)) {
+    return jsonResponse({
+      error: `${whatsappContactBlockedMessage(student)} Payment can still be confirmed, but no WhatsApp confirmation was sent.`,
+    }, 409);
+  }
   const to = normalizePhone(String(student.parent_contact_no || ""));
   if (!to) {
     return jsonResponse({ error: "Parent phone number is missing." }, 400);
@@ -2409,6 +2475,7 @@ async function handleWebhook(payload: any) {
               parseProviderError(statusUpdate),
             );
             updatePayload.manual_followup_required = true;
+            updatePayload.manual_followup_reason = "delivery_failure";
           }
         }
 
@@ -2705,13 +2772,21 @@ async function handleAutoSchedule() {
       : getPaidThroughDate(student, payments);
     const rawDaysSince = getDaysSinceDate(dueDate);
     const overdueDays = Math.max(0, rawDaysSince);
+    const lastFollowUp = followUps.find((f: any) => f.student_id === student.id);
     let isHeadsUp = false;
     let isRenewalDay = false;
+
+    if (isWhatsappContactBlocked(student)) {
+      if (lastFollowUp?.id) {
+        await markReminderContactBlocked(lastFollowUp, student);
+      }
+      console.log(`Skipping ${student.name}: ${whatsappContactBlockedMessage(student)}`);
+      continue;
+    }
 
     console.log(`Checking student ${student.name}: dueDate=${dueDate}, overdueDays=${overdueDays}, isJoiningFee=${isJoiningFee}`);
 
     let shouldSend = false;
-    const lastFollowUp = followUps.find((f: any) => f.student_id === student.id);
     const sentToday = lastFollowUp && lastFollowUp.created_at.slice(0, 10) === todayIso;
 
     if (sentToday) {
@@ -2741,6 +2816,7 @@ async function handleAutoSchedule() {
         await updateReminderEvent(lastFollowUp.id, {
           status: "manual_followup",
           manual_followup_required: true,
+          manual_followup_reason: "overdue_15_days",
           next_retry_at: null,
           retry_reason: `Overdue ${overdueDays} days. Automatic reminders paused; manual follow-up required.`,
         });

@@ -21,6 +21,15 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 - The next-fee-due field now continues to show the calendar status (`15 days overdue`, `Due today`, or days left) for both joining and renewal fees.
 - This is presentation-only: the 15-day reminder cutoff, manual-follow-up flag, retry behavior, payment state, and due-date calculations are unchanged.
 
+### Wrong WhatsApp Number Follow-Up
+
+- Added player-level `whatsapp_contact_status` and reminder-level `manual_followup_reason` fields.
+- Marking a player as `wrong_number` immediately stops automatic reminders, manual reminder sends, queued retries, and delayed retry callbacks until staff reactivate the contact.
+- Web and Android keep the `Manual follow-up` fee status and show a visible reason such as `Wrong phone number`, `15+ days overdue`, `Retry limit reached`, or `WhatsApp delivery failed`.
+- Added a manager edit control in both apps to mark or clear a wrong number; clearing it allows future reminders to resume under the normal schedule without retrying historical rows.
+- Marked Leela Krishna C and Jeevan Reddy C as wrong-number contacts in the live database and confirmed both latest reminder rows have no next retry scheduled.
+- Deployed the updated `whatsapp-reminder` Edge Function and applied `supabase/add-whatsapp-contact-status.sql`.
+
 ## 2026-06-04
 
 ### WhatsApp Utility Template Mapping

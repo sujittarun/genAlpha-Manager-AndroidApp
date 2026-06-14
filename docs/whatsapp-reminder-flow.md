@@ -14,7 +14,9 @@ This is the canonical map for Gen Alpha fee reminders. Use this before changing 
 ```mermaid
 flowchart TD
   A["Daily cron: 3:00 PM IST"] --> B["For each active student"]
-  B --> C{"Fee state"}
+  B --> VS{"WhatsApp contact status"}
+  VS -- "Active" --> C{"Fee state"}
+  VS -- "Wrong number / opted out" --> MFC["Manual follow-up<br/>No send and no retry"]
   C -- "Joining fee unpaid" --> J0{"Join date due?"}
   C -- "Renewal" --> R0{"Renewal date state"}
 
@@ -38,6 +40,7 @@ flowchart TD
   M4R --> S0
   MFJ --> STOP
   MFR --> STOP
+  MFC --> STOP
 
   S0 --> S1{"Dry run or WhatsApp disabled?"}
   S1 -- "Yes" --> S2["Log dry_run and stop"]
@@ -80,7 +83,7 @@ flowchart TD
   class M1,M2,M2R,M3,M3R,M4,M4R,M5,M6,M7,M8,AD2 message;
   class RT1,RTC retry;
   class F1 fail;
-  class STOP,MFJ,MFR stop;
+  class STOP,MFJ,MFR,MFC stop;
 ```
 
 ## Message Schedule
@@ -95,6 +98,7 @@ flowchart TD
 - Overdue day 15+ stops automatic reminders and marks the player for manual follow-up.
 - Same player is skipped if any reminder was already sent today.
 - Joining-fee reminders are skipped if the joining payment already has an amount/reference pending verification.
+- A player with `students.whatsapp_contact_status = wrong_number` or `opted_out` is skipped before any reminder event is created.
 
 ### Payment Flow Messages
 
@@ -117,7 +121,17 @@ flowchart TD
 - Scheduled retry rows use `status = retry_scheduled` and `next_retry_at`.
 - Fallback recovery can pick up unscheduled `131049` failed rows only from the current IST day.
 - Historical failures must stay historical and should not be revived by the retry worker.
+- The retry worker rechecks the current player contact status before every attempt. Wrong-number or opted-out contacts become manual follow-up immediately with `next_retry_at = null`.
 - Worker batch size is capped at 20 with a small delay between sends.
+
+## Manual Follow-Up Reasons
+
+- `wrong_phone_number`: saved parent WhatsApp number is confirmed incorrect; all sends and retries stay paused until staff correct and reactivate it.
+- `whatsapp_opted_out`: parent should not receive WhatsApp reminders.
+- `overdue_15_days`: the normal automated reminder window has ended.
+- `retry_exhausted`: Meta healthy-ecosystem retries reached the configured limit.
+- `delivery_failure`: a non-retryable provider delivery failure requires staff review.
+- `missing_phone`: no usable parent number is saved.
 
 ## Timeline Rules
 
