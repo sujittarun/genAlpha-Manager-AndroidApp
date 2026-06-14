@@ -1,6 +1,6 @@
 # Gen Alpha Manager Changelog Notes
 
-Last updated: 2026-06-04
+Last updated: 2026-06-14
 
 This file records meaningful project changes and decisions so future Codex sessions can understand recent work without rereading the full chat. It is not a release changelog for users; it is a developer/manager memory log.
 
@@ -12,6 +12,14 @@ Use this file when:
 - A future agent needs to understand why a design or business rule exists.
 
 For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
+
+## 2026-06-14
+
+### Separate Fee Follow-Up And Due Labels
+
+- Android keeps `Manual follow-up` in the fee-status field for players whose automatic reminders have stopped.
+- The next-fee-due field now continues to show the calendar status (`15 days overdue`, `Due today`, or days left) for both joining and renewal fees.
+- This is presentation-only: the 15-day reminder cutoff, manual-follow-up flag, retry behavior, payment state, and due-date calculations are unchanged.
 
 ## 2026-06-04
 

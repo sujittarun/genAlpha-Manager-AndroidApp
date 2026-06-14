@@ -518,10 +518,7 @@ fun Student.isRenewalPending(payments: List<StudentPayment>): Boolean {
 fun Student.renewalStatus(payments: List<StudentPayment>): String = when {
     discontinued -> "Tracking paused"
     isPaymentPendingVerification() -> "Payment pending verification"
-    (!feesPaid || isRenewalPending(payments)) &&
-        daysSince(if (!feesPaid) joinDate else paidThroughDate(payments)) >= MANUAL_FOLLOWUP_OVERDUE_DAYS -> "Manual follow-up"
-    !feesPaid -> "Join fee pending"
-    else -> renewalLabelForDueDate(paidThroughDate(payments))
+    else -> renewalLabelForDueDate(if (feesPaid) paidThroughDate(payments) else joinDate)
 }
 
 fun Student.trainingDurationLabel(): String {
