@@ -1036,6 +1036,33 @@ class AcademyViewModel(
         }
     }
 
+    suspend fun toggleWhatsappContactStatus(student: Student): OperationResult {
+        if (student.whatsappContactStatus == "opted_out") {
+            return OperationResult(false, "This parent has opted out of WhatsApp reminders.")
+        }
+        val nextStatus = if (student.whatsappContactStatus == "wrong_number") "active" else "wrong_number"
+        return try {
+            val session = withFreshSession { session ->
+                repository.updateWhatsappContactStatus(student, nextStatus, session.email, session)
+                session
+            }
+            upsertLocalStudent(
+                student.copy(
+                    whatsappContactStatus = nextStatus,
+                    updatedBy = session.email,
+                )
+            )
+            refreshInBackground()
+            OperationResult(
+                true,
+                if (nextStatus == "active") "Phone number marked corrected."
+                else "Phone number marked incorrect. Reminders paused."
+            )
+        } catch (error: Exception) {
+            OperationResult(false, error.message ?: "Unable to update the WhatsApp number status.")
+        }
+    }
+
     suspend fun loadKids() {
         val hasExistingKids = _uiState.value.kids.isNotEmpty()
         _uiState.update {

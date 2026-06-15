@@ -1124,6 +1124,14 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                             snackbarHostState.showSnackbar(result.message)
                                         }
                                     },
+                                    onToggleWhatsappContact = if (viewModel.canEdit()) {
+                                        {
+                                            scope.launch {
+                                                val result = viewModel.toggleWhatsappContactStatus(student)
+                                                snackbarHostState.showSnackbar(result.message)
+                                            }
+                                        }
+                                    } else null,
                                     onJerseyPairsChange = if (viewModel.canEdit()) {
                                         { nextPairs, amount ->
                                             scope.launch {
@@ -5022,6 +5030,7 @@ private fun RosterRow(
     onRenew: (() -> Unit)? = null,
     onSendReminder: (() -> Unit)? = null,
     onToggleStatus: (() -> Unit)? = null,
+    onToggleWhatsappContact: (() -> Unit)? = null,
     onJerseyPairsChange: ((Int, Double) -> Unit)? = null,
 ) {
     val needsAttention = student.isFeesPending() || student.isRenewalPending(payments)
@@ -5043,6 +5052,7 @@ private fun RosterRow(
     val manualFollowUpReason = student.manualFollowUpReasonLabel(paymentFollowUp, payments)
     val renewalStatusLabel = student.renewalStatus(payments)
     var showingActions by rememberSaveable(student.id) { mutableStateOf(false) }
+    var showWhatsappContactConfirmation by rememberSaveable(student.id) { mutableStateOf(false) }
     var pendingJerseyPairs by rememberSaveable(student.id) { mutableStateOf<Int?>(null) }
     var jerseyAdjustmentAmount by rememberSaveable(student.id) { mutableStateOf("") }
     val previousJerseyPairs = student.jerseyPairs.coerceAtLeast(0)
@@ -5213,6 +5223,21 @@ private fun RosterRow(
                                     onClick = {
                                         showingActions = false
                                         sendReminder()
+                                    },
+                                )
+                            }
+                            if (onToggleWhatsappContact != null) {
+                                RosterActionButton(
+                                    label = when (student.whatsappContactStatus) {
+                                        "wrong_number" -> "Phone number corrected"
+                                        "opted_out" -> "WhatsApp opted out"
+                                        else -> "Mark phone incorrect"
+                                    },
+                                    tint = if (student.whatsappContactStatus == "wrong_number") BrandGreen else Color(0xFF9A6400),
+                                    enabled = student.whatsappContactStatus != "opted_out",
+                                    onClick = {
+                                        showingActions = false
+                                        showWhatsappContactConfirmation = true
                                     },
                                 )
                             }
@@ -5465,6 +5490,38 @@ private fun RosterRow(
             }
         }
     }
+
+    if (showWhatsappContactConfirmation) {
+        val isCurrentlyWrong = student.whatsappContactStatus == "wrong_number"
+        AlertDialog(
+            onDismissRequest = { showWhatsappContactConfirmation = false },
+            title = { Text(if (isCurrentlyWrong) "Phone number corrected?" else "Mark phone incorrect?") },
+            text = {
+                Text(
+                    if (isCurrentlyWrong) {
+                        "Future WhatsApp reminders for ${student.name} will resume on the normal schedule."
+                    } else {
+                        "WhatsApp reminders and queued retries for ${student.name} will stop until the number is corrected."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showWhatsappContactConfirmation = false
+                        onToggleWhatsappContact?.invoke()
+                    },
+                ) {
+                    Text(if (isCurrentlyWrong) "Resume reminders" else "Pause reminders")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showWhatsappContactConfirmation = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -5525,10 +5582,12 @@ private fun JerseyPairStepper(
 private fun RosterActionButton(
     label: String,
     tint: Color,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     OutlinedButton(
         onClick = onClick,
+        enabled = enabled,
         modifier = Modifier
             .heightIn(min = 46.dp)
             .widthIn(min = 146.dp),
@@ -7025,9 +7084,6 @@ private fun PlayerEditorSheet(
     var jerseyPairs by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.jerseyPairs?.toString() ?: "0") }
     var fatherGuardianName by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.fatherGuardianName.orEmpty()) }
     var parentContactNo by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.parentContactNo.orEmpty()) }
-    var wrongWhatsappNumber by rememberSaveable(editingStudent?.id) {
-        mutableStateOf(editingStudent?.whatsappContactStatus == "wrong_number")
-    }
     var alternateContactNo by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.alternateContactNo.orEmpty()) }
     var schoolCollege by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.schoolCollege.orEmpty()) }
     var grade by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.grade.orEmpty()) }
@@ -7232,31 +7288,29 @@ private fun PlayerEditorSheet(
                     label = { Text("Mobile number") },
                     singleLine = true,
                 )
-                if (editingStudent != null) {
+                if (editingStudent?.whatsappContactStatus == "wrong_number") {
                     Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
+                        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.42f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.22f)),
                     ) {
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 14.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                            verticalArrangement = Arrangement.spacedBy(3.dp),
                         ) {
-                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text("Wrong phone number", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                Text(
-                                    "Stops WhatsApp reminders and queued retries until this is switched off.",
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-                                    fontSize = 11.sp,
-                                    lineHeight = 15.sp,
-                                )
-                            }
-                            Switch(
-                                checked = wrongWhatsappNumber,
-                                onCheckedChange = { wrongWhatsappNumber = it },
+                            Text(
+                                "Reminders paused for this number",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            )
+                            Text(
+                                "Enter the corrected 10-digit mobile number and save. Future reminders will resume automatically.",
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp,
                             )
                         }
                     }
@@ -7331,7 +7385,12 @@ private fun PlayerEditorSheet(
                                             comments = editingStudent?.comments.orEmpty(),
                                             fatherGuardianName = fatherGuardianName,
                                             parentContactNo = parentContactNo,
-                                            whatsappContactStatus = if (wrongWhatsappNumber) "wrong_number" else "active",
+                                            whatsappContactStatus = when {
+                                                editingStudent == null -> "active"
+                                                editingStudent.whatsappContactStatus != "wrong_number" -> editingStudent.whatsappContactStatus
+                                                parentContactNo.length == 10 && parentContactNo != editingStudent.parentContactNo.filter(Char::isDigit).take(10) -> "active"
+                                                else -> "wrong_number"
+                                            },
                                             alternateContactNo = alternateContactNo,
                                             schoolCollege = schoolCollege,
                                             grade = grade,

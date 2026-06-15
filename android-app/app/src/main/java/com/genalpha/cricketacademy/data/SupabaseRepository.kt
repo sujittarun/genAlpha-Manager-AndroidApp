@@ -1351,6 +1351,25 @@ class SupabaseRepository(
         }
     }
 
+    suspend fun updateWhatsappContactStatus(
+        student: Student,
+        status: String,
+        managerEmail: String,
+        session: ManagerSession,
+    ) {
+        withContext(Dispatchers.IO) {
+            val body = JSONObject()
+                .put("whatsapp_contact_status", status)
+                .put("updated_by", managerEmail)
+            executeWriteRequest(
+                url = "$baseUrl/rest/v1/students?id=eq.${student.id}",
+                session = session,
+                method = "PATCH",
+                body = body,
+            )
+        }
+    }
+
     fun startStudentRealtime(listener: StudentRealtimeListener, session: ManagerSession? = null) {
         val sessionChanged = realtimeSession?.accessToken != session?.accessToken
         realtimeListener = listener

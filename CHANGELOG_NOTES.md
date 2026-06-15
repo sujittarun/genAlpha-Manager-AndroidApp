@@ -1,6 +1,6 @@
 # Gen Alpha Manager Changelog Notes
 
-Last updated: 2026-06-14
+Last updated: 2026-06-15
 
 This file records meaningful project changes and decisions so future Codex sessions can understand recent work without rereading the full chat. It is not a release changelog for users; it is a developer/manager memory log.
 
@@ -12,6 +12,14 @@ Use this file when:
 - A future agent needs to understand why a design or business rule exists.
 
 For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
+
+## 2026-06-15
+
+### Contextual Wrong-Number Management
+
+- Replaced the always-visible wrong-number control in Edit Player with an exception action in each player's Actions menu.
+- Normal player edit forms no longer show WhatsApp status controls. Flagged players see only a compact paused-reminders note beside the phone field.
+- Saving a different valid 10-digit number for a flagged player automatically reactivates future reminders without retrying historical failures.
 
 ## 2026-06-14
 
