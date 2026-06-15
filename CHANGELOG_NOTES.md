@@ -17,9 +17,9 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 
 ### Contextual Wrong-Number Management
 
-- Replaced the always-visible wrong-number control in Edit Player with an exception action in each player's Actions menu.
-- Normal player edit forms no longer show WhatsApp status controls. Flagged players see only a compact paused-reminders note beside the phone field.
-- Saving a different valid 10-digit number for a flagged player automatically reactivates future reminders without retrying historical failures.
+- Removed all wrong-number controls from player action menus and normal Edit Player forms.
+- Only flagged players see a compact correction message beside the phone field.
+- Saving a different valid 10-digit number automatically reactivates future reminders and confirms that state to staff without retrying historical failures.
 
 ## 2026-06-14
 

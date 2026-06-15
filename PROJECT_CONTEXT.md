@@ -205,7 +205,7 @@ Current utility reminder templates:
   - If Need Help: log it and provide manager/help flow.
 - Automatic fee reminders are enabled through the Supabase WhatsApp reminder scheduler; manual reminders can also be triggered from the app.
 - `students.whatsapp_contact_status` is the durable parent-contact gate. `wrong_number` and `opted_out` block automatic reminders, manual sends, queued retries, and payment confirmation WhatsApp until staff reactivate the contact.
-- Manage `wrong_number` as an exception from the player Actions menu, not as a standard Edit Player field. Saving a different valid 10-digit number for a flagged player reactivates future reminders; historical failed reminders stay closed.
+- Do not expose wrong-number status controls in normal player UI. Only flagged players show a correction note in Edit Player; saving a different valid 10-digit number reactivates future reminders while historical failed reminders stay closed.
 - `reminder_events.manual_followup_reason` explains manual follow-up (`wrong_phone_number`, `whatsapp_opted_out`, `overdue_15_days`, `retry_exhausted`, `delivery_failure`, or `missing_phone`). Web and Android must show the reason without replacing the separate Next fee due day count.
 - Reminder policy:
   - heads-up 2 days before renewal.

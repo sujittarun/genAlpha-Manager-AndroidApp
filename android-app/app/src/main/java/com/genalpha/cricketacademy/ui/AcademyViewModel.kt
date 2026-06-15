@@ -741,6 +741,11 @@ class AcademyViewModel(
                 true,
                 if (!profileFieldsSaved) {
                     "Player saved, but parent/school fields need the latest Supabase SQL migration."
+                } else if (
+                    editingStudent?.whatsappContactStatus == "wrong_number" &&
+                    draft.whatsappContactStatus == "active"
+                ) {
+                    "Phone number updated. Future WhatsApp reminders are active again."
                 } else if (editingStudent == null) {
                     "Player added successfully."
                 } else {
@@ -1033,33 +1038,6 @@ class AcademyViewModel(
             )
         } catch (error: Exception) {
             OperationResult(false, error.message ?: "Unable to update player status.")
-        }
-    }
-
-    suspend fun toggleWhatsappContactStatus(student: Student): OperationResult {
-        if (student.whatsappContactStatus == "opted_out") {
-            return OperationResult(false, "This parent has opted out of WhatsApp reminders.")
-        }
-        val nextStatus = if (student.whatsappContactStatus == "wrong_number") "active" else "wrong_number"
-        return try {
-            val session = withFreshSession { session ->
-                repository.updateWhatsappContactStatus(student, nextStatus, session.email, session)
-                session
-            }
-            upsertLocalStudent(
-                student.copy(
-                    whatsappContactStatus = nextStatus,
-                    updatedBy = session.email,
-                )
-            )
-            refreshInBackground()
-            OperationResult(
-                true,
-                if (nextStatus == "active") "Phone number marked corrected."
-                else "Phone number marked incorrect. Reminders paused."
-            )
-        } catch (error: Exception) {
-            OperationResult(false, error.message ?: "Unable to update the WhatsApp number status.")
         }
     }
 

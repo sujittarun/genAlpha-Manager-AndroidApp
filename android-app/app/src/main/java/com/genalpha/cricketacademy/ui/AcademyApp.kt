@@ -1124,14 +1124,6 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                             snackbarHostState.showSnackbar(result.message)
                                         }
                                     },
-                                    onToggleWhatsappContact = if (viewModel.canEdit()) {
-                                        {
-                                            scope.launch {
-                                                val result = viewModel.toggleWhatsappContactStatus(student)
-                                                snackbarHostState.showSnackbar(result.message)
-                                            }
-                                        }
-                                    } else null,
                                     onJerseyPairsChange = if (viewModel.canEdit()) {
                                         { nextPairs, amount ->
                                             scope.launch {
@@ -5030,7 +5022,6 @@ private fun RosterRow(
     onRenew: (() -> Unit)? = null,
     onSendReminder: (() -> Unit)? = null,
     onToggleStatus: (() -> Unit)? = null,
-    onToggleWhatsappContact: (() -> Unit)? = null,
     onJerseyPairsChange: ((Int, Double) -> Unit)? = null,
 ) {
     val needsAttention = student.isFeesPending() || student.isRenewalPending(payments)
@@ -5052,7 +5043,6 @@ private fun RosterRow(
     val manualFollowUpReason = student.manualFollowUpReasonLabel(paymentFollowUp, payments)
     val renewalStatusLabel = student.renewalStatus(payments)
     var showingActions by rememberSaveable(student.id) { mutableStateOf(false) }
-    var showWhatsappContactConfirmation by rememberSaveable(student.id) { mutableStateOf(false) }
     var pendingJerseyPairs by rememberSaveable(student.id) { mutableStateOf<Int?>(null) }
     var jerseyAdjustmentAmount by rememberSaveable(student.id) { mutableStateOf("") }
     val previousJerseyPairs = student.jerseyPairs.coerceAtLeast(0)
@@ -5223,21 +5213,6 @@ private fun RosterRow(
                                     onClick = {
                                         showingActions = false
                                         sendReminder()
-                                    },
-                                )
-                            }
-                            if (onToggleWhatsappContact != null) {
-                                RosterActionButton(
-                                    label = when (student.whatsappContactStatus) {
-                                        "wrong_number" -> "Phone number corrected"
-                                        "opted_out" -> "WhatsApp opted out"
-                                        else -> "Mark phone incorrect"
-                                    },
-                                    tint = if (student.whatsappContactStatus == "wrong_number") BrandGreen else Color(0xFF9A6400),
-                                    enabled = student.whatsappContactStatus != "opted_out",
-                                    onClick = {
-                                        showingActions = false
-                                        showWhatsappContactConfirmation = true
                                     },
                                 )
                             }
@@ -5491,37 +5466,6 @@ private fun RosterRow(
         }
     }
 
-    if (showWhatsappContactConfirmation) {
-        val isCurrentlyWrong = student.whatsappContactStatus == "wrong_number"
-        AlertDialog(
-            onDismissRequest = { showWhatsappContactConfirmation = false },
-            title = { Text(if (isCurrentlyWrong) "Phone number corrected?" else "Mark phone incorrect?") },
-            text = {
-                Text(
-                    if (isCurrentlyWrong) {
-                        "Future WhatsApp reminders for ${student.name} will resume on the normal schedule."
-                    } else {
-                        "WhatsApp reminders and queued retries for ${student.name} will stop until the number is corrected."
-                    }
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showWhatsappContactConfirmation = false
-                        onToggleWhatsappContact?.invoke()
-                    },
-                ) {
-                    Text(if (isCurrentlyWrong) "Resume reminders" else "Pause reminders")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showWhatsappContactConfirmation = false }) {
-                    Text("Cancel")
-                }
-            },
-        )
-    }
 }
 
 @Composable
@@ -5582,12 +5526,10 @@ private fun JerseyPairStepper(
 private fun RosterActionButton(
     label: String,
     tint: Color,
-    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     OutlinedButton(
         onClick = onClick,
-        enabled = enabled,
         modifier = Modifier
             .heightIn(min = 46.dp)
             .widthIn(min = 146.dp),
@@ -7301,13 +7243,13 @@ private fun PlayerEditorSheet(
                             verticalArrangement = Arrangement.spacedBy(3.dp),
                         ) {
                             Text(
-                                "Reminders paused for this number",
+                                "This phone number is not correct",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onTertiaryContainer,
                             )
                             Text(
-                                "Enter the corrected 10-digit mobile number and save. Future reminders will resume automatically.",
+                                "Enter a different valid 10-digit number and save. Future reminders will resume automatically.",
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                                 fontSize = 11.sp,
                                 lineHeight = 15.sp,
