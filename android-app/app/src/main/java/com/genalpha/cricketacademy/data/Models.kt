@@ -558,7 +558,7 @@ fun Student.renewalStatus(payments: List<StudentPayment>): String = when {
 }
 
 fun Student.trainingDurationLabel(): String {
-    val days = daysSince(joinDate).coerceAtLeast(0)
+    val days = activeTrainingDays()
     val months = days / 30
     val remainingDays = days % 30
     return if (months <= 0) {
@@ -574,9 +574,22 @@ fun Student.membershipDateLabel(): String {
 }
 
 fun Student.tenureBadgeLabel(): String {
-    val days = daysSince(joinDate).coerceAtLeast(0)
+    val days = activeTrainingDays()
     val months = days / 30
     return if (months <= 0) "${days}d" else "${months}m"
+}
+
+fun Student.activeTrainingDays(): Int {
+    val currentPauseDays = if (discontinued) {
+        val pauseStart = discontinuedAt
+            ?: updatedAt.take(10).takeIf { it.isNotBlank() }
+            ?: createdAt.take(10).takeIf { it.isNotBlank() }
+            ?: joinDate
+        daysBetweenIso(pauseStart, todayIsoDate())
+    } else {
+        0
+    }
+    return (daysSince(joinDate) - feePauseDays.coerceAtLeast(0) - currentPauseDays).coerceAtLeast(0)
 }
 
 fun Student.studentType(): String = if (renewals.isNotEmpty()) "Returning" else "New"
