@@ -746,6 +746,25 @@ fun AcademyApp(viewModel: AcademyViewModel) {
     val attendanceStreaks = remember(activePlayers, uiState.recentAttendanceDates, uiState.todayAttendanceIds) {
         buildAttendanceStreaks(activePlayers, uiState.recentAttendanceDates, uiState.todayAttendanceIds)
     }
+    fun toggleStudentStatus(student: Student, closeDetailOnSuccess: Boolean = false) {
+        val submit: (String) -> Unit = { rejoinDate ->
+            scope.launch {
+                val result = viewModel.toggleStatus(student, rejoinDate)
+                if (result.success && closeDetailOnSuccess) {
+                    showDetailSheet = false
+                    selectedStudent = null
+                }
+                snackbarHostState.showSnackbar(result.message)
+            }
+        }
+        if (student.discontinued) {
+            showLocalDatePicker(context, todayIsoDate()) { rejoinDate ->
+                submit(rejoinDate)
+            }
+        } else {
+            submit(todayIsoDate())
+        }
+    }
 
     LaunchedEffect(uiState.errorMessage) {
         uiState.errorMessage?.let {
@@ -1119,10 +1138,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                         }
                                     } else null,
                                     onToggleStatus = {
-                                        scope.launch {
-                                            val result = viewModel.toggleStatus(student)
-                                            snackbarHostState.showSnackbar(result.message)
-                                        }
+                                        toggleStudentStatus(student)
                                     },
                                     onJerseyPairsChange = if (viewModel.canEdit()) {
                                         { nextPairs, amount ->
@@ -1395,14 +1411,7 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                         },
                         onToggleStatus = {
                             selectedStudent?.let { activeStudent ->
-                                val result = viewModel.toggleStatus(activeStudent)
-                                if (result.success) {
-                                    showDetailSheet = false
-                                    selectedStudent = null
-                                }
-                                scope.launch {
-                                    snackbarHostState.showSnackbar(result.message)
-                                }
+                                toggleStudentStatus(activeStudent, closeDetailOnSuccess = true)
                             }
                         },
                         onSendAdmissionReminder = {

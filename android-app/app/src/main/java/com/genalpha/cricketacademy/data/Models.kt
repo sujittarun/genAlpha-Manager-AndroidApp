@@ -508,8 +508,10 @@ fun Student.paidThroughDate(payments: List<StudentPayment>): String {
     } else {
         joinDate
     }
+    val paidCycleStarts = mutableListOf<String>()
 
     renewals.forEach { renewalDate ->
+        if (renewalDate.isNotBlank()) paidCycleStarts += renewalDate
         paidUntil = maxIsoDate(paidUntil, addMonths(renewalDate, 1))
     }
 
@@ -519,10 +521,14 @@ fun Student.paidThroughDate(payments: List<StudentPayment>): String {
         .forEach { payment ->
             val cycleStart = payment.cycleStartDate?.takeIf { it.isNotBlank() } ?: payment.paidOn
             val months = payment.monthsCoveredForDueDate()
+            if (cycleStart.isNotBlank()) paidCycleStarts += cycleStart
             paidUntil = maxIsoDate(paidUntil, addMonths(cycleStart, months))
         }
 
-    return if (feePauseDays > 0) addDays(paidUntil, feePauseDays) else paidUntil
+    val hasRenewalAfterRejoin = rejoinedAt?.takeIf { it.isNotBlank() }?.let { rejoinDate ->
+        paidCycleStarts.any { it.take(10) >= rejoinDate }
+    } ?: false
+    return if (feePauseDays > 0 && !hasRenewalAfterRejoin) addDays(paidUntil, feePauseDays) else paidUntil
 }
 
 private fun StudentPayment.monthsCoveredForDueDate(): Int {

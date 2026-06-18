@@ -55,6 +55,14 @@ let activeSlotFilter = "";
 let toastTimeoutId = null;
 
 const getActiveManagerEmail = () => lastManagerEmail || "manager";
+const toLocalIsoDate = () => new Date().toISOString().split("T")[0];
+const daysBetweenIso = (startDate, endDate) => {
+  if (!startDate || !endDate) return 0;
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
+  return Math.max(Math.round((end - start) / 86400000), 0);
+};
 
 const normalizeKid = (kid) => {
   const renewals = Array.isArray(kid.renewals) ? kid.renewals.filter(Boolean) : [];
@@ -71,6 +79,9 @@ const normalizeKid = (kid) => {
     addedBy: kid.added_by || "Unknown",
     updatedBy: kid.updated_by || kid.added_by || "Unknown",
     discontinued: Boolean(kid.discontinued),
+    discontinuedAt: kid.discontinued_at || "",
+    rejoinedAt: kid.rejoined_at || "",
+    feePauseDays: Number(kid.fee_pause_days) || 0,
   };
 };
 
@@ -758,12 +769,34 @@ kidsList.addEventListener("click", async (event) => {
       return;
     }
 
+    const willDiscontinue = !kidToUpdate.discontinued;
+    const updatePayload = {
+      discontinued: willDiscontinue,
+      updated_by: getActiveManagerEmail(),
+    };
+    if (willDiscontinue) {
+      updatePayload.discontinued_at = toLocalIsoDate();
+    } else {
+      const defaultRejoinDate = toLocalIsoDate();
+      const selectedRejoinDate = window.prompt(
+        `Rejoin date for ${kidToUpdate.name} (YYYY-MM-DD)`,
+        defaultRejoinDate,
+      );
+      if (selectedRejoinDate === null) return;
+      const rejoinDate = selectedRejoinDate.trim() || defaultRejoinDate;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(rejoinDate)) {
+        formMessage.textContent = "Choose a valid rejoin date in YYYY-MM-DD format.";
+        return;
+      }
+      const pauseStart = kidToUpdate.discontinuedAt || kidToUpdate.joinDate;
+      updatePayload.discontinued = false;
+      updatePayload.rejoined_at = rejoinDate;
+      updatePayload.fee_pause_days = Math.max(kidToUpdate.feePauseDays, 0) + daysBetweenIso(pauseStart, rejoinDate);
+    }
+
     const { error } = await supabaseClient
       .from("students")
-      .update({
-        discontinued: !kidToUpdate.discontinued,
-        updated_by: getActiveManagerEmail(),
-      })
+      .update(updatePayload)
       .eq("id", id);
 
     if (error) {

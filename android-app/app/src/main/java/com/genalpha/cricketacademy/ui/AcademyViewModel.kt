@@ -1015,10 +1015,10 @@ class AcademyViewModel(
 
 
 
-    suspend fun toggleStatus(student: Student): OperationResult {
+    suspend fun toggleStatus(student: Student, rejoinDate: String = todayIsoDate()): OperationResult {
         return try {
             val session = withFreshSession { session ->
-                repository.toggleStudentStatus(student, session.email, session)
+                repository.toggleStudentStatus(student, session.email, session, rejoinDate)
                 session
             }
             upsertLocalStudent(
@@ -1026,8 +1026,8 @@ class AcademyViewModel(
                     discontinued = !student.discontinued,
                     updatedBy = session.email,
                     discontinuedAt = if (student.discontinued) student.discontinuedAt else todayIsoDate(),
-                    rejoinedAt = if (student.discontinued) todayIsoDate() else student.rejoinedAt,
-                    feePauseDays = if (student.discontinued) student.rejoinedFeePauseDays() else student.feePauseDays,
+                    rejoinedAt = if (student.discontinued) rejoinDate else student.rejoinedAt,
+                    feePauseDays = if (student.discontinued) student.rejoinedFeePauseDays(rejoinDate) else student.feePauseDays,
                 )
             )
             refreshInBackground()

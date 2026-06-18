@@ -1331,7 +1331,12 @@ class SupabaseRepository(
         }
     }
 
-    suspend fun toggleStudentStatus(student: Student, managerEmail: String, session: ManagerSession) {
+    suspend fun toggleStudentStatus(
+        student: Student,
+        managerEmail: String,
+        session: ManagerSession,
+        rejoinDate: String = todayIsoDate(),
+    ) {
         withContext(Dispatchers.IO) {
             val body = JSONObject()
                 .put("discontinued", !student.discontinued)
@@ -1339,7 +1344,7 @@ class SupabaseRepository(
             if (!student.discontinued) {
                 body.put("discontinued_at", todayIsoDate())
             } else {
-                appendRejoinFields(body, student)
+                appendRejoinFields(body, student, rejoinDate)
             }
 
             executeWriteRequest(
@@ -1518,16 +1523,15 @@ class SupabaseRepository(
         return body
     }
 
-    private fun appendRejoinFields(body: JSONObject, student: Student) {
-        val today = todayIsoDate()
+    private fun appendRejoinFields(body: JSONObject, student: Student, rejoinDate: String = todayIsoDate()) {
         val pauseStart = student.discontinuedAt
             ?: student.updatedAt.take(10).takeIf { it.isNotBlank() }
             ?: student.createdAt.take(10).takeIf { it.isNotBlank() }
             ?: student.joinDate
         body
             .put("discontinued", false)
-            .put("rejoined_at", today)
-            .put("fee_pause_days", student.feePauseDays.coerceAtLeast(0) + daysBetweenIso(pauseStart, today))
+            .put("rejoined_at", rejoinDate)
+            .put("fee_pause_days", student.feePauseDays.coerceAtLeast(0) + daysBetweenIso(pauseStart, rejoinDate))
     }
 
     private fun appendActiveStatusFields(body: JSONObject, student: Student) {
