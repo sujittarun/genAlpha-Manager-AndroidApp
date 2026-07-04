@@ -12,6 +12,32 @@ private const val JERSEY_PAIR_REVENUE = 750.0
 private const val SPECIAL_TRAINING_MONTHLY_FEE = 10000.0
 private const val MANUAL_FOLLOWUP_OVERDUE_DAYS = 15
 
+private fun specialTrainingDiscountRate(months: Int): Double = when {
+    months >= 6 -> 0.10
+    months >= 3 -> 0.05
+    else -> 0.0
+}
+
+private fun specialTrainingAmountForMonths(months: Int): Int {
+    val safeMonths = months.coerceAtLeast(1)
+    return kotlin.math.round(SPECIAL_TRAINING_MONTHLY_FEE * safeMonths * (1 - specialTrainingDiscountRate(safeMonths))).toInt()
+}
+
+private fun inferSpecialTrainingMonthsFromAmount(amount: Double): Int {
+    val roundedAmount = kotlin.math.round(amount).toInt()
+    if (roundedAmount <= 0) return 1
+    for (months in 1..36) {
+        if (specialTrainingAmountForMonths(months) == roundedAmount) return months
+    }
+    return when {
+        roundedAmount >= specialTrainingAmountForMonths(6) ->
+            kotlin.math.round(roundedAmount / (SPECIAL_TRAINING_MONTHLY_FEE * 0.9)).toInt().coerceAtLeast(1)
+        roundedAmount >= specialTrainingAmountForMonths(3) ->
+            kotlin.math.round(roundedAmount / (SPECIAL_TRAINING_MONTHLY_FEE * 0.95)).toInt().coerceAtLeast(1)
+        else -> kotlin.math.round(roundedAmount / SPECIAL_TRAINING_MONTHLY_FEE).toInt().coerceAtLeast(1)
+    }
+}
+
 private fun chargeableJerseyPairCount(pairCount: Int): Int =
     pairCount.coerceAtLeast(0)
 
@@ -538,7 +564,7 @@ fun Student.paidThroughDate(payments: List<StudentPayment>): String {
 private fun StudentPayment.monthsCoveredForDueDate(): Int {
     val explicitMonths = monthsCovered?.takeIf { it > 0 }?.coerceAtLeast(1) ?: 0
     if (planType.equals("special", ignoreCase = true)) {
-        val amountMonths = kotlin.math.round(amount / SPECIAL_TRAINING_MONTHLY_FEE).toInt().coerceAtLeast(1)
+        val amountMonths = inferSpecialTrainingMonthsFromAmount(amount)
         return maxOf(explicitMonths, amountMonths, 1)
     }
     val planMonths = when (planType) {
@@ -781,7 +807,7 @@ private fun Student.initialMonthsCovered(): Int {
     if (!feesPaid || amountPaid <= 0.0) return 0
     val feeOnlyAmount = (amountPaid - (chargeableJerseyPairCount(jerseyPairs) * JERSEY_PAIR_REVENUE)).coerceAtLeast(0.0)
     if (feePlan.equals("special", ignoreCase = true)) {
-        return kotlin.math.round(feeOnlyAmount / SPECIAL_TRAINING_MONTHLY_FEE).toInt().coerceAtLeast(1)
+        return inferSpecialTrainingMonthsFromAmount(feeOnlyAmount)
     }
     val withoutAdmissionFee = (feeOnlyAmount - 500.0).coerceAtLeast(0.0)
     val roundedAmount = kotlin.math.round(feeOnlyAmount).toInt()

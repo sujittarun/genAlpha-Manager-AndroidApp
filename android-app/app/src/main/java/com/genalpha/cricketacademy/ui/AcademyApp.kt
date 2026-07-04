@@ -275,6 +275,17 @@ private fun admissionPlanBase(plan: String): Double = when (plan) {
 private fun positiveMonthCount(value: String): Int =
     (value.toIntOrNull() ?: 1).coerceAtLeast(1)
 
+private fun specialTrainingDiscountRate(months: Int): Double = when {
+    months >= 6 -> 0.10
+    months >= 3 -> 0.05
+    else -> 0.0
+}
+
+private fun specialTrainingAmountForMonths(months: Int): Double {
+    val safeMonths = months.coerceAtLeast(1)
+    return kotlin.math.round(SpecialTrainingMonthlyFee * safeMonths * (1 - specialTrainingDiscountRate(safeMonths)))
+}
+
 private fun chargeableJerseyPairs(pairText: String): Int =
     (pairText.toIntOrNull() ?: 0).coerceAtLeast(0)
 
@@ -295,7 +306,7 @@ private fun joiningFeeSplitForPlan(student: Student, plan: String, specialMonths
     val base = when (plan) {
         "quarterly" -> 9975.0
         "halfyearly" -> 18900.0
-        "special" -> SpecialTrainingMonthlyFee * specialMonths.coerceAtLeast(1)
+        "special" -> specialTrainingAmountForMonths(specialMonths)
         "custom" -> 0.0
         else -> 3500.0
     }
@@ -3396,7 +3407,7 @@ private fun RenewalPaymentDialog(
     val planInfo = when (plan) {
         "quarterly" -> Triple("3 months - 5% off", 3, 9975.0)
         "halfyearly" -> Triple("6 months - 10% off", 6, 18900.0)
-        "special" -> Triple("Special training (${safeSpecialMonths} month${if (safeSpecialMonths == 1) "" else "s"})", safeSpecialMonths, SpecialTrainingMonthlyFee * safeSpecialMonths)
+        "special" -> Triple("Special training (${safeSpecialMonths} month${if (safeSpecialMonths == 1) "" else "s"})", safeSpecialMonths, specialTrainingAmountForMonths(safeSpecialMonths))
         "custom" -> Triple("Custom amount", 1, amount.toDoubleOrNull() ?: 0.0)
         else -> Triple("Monthly", 1, 3500.0)
     }
@@ -3471,7 +3482,7 @@ private fun RenewalPaymentDialog(
                         amount = when (plan) {
                             "quarterly" -> "9975"
                             "halfyearly" -> "18900"
-                            "special" -> (SpecialTrainingMonthlyFee * safeSpecialMonths).toInt().toString()
+                            "special" -> specialTrainingAmountForMonths(safeSpecialMonths).toInt().toString()
                             "custom" -> ""
                             else -> "3500"
                         }
@@ -3490,7 +3501,7 @@ private fun RenewalPaymentDialog(
                             admissionFee = split.admissionFee.toInt().toString()
                             amount = split.totalFeeAmount.toInt().toString()
                         } else {
-                            amount = (SpecialTrainingMonthlyFee * months).toInt().toString()
+                            amount = specialTrainingAmountForMonths(months).toInt().toString()
                         }
                     },
                     label = "Special training months",
@@ -7453,7 +7464,7 @@ private fun AdmissionFormSheet(
     val coachingFee = remember(feePlan, customAmount, specialTrainingMonths) {
         when (feePlan) {
             "custom" -> customAmount.toDoubleOrNull() ?: 0.0
-            "special" -> SpecialTrainingMonthlyFee * positiveMonthCount(specialTrainingMonths)
+            "special" -> specialTrainingAmountForMonths(positiveMonthCount(specialTrainingMonths))
             else -> admissionPlanBase(feePlan)
         }
     }

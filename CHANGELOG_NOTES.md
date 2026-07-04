@@ -18,9 +18,9 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 ### Special Training Multi-Month Payments
 
 - Browser and Android admission forms now show `Special training months` only when the special plan is selected; default remains 1 month.
-- Special training totals calculate as Rs 10,000 per month, with no admission fee, plus any extra jersey amount.
+- Special training totals calculate as Rs 10,000 per month, auto-applying 5% off for 3-5 months and 10% off for 6+ months, with no admission fee, plus any extra jersey amount.
 - Browser and Android renewal/joining-fee dialogs now support multi-month special training and save `months_covered` accordingly.
-- Paid-through calculations in browser, Android, and the WhatsApp reminder function now treat `fee_plan`/`plan_type = special` as Rs 10,000 per covered month before applying regular monthly/quarterly/half-yearly inference.
+- Paid-through calculations in browser, Android, and the WhatsApp reminder function now treat `fee_plan`/`plan_type = special` with the special-training discount table before applying regular monthly/quarterly/half-yearly inference.
 - Live correction applied for Aarav C: existing Rs 29,000 joining payment was kept, marked as special training for 3 months from 2026-07-01, and a data-correction timeline row was added.
 
 ## 2026-06-15

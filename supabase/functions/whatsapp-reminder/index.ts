@@ -150,6 +150,42 @@ function maxIsoDate(d1: string, d2: string): string {
 const ADMISSION_ONE_TIME_FEE = 2500;
 const SPECIAL_TRAINING_MONTHLY_FEE = 10000;
 
+function getSpecialTrainingDiscountRate(months: number): number {
+  const safeMonths = Math.max(Math.floor(Number(months || 1)), 1);
+  if (safeMonths >= 6) return 0.1;
+  if (safeMonths >= 3) return 0.05;
+  return 0;
+}
+
+function getSpecialTrainingAmountForMonths(months: number): number {
+  const safeMonths = Math.max(Math.floor(Number(months || 1)), 1);
+  return Math.round(
+    SPECIAL_TRAINING_MONTHLY_FEE * safeMonths *
+      (1 - getSpecialTrainingDiscountRate(safeMonths)),
+  );
+}
+
+function inferSpecialTrainingMonthsFromAmount(amount: number): number {
+  const roundedAmount = Math.round(Number(amount || 0));
+  if (roundedAmount <= 0) return 1;
+  for (let months = 1; months <= 36; months += 1) {
+    if (getSpecialTrainingAmountForMonths(months) === roundedAmount) return months;
+  }
+  if (roundedAmount >= getSpecialTrainingAmountForMonths(6)) {
+    return Math.max(
+      Math.round(roundedAmount / (SPECIAL_TRAINING_MONTHLY_FEE * 0.9)),
+      1,
+    );
+  }
+  if (roundedAmount >= getSpecialTrainingAmountForMonths(3)) {
+    return Math.max(
+      Math.round(roundedAmount / (SPECIAL_TRAINING_MONTHLY_FEE * 0.95)),
+      1,
+    );
+  }
+  return Math.max(Math.round(roundedAmount / SPECIAL_TRAINING_MONTHLY_FEE), 1);
+}
+
 function getPaymentMonthsCovered(payment: any): number {
   const plan = payment.plan_type || payment.planType;
   const explicitMonths = Number(payment.months_covered || payment.monthsCovered || 0);
@@ -157,7 +193,7 @@ function getPaymentMonthsCovered(payment: any): number {
   if (String(plan || "").toLowerCase() === "special") {
     return Math.max(
       explicitMonths > 0 ? explicitMonths : 0,
-      Math.round(amount / SPECIAL_TRAINING_MONTHLY_FEE),
+      inferSpecialTrainingMonthsFromAmount(amount),
       1,
     );
   }
@@ -275,7 +311,7 @@ function getInitialCoverageMonths(student: any): number {
   if (!isPaid || Number(student.amount_paid || 0) <= 0) return 0;
   const amount = Number(student.amount_paid || 0);
   if (String(student.fee_plan || student.feePlan || "").toLowerCase() === "special") {
-    return Math.max(Math.round(amount / SPECIAL_TRAINING_MONTHLY_FEE), 1);
+    return inferSpecialTrainingMonthsFromAmount(amount);
   }
   const withoutAdmissionFee = Math.max(amount - ADMISSION_ONE_TIME_FEE, 0);
   const roundedAmount = Math.round(amount);
