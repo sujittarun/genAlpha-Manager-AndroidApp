@@ -148,17 +148,24 @@ function maxIsoDate(d1: string, d2: string): string {
 }
 
 const ADMISSION_ONE_TIME_FEE = 2500;
+const SPECIAL_TRAINING_MONTHLY_FEE = 10000;
 
 function getPaymentMonthsCovered(payment: any): number {
-  if (payment.months_covered || payment.monthsCovered) {
-    return Number(payment.months_covered || payment.monthsCovered);
-  }
   const plan = payment.plan_type || payment.planType;
+  const explicitMonths = Number(payment.months_covered || payment.monthsCovered || 0);
+  const amount = Math.round(Number(payment.amount || 0));
+  if (String(plan || "").toLowerCase() === "special") {
+    return Math.max(
+      explicitMonths > 0 ? explicitMonths : 0,
+      Math.round(amount / SPECIAL_TRAINING_MONTHLY_FEE),
+      1,
+    );
+  }
+  if (explicitMonths > 0) return explicitMonths;
   if (plan === "monthly") return 1;
   if (plan === "quarterly") return 3;
   if (plan === "halfyearly") return 6;
 
-  const amount = Math.round(Number(payment.amount || 0));
   if (amount >= 18900) return 6;
   if (amount >= 9975) return 3;
   if (amount >= 3500) return 1;
@@ -267,6 +274,9 @@ function getInitialCoverageMonths(student: any): number {
                  
   if (!isPaid || Number(student.amount_paid || 0) <= 0) return 0;
   const amount = Number(student.amount_paid || 0);
+  if (String(student.fee_plan || student.feePlan || "").toLowerCase() === "special") {
+    return Math.max(Math.round(amount / SPECIAL_TRAINING_MONTHLY_FEE), 1);
+  }
   const withoutAdmissionFee = Math.max(amount - ADMISSION_ONE_TIME_FEE, 0);
   const roundedAmount = Math.round(amount);
 

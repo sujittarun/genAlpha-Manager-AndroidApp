@@ -1,6 +1,6 @@
 # Gen Alpha Manager Changelog Notes
 
-Last updated: 2026-06-15
+Last updated: 2026-07-04
 
 This file records meaningful project changes and decisions so future Codex sessions can understand recent work without rereading the full chat. It is not a release changelog for users; it is a developer/manager memory log.
 
@@ -12,6 +12,16 @@ Use this file when:
 - A future agent needs to understand why a design or business rule exists.
 
 For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
+
+## 2026-07-04
+
+### Special Training Multi-Month Payments
+
+- Browser and Android admission forms now show `Special training months` only when the special plan is selected; default remains 1 month.
+- Special training totals calculate as Rs 10,000 per month, with no admission fee, plus any extra jersey amount.
+- Browser and Android renewal/joining-fee dialogs now support multi-month special training and save `months_covered` accordingly.
+- Paid-through calculations in browser, Android, and the WhatsApp reminder function now treat `fee_plan`/`plan_type = special` as Rs 10,000 per covered month before applying regular monthly/quarterly/half-yearly inference.
+- Live correction applied for Aarav C: existing Rs 29,000 joining payment was kept, marked as special training for 3 months from 2026-07-01, and a data-correction timeline row was added.
 
 ## 2026-06-15
 

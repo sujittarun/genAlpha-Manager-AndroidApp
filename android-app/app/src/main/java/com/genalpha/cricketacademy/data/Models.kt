@@ -9,6 +9,7 @@ import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 private const val JERSEY_PAIR_REVENUE = 750.0
+private const val SPECIAL_TRAINING_MONTHLY_FEE = 10000.0
 private const val MANUAL_FOLLOWUP_OVERDUE_DAYS = 15
 
 private fun chargeableJerseyPairCount(pairCount: Int): Int =
@@ -491,6 +492,9 @@ fun PendingAdmission.isPaymentPendingVerification(): Boolean =
 fun Student.referenceDate(): String = renewals.lastOrNull() ?: joinDate
 
 fun Student.isSpecialTraining(payments: List<StudentPayment>): Boolean {
+    if (feePlan.equals("special", ignoreCase = true)) {
+        return true
+    }
     if (payments.any { it.studentId == id && it.planType == "special" }) {
         return true
     }
@@ -532,7 +536,11 @@ fun Student.paidThroughDate(payments: List<StudentPayment>): String {
 }
 
 private fun StudentPayment.monthsCoveredForDueDate(): Int {
-    val explicitMonths = (monthsCovered ?: 1).coerceAtLeast(1)
+    val explicitMonths = monthsCovered?.takeIf { it > 0 }?.coerceAtLeast(1) ?: 0
+    if (planType.equals("special", ignoreCase = true)) {
+        val amountMonths = kotlin.math.round(amount / SPECIAL_TRAINING_MONTHLY_FEE).toInt().coerceAtLeast(1)
+        return maxOf(explicitMonths, amountMonths, 1)
+    }
     val planMonths = when (planType) {
         "quarterly" -> 3
         "halfyearly" -> 6
@@ -772,6 +780,9 @@ fun calculateAgeFromDate(dateOfBirth: String): Int? {
 private fun Student.initialMonthsCovered(): Int {
     if (!feesPaid || amountPaid <= 0.0) return 0
     val feeOnlyAmount = (amountPaid - (chargeableJerseyPairCount(jerseyPairs) * JERSEY_PAIR_REVENUE)).coerceAtLeast(0.0)
+    if (feePlan.equals("special", ignoreCase = true)) {
+        return kotlin.math.round(feeOnlyAmount / SPECIAL_TRAINING_MONTHLY_FEE).toInt().coerceAtLeast(1)
+    }
     val withoutAdmissionFee = (feeOnlyAmount - 500.0).coerceAtLeast(0.0)
     val roundedAmount = kotlin.math.round(feeOnlyAmount).toInt()
     return when {

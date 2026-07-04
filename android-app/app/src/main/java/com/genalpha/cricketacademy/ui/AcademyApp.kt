@@ -254,6 +254,7 @@ private val AdmissionSlotOptions = listOf(
 )
 private const val AdmissionOneTimeFee = 500.0
 private const val JerseyExtraPairFee = 750.0
+private const val SpecialTrainingMonthlyFee = 10000.0
 private val AdmissionFeePlanOptions = listOf(
     SlotOption("monthly", "Monthly"),
     SlotOption("quarterly", "3 months - 5% off"),
@@ -266,10 +267,13 @@ private val AdmissionFilledByOptions = listOf("Parent / Guardian", "Coach", "Man
 private fun admissionPlanBase(plan: String): Double = when (plan) {
     "quarterly" -> 9975.0
     "halfyearly" -> 18900.0
-    "special" -> 10000.0
+    "special" -> SpecialTrainingMonthlyFee
     "custom" -> 0.0
     else -> 3500.0
 }
+
+private fun positiveMonthCount(value: String): Int =
+    (value.toIntOrNull() ?: 1).coerceAtLeast(1)
 
 private fun chargeableJerseyPairs(pairText: String): Int =
     (pairText.toIntOrNull() ?: 0).coerceAtLeast(0)
@@ -287,11 +291,11 @@ private data class JoiningFeeSplit(
     val totalFeeAmount: Double,
 )
 
-private fun joiningFeeSplitForPlan(student: Student, plan: String): JoiningFeeSplit {
+private fun joiningFeeSplitForPlan(student: Student, plan: String, specialMonths: Int = 1): JoiningFeeSplit {
     val base = when (plan) {
         "quarterly" -> 9975.0
         "halfyearly" -> 18900.0
-        "special" -> 10000.0
+        "special" -> SpecialTrainingMonthlyFee * specialMonths.coerceAtLeast(1)
         "custom" -> 0.0
         else -> 3500.0
     }
@@ -3374,6 +3378,7 @@ private fun RenewalPaymentDialog(
     val isJoiningFee = student.isFeesPending()
     val context = LocalContext.current
     var plan by rememberSaveable(student.id) { mutableStateOf("monthly") }
+    var specialMonths by rememberSaveable(student.id) { mutableStateOf("1") }
     val initialJoiningSplit = remember(student.id) { joiningFeeSplitForPlan(student, "monthly") }
     var amount by rememberSaveable(student.id) {
         mutableStateOf(if (isJoiningFee) initialJoiningSplit.totalFeeAmount.toInt().toString() else "3500")
@@ -3387,10 +3392,11 @@ private fun RenewalPaymentDialog(
     var isSaving by rememberSaveable(student.id) { mutableStateOf(false) }
     var inlineMessage by rememberSaveable(student.id) { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+    val safeSpecialMonths = positiveMonthCount(specialMonths)
     val planInfo = when (plan) {
         "quarterly" -> Triple("3 months - 5% off", 3, 9975.0)
         "halfyearly" -> Triple("6 months - 10% off", 6, 18900.0)
-        "special" -> Triple("Special training", 1, 10000.0)
+        "special" -> Triple("Special training (${safeSpecialMonths} month${if (safeSpecialMonths == 1) "" else "s"})", safeSpecialMonths, SpecialTrainingMonthlyFee * safeSpecialMonths)
         "custom" -> Triple("Custom amount", 1, amount.toDoubleOrNull() ?: 0.0)
         else -> Triple("Monthly", 1, 3500.0)
     }
@@ -3445,17 +3451,17 @@ private fun RenewalPaymentDialog(
             AdmissionDropdownField(
                 label = "Plan",
                 value = planInfo.first,
-                options = listOf("Monthly", "3 months - 5% off", "6 months - 10% off", "Special training (1 month)", "Custom amount"),
+                options = listOf("Monthly", "3 months - 5% off", "6 months - 10% off", "Special training - Rs 10,000/month", "Custom amount"),
                 onSelect = { selected ->
                     plan = when (selected) {
                         "3 months - 5% off" -> "quarterly"
                         "6 months - 10% off" -> "halfyearly"
-                        "Special training (1 month)" -> "special"
+                        "Special training - Rs 10,000/month" -> "special"
                         "Custom amount" -> "custom"
                         else -> "monthly"
                     }
                     if (isJoiningFee) {
-                        val split = joiningFeeSplitForPlan(student, plan)
+                        val split = joiningFeeSplitForPlan(student, plan, safeSpecialMonths)
                         coachingFee = split.coachingFee.toInt().toString()
                         admissionFee = split.admissionFee.toInt().toString()
                         jerseySize = student.jerseySize
@@ -3465,13 +3471,32 @@ private fun RenewalPaymentDialog(
                         amount = when (plan) {
                             "quarterly" -> "9975"
                             "halfyearly" -> "18900"
-                            "special" -> "10000"
+                            "special" -> (SpecialTrainingMonthlyFee * safeSpecialMonths).toInt().toString()
                             "custom" -> ""
                             else -> "3500"
                         }
                     }
                 },
             )
+            if (plan == "special") {
+                AdmissionTextField(
+                    value = specialMonths,
+                    onValueChange = { next ->
+                        specialMonths = next.filter(Char::isDigit).ifBlank { "1" }
+                        val months = positiveMonthCount(specialMonths)
+                        if (isJoiningFee) {
+                            val split = joiningFeeSplitForPlan(student, plan, months)
+                            coachingFee = split.coachingFee.toInt().toString()
+                            admissionFee = split.admissionFee.toInt().toString()
+                            amount = split.totalFeeAmount.toInt().toString()
+                        } else {
+                            amount = (SpecialTrainingMonthlyFee * months).toInt().toString()
+                        }
+                    },
+                    label = "Special training months",
+                    singleLine = true,
+                )
+            }
             planDiscountLabel(plan).takeIf { it.isNotBlank() }?.let { discount ->
                 Text(
                     text = discount,
@@ -7409,6 +7434,7 @@ private fun AdmissionFormSheet(
     var feesPaid by rememberSaveable { mutableStateOf(false) }
     var feePlan by rememberSaveable { mutableStateOf("monthly") }
     var customAmount by rememberSaveable { mutableStateOf("") }
+    var specialTrainingMonths by rememberSaveable { mutableStateOf("1") }
     var jerseySize by rememberSaveable { mutableStateOf("") }
     var jerseyPairs by rememberSaveable { mutableStateOf("") }
     var comments by rememberSaveable { mutableStateOf("") }
@@ -7424,8 +7450,12 @@ private fun AdmissionFormSheet(
     val context = LocalContext.current
     val upiId = remember { context.getString(R.string.academy_upi_id) }
     val upiName = remember { context.getString(R.string.academy_upi_name) }
-    val coachingFee = remember(feePlan, customAmount) {
-        if (feePlan == "custom") customAmount.toDoubleOrNull() ?: 0.0 else admissionPlanBase(feePlan)
+    val coachingFee = remember(feePlan, customAmount, specialTrainingMonths) {
+        when (feePlan) {
+            "custom" -> customAmount.toDoubleOrNull() ?: 0.0
+            "special" -> SpecialTrainingMonthlyFee * positiveMonthCount(specialTrainingMonths)
+            else -> admissionPlanBase(feePlan)
+        }
     }
     val admissionFee = remember(feePlan) {
         if (feePlan == "special") 0.0 else AdmissionOneTimeFee
@@ -7689,6 +7719,17 @@ private fun AdmissionFormSheet(
                         feePlan = AdmissionFeePlanOptions.firstOrNull { it.label == selectedLabel }?.value ?: "monthly"
                     },
                 )
+                if (feePlan == "special") {
+                    AdmissionTextField(
+                        value = specialTrainingMonths,
+                        onValueChange = { specialTrainingMonths = it.filter(Char::isDigit).ifBlank { "1" } },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(rememberBringIntoViewOnFocusModifier()),
+                        label = "Special training months",
+                        singleLine = true,
+                    )
+                }
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         DataTileContent(
