@@ -1,6 +1,6 @@
 # Gen Alpha Manager Changelog Notes
 
-Last updated: 2026-07-04
+Last updated: 2026-07-11
 
 This file records meaningful project changes and decisions so future Codex sessions can understand recent work without rereading the full chat. It is not a release changelog for users; it is a developer/manager memory log.
 
@@ -12,6 +12,13 @@ Use this file when:
 - A future agent needs to understand why a design or business rule exists.
 
 For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
+
+## 2026-07-11
+
+### WhatsApp Payment Attempt Compatibility
+
+- Updated the `whatsapp-reminder` Edge Function so `payment_attempted` accepts both `eventId` and legacy `event_id` payloads.
+- This protects payment-attempt tracking when older cached payment pages or alternate browser copies call the function with snake-case event ids.
 
 ## 2026-07-04
 

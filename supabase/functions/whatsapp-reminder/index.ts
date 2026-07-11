@@ -1784,7 +1784,9 @@ async function processDueManagerPaymentAlerts(limit = 20) {
 }
 
 async function handlePaymentAttempted(payload: any) {
-  const eventId = String(payload.eventId || payload.reminderEventId || "");
+  const eventId = String(
+    payload.eventId || payload.event_id || payload.reminderEventId || "",
+  );
   if (!eventId) return jsonResponse({ error: "eventId is required." }, 400);
 
   const reminderEvent = await findReminderEvent(eventId);
