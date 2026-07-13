@@ -44,6 +44,8 @@ const PLAN_MONTHS: Record<string, number> = {
   quarterly: 3,
   halfyearly: 6,
 };
+const PAID_PLAN_OPTIONS = PLAN_OPTIONS.filter((plan) => plan !== "need_help");
+const DEFAULT_DIRECT_PAY_TEMPLATE_NAME = "gen_alpha_fee_direct_pay";
 const HEALTHY_ECOSYSTEM_ERROR_CODE = "131049";
 const HEALTHY_ECOSYSTEM_RETRY_MINUTES = [5, 30, 60];
 const DEFAULT_REMINDER_MAX_RETRIES = HEALTHY_ECOSYSTEM_RETRY_MINUTES.length;
@@ -391,6 +393,11 @@ function buildUpiLink(student: any, plan: string, amount: number): string {
   return `upi://pay?${query}`;
 }
 
+function paymentAmountForReminderType(reminderType: string, plan: string): number {
+  const baseAmount = PLAN_AMOUNTS[plan] || 0;
+  return reminderType === "joining_fee" ? (baseAmount + 500) : baseAmount;
+}
+
 function buildPaymentPageUrl(
   student: any,
   plan: string,
@@ -406,6 +413,21 @@ function buildPaymentPageUrl(
     params.set("e", eventId);
   }
   return `${PAYMENT_PAGE_URL}?${params.toString()}`;
+}
+
+function buildDirectPaymentPageUrl(eventId: string): string {
+  const params = new URLSearchParams({ e: eventId });
+  return `${PAYMENT_PAGE_URL}?${params.toString()}`;
+}
+
+function buildPaymentOptions(reminderEvent: any) {
+  const reminderType = String(reminderEvent?.reminder_type || "renewal");
+  return PAID_PLAN_OPTIONS.map((plan) => ({
+    id: plan,
+    label: PLAN_LABELS[plan],
+    months: PLAN_MONTHS[plan],
+    amount: paymentAmountForReminderType(reminderType, plan),
+  }));
 }
 
 function paymentContactDetails(): string {
@@ -856,6 +878,16 @@ function reminderTemplateName(reminderType: string) {
   );
 }
 
+function directPaymentTemplateName() {
+  return env("META_WHATSAPP_DIRECT_PAY_TEMPLATE_NAME") ||
+    DEFAULT_DIRECT_PAY_TEMPLATE_NAME;
+}
+
+function isDirectPaymentTemplateEnabled(settings: ReminderSettings): boolean {
+  return settings.paymentLinksEnabled &&
+    parseBoolean(env("WHATSAPP_DIRECT_PAY_ENABLED"), true);
+}
+
 function displayDate(value: string): string {
   const [year, month, day] = String(value || "").split("-").map(Number);
   if (!year || !month || !day) return String(value || "");
@@ -876,6 +908,21 @@ function displayDate(value: string): string {
   ][month - 1];
 
   return monthName ? `${ordinalDay(day)} ${monthName} ${year}` : String(value || "");
+}
+
+function buildDirectPaymentMessageBody(
+  student: any,
+  dueDate: string,
+  reminderType: string,
+) {
+  return renderTemplateBody(
+    env("META_WHATSAPP_DIRECT_PAY_TEMPLATE_BODY") ||
+      "Hi {{1}}, your Gen Alpha Cricket Academy fee is due from {{2}}.\n\nTap Pay Now to choose 1/3/6 months and complete UPI payment. After payment, reply here with Paid or send the payment screenshot.",
+    {
+      "1": String(student?.name || "Player"),
+      "2": buildReminderDueText(reminderType, dueDate),
+    },
+  );
 }
 
 async function sendTemplateMessage(
@@ -988,6 +1035,87 @@ async function sendTemplateMessage(
   };
 }
 
+async function sendDirectPaymentTemplateMessage(
+  to: string,
+  eventId: string,
+  student: any,
+  dueDate: string,
+  reminderType: string,
+) {
+  const token = env("META_WHATSAPP_TOKEN");
+  const phoneNumberId = env("META_WHATSAPP_PHONE_NUMBER_ID");
+  const templateName = directPaymentTemplateName();
+  const languageCode = env("META_WHATSAPP_TEMPLATE_LANGUAGE") || "en";
+  const renderedMessageBody = buildDirectPaymentMessageBody(
+    student,
+    dueDate,
+    reminderType,
+  );
+  if (!token || !phoneNumberId) {
+    throw new Error("Meta WhatsApp secrets are missing.");
+  }
+
+  const response = await fetch(
+    `https://graph.facebook.com/v20.0/${phoneNumberId}/messages`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to,
+        type: "template",
+        template: {
+          name: templateName,
+          language: { code: languageCode },
+          components: [
+            {
+              type: "body",
+              parameters: [
+                { type: "text", text: student.name || "Player" },
+                {
+                  type: "text",
+                  text: buildReminderDueText(reminderType, dueDate),
+                },
+              ],
+            },
+            {
+              type: "button",
+              sub_type: "url",
+              index: "0",
+              parameters: [
+                { type: "text", text: eventId },
+              ],
+            },
+            {
+              type: "button",
+              sub_type: "quick_reply",
+              index: "1",
+              parameters: [
+                { type: "payload", payload: `renewal:${eventId}:need_help` },
+              ],
+            },
+          ],
+        },
+      }),
+    },
+  );
+
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(JSON.stringify(body?.error || body));
+  }
+  return {
+    ...body,
+    local_template_name: templateName,
+    local_template_language: languageCode,
+    local_message_body: renderedMessageBody,
+    local_payment_page_url: buildDirectPaymentPageUrl(eventId),
+  };
+}
+
 async function sendTemplatePayload(
   to: string,
   templateName: string,
@@ -1026,6 +1154,189 @@ async function sendTemplatePayload(
     throw new Error(JSON.stringify(body?.error || body));
   }
   return body;
+}
+
+async function graphRequest(path: string, init: RequestInit = {}) {
+  const token = env("META_WHATSAPP_TOKEN");
+  if (!token) throw new Error("META_WHATSAPP_TOKEN is missing.");
+  const cleanPath = path.replace(/^\/+/, "");
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${token}`);
+  headers.set("Content-Type", "application/json");
+  const response = await fetch(`https://graph.facebook.com/v20.0/${cleanPath}`, {
+    ...init,
+    headers,
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(JSON.stringify(body?.error || body));
+  }
+  return body;
+}
+
+async function tryGraphRequest(path: string) {
+  try {
+    return { body: await graphRequest(path) };
+  } catch (error) {
+    return { error: parseProviderError(error) };
+  }
+}
+
+function graphDataList(value: any): any[] {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.data)) return value.data;
+  return [];
+}
+
+function extractWabaIdFromGraphPayload(payload: any, phoneNumberId: string) {
+  const foundWabaIds = new Set<string>();
+  const businesses = [
+    ...graphDataList(payload),
+    ...graphDataList(payload?.businesses),
+  ];
+  const directWabas = graphDataList(payload?.owned_whatsapp_business_accounts);
+
+  for (const business of businesses) {
+    const wabas = graphDataList(business?.owned_whatsapp_business_accounts);
+    for (const waba of wabas) {
+      const wabaId = String(waba?.id || "");
+      if (wabaId) foundWabaIds.add(wabaId);
+      const phoneNumbers = graphDataList(waba?.phone_numbers);
+      if (
+        phoneNumbers.some((phone) => String(phone?.id || "") === phoneNumberId)
+      ) {
+        return wabaId;
+      }
+    }
+  }
+
+  for (const waba of directWabas) {
+    const wabaId = String(waba?.id || "");
+    if (wabaId) foundWabaIds.add(wabaId);
+    const phoneNumbers = graphDataList(waba?.phone_numbers);
+    if (
+      phoneNumbers.some((phone) => String(phone?.id || "") === phoneNumberId)
+    ) {
+      return wabaId;
+    }
+  }
+
+  return foundWabaIds.size === 1 ? [...foundWabaIds][0] : "";
+}
+
+async function resolveWhatsappBusinessAccountId() {
+  const configured = env("META_WHATSAPP_BUSINESS_ACCOUNT_ID") ||
+    env("META_WABA_ID") ||
+    env("WHATSAPP_BUSINESS_ACCOUNT_ID");
+  if (configured) return configured;
+
+  const phoneNumberId = env("META_WHATSAPP_PHONE_NUMBER_ID");
+  if (!phoneNumberId) {
+    throw new Error("META_WHATSAPP_PHONE_NUMBER_ID is missing.");
+  }
+  const phoneInfo = await tryGraphRequest(
+    `${encodeURIComponent(phoneNumberId)}?fields=whatsapp_business_account`,
+  );
+  const directWabaId = String(
+    phoneInfo.body?.whatsapp_business_account?.id || "",
+  );
+  if (directWabaId) return directWabaId;
+
+  const lookupPaths = [
+    "me/businesses?fields=id,name,owned_whatsapp_business_accounts{id,name,phone_numbers{id,display_phone_number}}",
+    "me?fields=id,name,businesses{id,name,owned_whatsapp_business_accounts{id,name,phone_numbers{id,display_phone_number}}},owned_whatsapp_business_accounts{id,name,phone_numbers{id,display_phone_number}}",
+  ];
+  const lookupErrors: Record<string, any>[] = [];
+  for (const path of lookupPaths) {
+    const result = await tryGraphRequest(path);
+    if (result.error) {
+      lookupErrors.push(result.error);
+      continue;
+    }
+    const wabaId = extractWabaIdFromGraphPayload(result.body, phoneNumberId);
+    if (wabaId) return wabaId;
+  }
+
+  throw new Error(JSON.stringify({
+    message:
+      "Unable to resolve WhatsApp Business Account ID. Set META_WHATSAPP_BUSINESS_ACCOUNT_ID.",
+    phoneNumberLookupError: phoneInfo.error || null,
+    businessLookupErrors: lookupErrors,
+  }));
+}
+
+async function handleSetupDirectPaymentTemplate(request: Request) {
+  await assertAuthenticatedOrServiceRole(request);
+
+  const wabaId = await resolveWhatsappBusinessAccountId();
+  const templateName = directPaymentTemplateName();
+  const languageCode = env("META_WHATSAPP_TEMPLATE_LANGUAGE") || "en";
+  const bodyText = env("META_WHATSAPP_DIRECT_PAY_TEMPLATE_BODY") ||
+    "Hi {{1}}, your Gen Alpha Cricket Academy fee is due from {{2}}.\n\nTap Pay Now to choose 1/3/6 months and complete UPI payment. After payment, reply here with Paid or send the payment screenshot.";
+  const templatePayload = {
+    name: templateName,
+    language: languageCode,
+    category: "UTILITY",
+    components: [
+      {
+        type: "BODY",
+        text: bodyText,
+        example: {
+          body_text: [["Aarav", "11th July"]],
+        },
+      },
+      {
+        type: "BUTTONS",
+        buttons: [
+          {
+            type: "URL",
+            text: "Pay Now",
+            url: `${PAYMENT_PAGE_URL}?e={{1}}`,
+            example: [`${PAYMENT_PAGE_URL}?e=00000000-0000-0000-0000-000000000000`],
+          },
+          {
+            type: "QUICK_REPLY",
+            text: "Need Help",
+          },
+        ],
+      },
+    ],
+  };
+
+  try {
+    const body = await graphRequest(`${encodeURIComponent(wabaId)}/message_templates`, {
+      method: "POST",
+      body: JSON.stringify(templatePayload),
+    });
+    return jsonResponse({
+      success: true,
+      templateName,
+      languageCode,
+      wabaId,
+      metaResponse: body,
+    });
+  } catch (error) {
+    const errorPayload = parseProviderError(error);
+    const message = providerErrorMessage(errorPayload);
+    if (/already exists|duplicate/i.test(JSON.stringify(errorPayload))) {
+      return jsonResponse({
+        success: true,
+        templateName,
+        languageCode,
+        wabaId,
+        alreadyExists: true,
+        metaResponse: errorPayload,
+      });
+    }
+    return jsonResponse({
+      success: false,
+      templateName,
+      languageCode,
+      wabaId,
+      error: message,
+      metaResponse: errorPayload,
+    }, 502);
+  }
 }
 
 function parseProviderError(input: unknown): Record<string, any> {
@@ -1077,6 +1388,19 @@ function providerErrorMessage(errorPayload: Record<string, any>): string {
   ];
   return candidates.map((value) => String(value || "").trim()).find(Boolean) ||
     "Meta WhatsApp send failed.";
+}
+
+function isTemplateFallbackError(errorPayload: Record<string, any>): boolean {
+  const code = providerErrorCode(errorPayload);
+  const text = JSON.stringify(errorPayload || {}).toLowerCase();
+  return code === "132001" ||
+    (text.includes("template") &&
+      (text.includes("does not exist") ||
+        text.includes("not found") ||
+        text.includes("paused") ||
+        text.includes("disabled") ||
+        text.includes("rejected") ||
+        text.includes("not approved")));
 }
 
 function isHealthyEcosystemError(errorPayload: Record<string, any>): boolean {
@@ -1249,6 +1573,152 @@ async function recordReminderAccepted(
   return whatsappMessageId;
 }
 
+async function createAwaitingPaymentLinkRequest(
+  student: any,
+  reminderEvent: any,
+  createdBy: string,
+  dryRun = false,
+) {
+  return await insertPaymentLinkRequest({
+    reminder_event_id: reminderEvent.id,
+    student_id: reminderEvent.student_id,
+    payment_type: reminderEvent.reminder_type === "joining_fee"
+      ? "joining"
+      : "renewal",
+    plan_type: "awaiting_parent_choice",
+    months_covered: 0,
+    amount: 0,
+    cycle_start_date: reminderEvent.due_date,
+    provider: "upi",
+    status: dryRun ? "dry_run" : "link_sent",
+    dry_run: dryRun,
+    payment_link_url: buildDirectPaymentPageUrl(reminderEvent.id),
+    payment_link_id: "",
+    created_by: createdBy,
+  });
+}
+
+async function recordDirectPaymentLinkSent(
+  event: any,
+  student: any,
+  linkRequest: any,
+  createdBy: string,
+  dryRun = false,
+) {
+  const sentAt = new Date().toISOString();
+  const paymentPageUrl = buildDirectPaymentPageUrl(event.id);
+  await updateReminderEvent(event.id, {
+    payment_link_url: paymentPageUrl,
+    payment_link_sent_at: sentAt,
+  });
+  await insertWhatsappFlowEvent({
+    student_id: event.student_id,
+    reminder_event_id: event.id,
+    payment_link_request_id: linkRequest?.id || null,
+    event_type: "payment_link_sent",
+    direction: "outbound",
+    parent_phone: String(event.parent_phone || ""),
+    message_kind: "direct_payment_link",
+    message_body: paymentPageUrl,
+    status: dryRun ? "dry_run" : "sent",
+    status_at: sentAt,
+    sent_at: dryRun ? null : sentAt,
+    payment_from_date: event.due_date || null,
+    provider_payload: {
+      player_name: student?.name || "",
+      direct_payment_page_url: paymentPageUrl,
+    },
+    created_by: createdBy,
+  });
+}
+
+async function sendReminderTemplate(
+  to: string,
+  event: any,
+  student: any,
+  dueDate: string,
+  reminderType: string,
+  settings: ReminderSettings,
+  createdBy: string,
+  eventType = "reminder_message_status",
+) {
+  if (isDirectPaymentTemplateEnabled(settings)) {
+    try {
+      const directResponse = await sendDirectPaymentTemplateMessage(
+        to,
+        event.id,
+        student,
+        dueDate,
+        reminderType,
+      );
+      await recordReminderAccepted(
+        event,
+        directResponse,
+        createdBy,
+        eventType === "reminder_retry_sent"
+          ? "direct_payment_reminder_retry_sent"
+          : "direct_payment_reminder_sent",
+      );
+      const linkRequest = await createAwaitingPaymentLinkRequest(
+        student,
+        event,
+        createdBy,
+        false,
+      );
+      await recordDirectPaymentLinkSent(
+        event,
+        student,
+        linkRequest,
+        createdBy,
+        false,
+      );
+      return {
+        metaResponse: directResponse,
+        directPayment: true,
+        fallbackUsed: false,
+      };
+    } catch (error) {
+      const errorPayload = parseProviderError(error);
+      if (!isTemplateFallbackError(errorPayload)) {
+        throw error;
+      }
+      await insertWhatsappFlowEvent({
+        student_id: event.student_id,
+        reminder_event_id: event.id,
+        event_type: "direct_payment_template_fallback",
+        direction: "system",
+        parent_phone: String(event.parent_phone || ""),
+        message_kind: "template",
+        message_body: buildDirectPaymentMessageBody(
+          student,
+          dueDate,
+          reminderType,
+        ),
+        status: "fallback_to_plan_buttons",
+        status_at: new Date().toISOString(),
+        error_code: providerErrorCode(errorPayload),
+        error_message: providerErrorMessage(errorPayload),
+        provider_payload: errorPayload,
+        created_by: createdBy,
+      });
+    }
+  }
+
+  const metaResponse = await sendTemplateMessage(
+    to,
+    event.id,
+    student,
+    dueDate,
+    reminderType,
+  );
+  await recordReminderAccepted(event, metaResponse, createdBy, eventType);
+  return {
+    metaResponse,
+    directPayment: false,
+    fallbackUsed: isDirectPaymentTemplateEnabled(settings),
+  };
+}
+
 function dedupeById(rows: any[]): any[] {
   const seen = new Set<string>();
   return rows.filter((row) => {
@@ -1259,7 +1729,11 @@ function dedupeById(rows: any[]): any[] {
   });
 }
 
-async function processDueReminderRetries(limit = RETRY_WORKER_LIMIT) {
+async function processDueReminderRetries(
+  limit = RETRY_WORKER_LIMIT,
+  settings?: ReminderSettings,
+) {
+  const reminderSettings = settings || await loadSettings();
   const nowIso = new Date().toISOString();
   const recoveryCutoffIso = new Date(
     Date.now() - RETRY_RECOVERY_MINUTES * 60 * 1000,
@@ -1354,22 +1828,19 @@ async function processDueReminderRetries(limit = RETRY_WORKER_LIMIT) {
         parent_phone: parentPhone,
         retry_count: retryCount,
       };
-      const metaResponse = await sendTemplateMessage(
+      const sent = await sendReminderTemplate(
         to,
-        event.id,
+        refreshedEvent,
         student,
         String(event.due_date || localIsoDate()),
         String(event.reminder_type || "renewal"),
-      );
-      await recordReminderAccepted(
-        refreshedEvent,
-        metaResponse,
+        reminderSettings,
         "system_retry",
         "reminder_retry_sent",
       );
       results.push({
         student: student.name,
-        status: "retry_sent",
+        status: sent.directPayment ? "direct_payment_retry_sent" : "retry_sent",
         retryCount,
       });
     } catch (error) {
@@ -1595,8 +2066,10 @@ async function createUpiPaymentLink(
 ) {
   const dryRun = settings.dryRunMode || !settings.paymentLinksEnabled;
   const isJoining = reminderEvent.reminder_type === "joining_fee";
-  const baseAmount = PLAN_AMOUNTS[plan] || 0;
-  const amount = isJoining ? (baseAmount + 500) : baseAmount;
+  const amount = paymentAmountForReminderType(
+    String(reminderEvent.reminder_type || "renewal"),
+    plan,
+  );
   const months = PLAN_MONTHS[plan] || 0;
 
   if (dryRun) {
@@ -1783,15 +2256,157 @@ async function processDueManagerPaymentAlerts(limit = 20) {
   return results;
 }
 
+async function handlePaymentOptions(payload: any) {
+  const eventId = String(payload.eventId || payload.event_id || payload.reminderEventId || "");
+  if (!eventId) return jsonResponse({ error: "eventId is required." }, 400);
+
+  const reminderEvent = await findReminderEvent(eventId);
+  if (!reminderEvent) {
+    return jsonResponse({ error: "Reminder event not found." }, 404);
+  }
+  const student = await fetchStudent(String(reminderEvent.student_id || ""));
+  return jsonResponse({
+    success: true,
+    eventId: reminderEvent.id,
+    playerName: String(student?.name || "Player"),
+    dueDate: reminderEvent.due_date || "",
+    reminderType: reminderEvent.reminder_type || "renewal",
+    defaultPlan: String(reminderEvent.selected_plan || "") || "monthly",
+    selectedPlan: String(reminderEvent.selected_plan || ""),
+    selectedAmount: Number(reminderEvent.amount || 0) || null,
+    options: buildPaymentOptions(reminderEvent),
+  });
+}
+
+async function latestPaymentLinkRequest(reminderEventId: string) {
+  const rows = await rest(
+    `payment_link_requests?select=*&reminder_event_id=eq.${
+      encodeURIComponent(reminderEventId)
+    }&order=created_at.desc&limit=1`,
+  );
+  return rows?.[0] || null;
+}
+
+async function savePaymentPlanSelection(
+  reminderEvent: any,
+  plan: string,
+  source: string,
+) {
+  if (!PAID_PLAN_OPTIONS.includes(plan)) return reminderEvent;
+
+  const student = await fetchStudent(String(reminderEvent.student_id || ""));
+  const amount = paymentAmountForReminderType(
+    String(reminderEvent.reminder_type || "renewal"),
+    plan,
+  );
+  const months = PLAN_MONTHS[plan] || 0;
+  const paymentPageUrl = buildPaymentPageUrl(
+    student,
+    plan,
+    amount,
+    reminderEvent.id,
+  );
+  const upiLink = buildUpiLink(student, plan, amount);
+  const selectedAt = new Date().toISOString();
+  const existingLink = await latestPaymentLinkRequest(reminderEvent.id);
+  let paymentLinkRequestId = existingLink?.id || null;
+
+  if (existingLink?.id) {
+    await rest(`payment_link_requests?id=eq.${encodeURIComponent(existingLink.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        plan_type: plan,
+        months_covered: months,
+        amount,
+        provider: "upi",
+        status: "payment_link_sent",
+        dry_run: false,
+        payment_link_url: paymentPageUrl,
+        payment_link_id: upiLink,
+        payment_link_sent_at: existingLink.payment_link_sent_at || selectedAt,
+      }),
+    });
+  } else {
+    const linkRequest = await insertPaymentLinkRequest({
+      reminder_event_id: reminderEvent.id,
+      student_id: reminderEvent.student_id,
+      payment_type: reminderEvent.reminder_type === "joining_fee"
+        ? "joining"
+        : "renewal",
+      plan_type: plan,
+      months_covered: months,
+      amount,
+      cycle_start_date: reminderEvent.due_date,
+      provider: "upi",
+      status: "payment_link_sent",
+      dry_run: false,
+      payment_link_url: paymentPageUrl,
+      payment_link_id: upiLink,
+      payment_link_sent_at: selectedAt,
+      created_by: source,
+    });
+    paymentLinkRequestId = linkRequest?.id || null;
+  }
+
+  await updateReminderEvent(reminderEvent.id, {
+    selected_plan: plan,
+    amount,
+    payment_link_url: paymentPageUrl,
+    payment_link_id: upiLink,
+    payment_link_sent_at: reminderEvent.payment_link_sent_at || selectedAt,
+  });
+  await insertWhatsappFlowEvent({
+    student_id: reminderEvent.student_id,
+    reminder_event_id: reminderEvent.id,
+    payment_link_request_id: paymentLinkRequestId,
+    event_type: "parent_plan_selected",
+    direction: "parent",
+    parent_phone: String(reminderEvent.parent_phone || ""),
+    message_kind: "payment_page_plan",
+    message_body: PLAN_LABELS[plan],
+    status: "plan_selected",
+    status_at: selectedAt,
+    payment_plan: plan,
+    payment_amount: amount,
+    payment_months: months,
+    payment_from_date: reminderEvent.due_date || null,
+    provider_payload: {
+      source,
+      payment_page_url: paymentPageUrl,
+    },
+    created_by: source,
+  });
+
+  return {
+    ...reminderEvent,
+    selected_plan: plan,
+    amount,
+    payment_link_url: paymentPageUrl,
+    payment_link_id: upiLink,
+    payment_link_sent_at: reminderEvent.payment_link_sent_at || selectedAt,
+  };
+}
+
 async function handlePaymentAttempted(payload: any) {
   const eventId = String(
     payload.eventId || payload.event_id || payload.reminderEventId || "",
   );
   if (!eventId) return jsonResponse({ error: "eventId is required." }, 400);
 
-  const reminderEvent = await findReminderEvent(eventId);
+  let reminderEvent = await findReminderEvent(eventId);
   if (!reminderEvent) {
     return jsonResponse({ error: "Reminder event not found." }, 404);
+  }
+
+  const selectedPlan = normalizeSelectedPlan(
+    payload.selectedPlan || payload.plan || payload.planType,
+  );
+  if (selectedPlan && selectedPlan !== "need_help") {
+    reminderEvent = await savePaymentPlanSelection(
+      reminderEvent,
+      selectedPlan,
+      "pay.html",
+    );
   }
 
   const to = normalizePhone(String(reminderEvent.parent_phone || ""));
@@ -2131,14 +2746,16 @@ async function handleSendReminder(request: Request, payload: any) {
     );
     return jsonResponse({ error: "Parent phone number is missing." }, 400);
   }
-  let metaResponse;
+  let sendResult;
   try {
-    metaResponse = await sendTemplateMessage(
+    sendResult = await sendReminderTemplate(
       to,
-      event.id,
+      event,
       student,
       dueDate,
       reminderType,
+      settings,
+      managerEmail,
     );
   } catch (error) {
     const errorPayload = parseProviderError(error);
@@ -2168,12 +2785,13 @@ async function handleSendReminder(request: Request, payload: any) {
       error: `Meta WhatsApp send failed: ${message}`,
     }, 502);
   }
-  await recordReminderAccepted(event, metaResponse, managerEmail);
   return jsonResponse({
     success: true,
     dryRun: false,
+    directPayment: Boolean(sendResult?.directPayment),
+    fallbackUsed: Boolean(sendResult?.fallbackUsed),
     message: `WhatsApp reminder sent for ${student.name}.`,
-    metaResponse,
+    metaResponse: sendResult?.metaResponse,
   });
 }
 
@@ -2694,6 +3312,10 @@ async function handleWebhook(payload: any) {
           reminderEvent,
           settings,
         );
+        const selectedAmount = paymentAmountForReminderType(
+          String(reminderEvent.reminder_type || "renewal"),
+          plan,
+        );
         await insertWhatsappFlowEvent({
           student_id: reminderEvent.student_id,
           reminder_event_id: reminderEvent.id,
@@ -2707,7 +3329,7 @@ async function handleWebhook(payload: any) {
           status: "plan_selected",
           status_at: new Date().toISOString(),
           payment_plan: plan,
-          payment_amount: PLAN_AMOUNTS[plan],
+          payment_amount: selectedAmount,
           payment_months: PLAN_MONTHS[plan],
           payment_from_date: reminderEvent.due_date || null,
           provider_payload: message,
@@ -2715,7 +3337,7 @@ async function handleWebhook(payload: any) {
         });
         await updateReminderEvent(reminderEvent.id, {
           selected_plan: plan,
-          amount: PLAN_AMOUNTS[plan],
+          amount: selectedAmount,
           payment_link_url: linkRequest.payment_link_url || "",
           payment_link_id: linkRequest.payment_link_id || "",
           status: linkRequest.dry_run
@@ -2745,9 +3367,7 @@ async function handleWebhook(payload: any) {
           );
         }
         if (!linkRequest.dry_run && linkRequest.payment_link_url) {
-          const isJoining = reminderEvent.reminder_type === "joining_fee";
-          const finalAmount = isJoining ? (PLAN_AMOUNTS[plan] + 500) : PLAN_AMOUNTS[plan];
-          const paymentMessage = `🏏 *Gen Alpha Cricket Academy - Payment Request*\n*Amount: Rs ${finalAmount.toLocaleString("en-IN")}*\n\n*Pay here: ${linkRequest.payment_link_url}*\n\n${paymentContactDetails()}`;
+          const paymentMessage = `🏏 *Gen Alpha Cricket Academy - Payment Request*\n*Amount: Rs ${selectedAmount.toLocaleString("en-IN")}*\n\n*Pay here: ${linkRequest.payment_link_url}*\n\n${paymentContactDetails()}`;
           const paymentMessageResponse = await sendTextMessage(
             from,
             paymentMessage,
@@ -2768,7 +3388,7 @@ async function handleWebhook(payload: any) {
             status_at: new Date().toISOString(),
             sent_at: new Date().toISOString(),
             payment_plan: plan,
-            payment_amount: finalAmount,
+            payment_amount: selectedAmount,
             payment_months: PLAN_MONTHS[plan],
             payment_from_date: reminderEvent.due_date || null,
             provider_payload: paymentMessageResponse,
@@ -2787,7 +3407,7 @@ async function handleAutoSchedule() {
     return jsonResponse({ success: true, message: "Auto-reminders disabled." });
   }
 
-  const retryResults = await processDueReminderRetries();
+  const retryResults = await processDueReminderRetries(RETRY_WORKER_LIMIT, settings);
   const todayIso = localIsoDate();
 
   // Fetch all active students
@@ -2937,16 +3557,13 @@ async function handleAutoSchedule() {
                 error: "Parent phone number is missing.",
               };
             }
-            const metaResponse = await sendTemplateMessage(
+            await sendReminderTemplate(
               to,
-              event.id,
+              event,
               student,
               dueDate,
               reminderType,
-            );
-            await recordReminderAccepted(
-              event,
-              metaResponse,
+              settings,
               "system_auto",
             );
           }
@@ -3023,6 +3640,12 @@ Deno.serve(async (request) => {
     if (payload?.action === "renewal_verified") {
       return await handleRenewalVerified(request, payload);
     }
+    if (payload?.action === "setup_direct_payment_template") {
+      return await handleSetupDirectPaymentTemplate(request);
+    }
+    if (payload?.action === "payment_options") {
+      return await handlePaymentOptions(payload);
+    }
     if (payload?.action === "payment_attempted") {
       return await handlePaymentAttempted(payload);
     }
@@ -3034,7 +3657,7 @@ Deno.serve(async (request) => {
       await assertAuthenticatedOrServiceRole(request);
       const settings = await loadSettings();
       const retries = settings.whatsappRemindersEnabled
-        ? await processDueReminderRetries()
+        ? await processDueReminderRetries(RETRY_WORKER_LIMIT, settings)
         : [];
       const managerPaymentAlerts = await processDueManagerPaymentAlerts();
       return jsonResponse({

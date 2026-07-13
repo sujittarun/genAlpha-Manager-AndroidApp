@@ -15,6 +15,13 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 
 ## 2026-07-11
 
+### Direct Pay Reminder Flow
+
+- Added Direct Pay reminder support in the `whatsapp-reminder` Edge Function: reminders can send a Pay Now URL button first, create an awaiting parent-choice UPI request, and fall back to the existing WhatsApp plan-button template while the new Meta template is unavailable or pending approval.
+- Added public `payment_options` support for `pay.html?e=<reminder_event_id>` so the payment page loads the exact player, due type, and 1/3/6-month amounts before UPI handoff.
+- Updated `payment_attempted` handling so the selected plan from the payment page is saved to `reminder_events`, `payment_link_requests`, and the WhatsApp audit stream before the follow-up message is sent.
+- Added a protected `setup_direct_payment_template` action to submit the Direct Pay utility template to Meta from the deployed function.
+
 ### WhatsApp Payment Attempt Compatibility
 
 - Updated the `whatsapp-reminder` Edge Function so `payment_attempted` accepts both `eventId` and legacy `event_id` payloads.

@@ -46,7 +46,7 @@ flowchart TD
   S1 -- "Yes" --> S2["Log dry_run and stop"]
   S1 -- "No" --> S3{"Parent phone valid?"}
   S3 -- "No" --> F1["Failure: manual follow-up"]
-  S3 -- "Yes" --> S4["Send selected template to parent"]
+  S3 -- "Yes" --> S4["Send direct Pay Now template to parent<br/>Fallback: existing plan-button template"]
   S4 -- "Meta accepts" --> S5["accepted/sent + message_id"]
   S4 -- "API failure 131049" --> RT1["Retry schedule: 5m, 30m, 60m"]
   S4 -- "Other API failure" --> F1
@@ -62,13 +62,14 @@ flowchart TD
   RTC -- "same IST-day missed 131049 failure" --> S4
   RTC -- "historical failure" --> STOP["Do not auto-retry"]
 
-  TL2 --> P0["Parent taps quick reply plan"]
-  P0 --> P1["Create UPI payment link request"]
-  P1 --> M5["MESSAGE: payment link text<br/>Amount + UPI/payment page link"]
-  M5 --> P2["Parent submits payment/proof"]
-  P2 --> P3["payment_pending_verification"]
-  P3 --> M6["MESSAGE: manager_payment_alert<br/>After 5 min delay to 9985822772"]
-  P3 --> M7["MESSAGE: manager_payment_alert_with_proof<br/>After 5 min delay + proof media/header when available"]
+  TL2 --> P0["Parent taps Pay Now<br/>or fallback quick reply plan"]
+  P0 --> P1["Payment page loads event-specific 1/3/6-month options"]
+  P1 --> P2["Parent selects plan on pay.html"]
+  P2 --> M5["Pay Now opens UPI app<br/>Function logs selected plan + payment_attempted"]
+  M5 --> P3["Parent submits payment/proof"]
+  P3 --> P4["payment_pending_verification"]
+  P4 --> M6["MESSAGE: manager_payment_alert<br/>After 5 min delay to 9985822772"]
+  P4 --> M7["MESSAGE: manager_payment_alert_with_proof<br/>After 5 min delay + proof media/header when available"]
   M6 --> A1["Manager confirms in app"]
   M7 --> A1
   A1 --> M8["MESSAGE: payment confirmation text to parent<br/>Only after manager confirms payment"]
@@ -102,7 +103,8 @@ flowchart TD
 
 ### Payment Flow Messages
 
-- Payment link text: sent after parent selects `1 Month`, `3 Months`, or `6 Months`.
+- Direct Pay template: sends a Pay Now URL button first; the payment page then collects the parent choice for `1 Month`, `3 Months`, or `6 Months`.
+- Fallback payment link text: sent after parent selects `1 Month`, `3 Months`, or `6 Months` in WhatsApp when the Direct Pay template is unavailable.
 - Help reply text: sent when parent selects `Need Help`.
 - Manager payment alert: sent 5 minutes after payment/proof is pending verification.
 - Manager payment alert with proof: sent 5 minutes after pending verification when proof media is available.

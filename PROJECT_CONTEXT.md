@@ -191,6 +191,7 @@ Provider selected: Meta WhatsApp Cloud API direct, not Twilio/WATI/360Dialog.
 
 Current utility reminder templates:
 
+- `gen_alpha_fee_direct_pay`: direct Pay Now utility template for fee reminders. It opens `pay.html?e={{1}}` and keeps plan selection on the payment page. Use the older plan-button templates as fallback while this template is missing, disabled, or awaiting Meta approval.
 - `utlity_fee_headsup`: 2 days before a renewal date. Keep this exact spelling because it matches the Meta template name.
 - `utility_renewal_day`: renewal due day.
 - `utility_for_fee_reminder`: joining-fee due day, overdue day 5, and daily overdue day 7 through day 14.
@@ -201,7 +202,8 @@ Current utility reminder templates:
   - `{{1}}` parent/player display name.
   - `{{2}}` utility-safe due date/fee period text, e.g. `5th May`.
 - Buttons/options:
-  - 1 Month, 3 Months, 6 Months, Need Help.
+  - Direct Pay template: Pay Now URL button plus Need Help quick reply.
+  - Fallback plan-button templates: 1 Month, 3 Months, 6 Months, Need Help.
   - If Need Help: log it and provide manager/help flow.
 - Automatic fee reminders are enabled through the Supabase WhatsApp reminder scheduler; manual reminders can also be triggered from the app.
 - `students.whatsapp_contact_status` is the durable parent-contact gate. `wrong_number` and `opted_out` block automatic reminders, manual sends, queued retries, and payment confirmation WhatsApp until staff reactivate the contact.
@@ -236,9 +238,10 @@ Payment UX:
 - Parent should not need to enter preferred app, parent UPI ID, or UTR unless explicitly needed. UPI does not automatically return reliable payment confirmation without a payment gateway.
 - Current non-gateway UPI flow must not auto-mark paid. Treat parent payment claims as pending verification until a manager confirms in roster/edit/payment flow.
 - Renewal WhatsApp payment flow:
-  - Parent selects a renewal plan in WhatsApp.
-  - Function sends payment page link with reminder event id.
-  - When parent taps `Pay Now` on `pay.html`, call the WhatsApp function with `payment_attempted`, update reminder/payment-link status, and send: `After payment, just reply here with "Paid" or send the payment screenshot.`
+  - Function should send the direct Pay Now template first when available, using a reminder event id URL button.
+  - `pay.html` loads event-specific 1/3/6-month amounts from the WhatsApp function, then the parent selects the renewal plan on the payment page before UPI opens.
+  - If the direct template is unavailable or not approved, fall back to the older WhatsApp plan-button flow where the parent selects 1 Month, 3 Months, or 6 Months in WhatsApp and then receives the payment page link.
+  - When parent taps `Pay Now` on `pay.html`, call the WhatsApp function with `payment_attempted` and the selected plan, update reminder/payment-link status, and send: `After payment, just reply here with "Paid" or send the payment screenshot.`
   - If parent replies `Paid` or sends a screenshot/image/document in WhatsApp, mark reminder/payment-link as `payment_pending_verification` and reply: `Once the academy confirms the payment, we’ll update your renewal. Thank You!`
   - Store parent payment proof details in `reminder_events.meta_response.payment_confirmation`; raw inbound webhook payloads go to `whatsapp_webhook_events`; screenshot/document media should be stored in private Supabase Storage bucket `payment-proofs` when Meta media download succeeds.
   - Still do not mark renewal paid, extend due date, count finance revenue, or send receipt until manager verifies payment.
