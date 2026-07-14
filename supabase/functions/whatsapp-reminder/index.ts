@@ -474,6 +474,37 @@ function normalizeSelectedPlan(value: unknown): string {
   return "";
 }
 
+function normalizeSampleReminderFlow(value: unknown, action: unknown): string {
+  const requested = normalizeChoiceText(value);
+  if (
+    ["legacy", "old", "v1", "classic", "buttons", "planbuttons"].includes(
+      requested,
+    )
+  ) {
+    return "legacy";
+  }
+  if (
+    ["directpay", "directpayment", "paynow", "new", "v2"].includes(requested)
+  ) {
+    return "direct_pay";
+  }
+
+  const actionName = normalizeChoiceText(action);
+  if (actionName.includes("legacy") || actionName.includes("old")) {
+    return "legacy";
+  }
+  if (
+    actionName.includes("direct") ||
+    actionName.includes("paynow") ||
+    actionName.includes("v2") ||
+    actionName.includes("new")
+  ) {
+    return "direct_pay";
+  }
+
+  return "direct_pay";
+}
+
 
 function parseBoolean(value: unknown, fallback: boolean): boolean {
   if (typeof value === "boolean") return value;
@@ -2818,17 +2849,43 @@ async function handleSendSampleReminder(request: Request, payload: any) {
     name: String(payload.name || "Parent"),
   };
   const dueDate = String(payload.dueDate || localIsoDate());
+  const reminderType = String(payload.reminderType || "renewal");
+  const sampleFlow = normalizeSampleReminderFlow(
+    payload.flow || payload.version || payload.mode,
+    payload.action,
+  );
   const sampleEventId = crypto.randomUUID();
   let metaResponse;
+  let paymentPageUrl = "";
+  let templateName = "";
 
   try {
-    metaResponse = await sendTemplateMessage(
-      to,
-      sampleEventId,
-      sampleStudent,
-      dueDate,
-      "renewal",
-    );
+    if (sampleFlow === "direct_pay") {
+      templateName = directPaymentTemplateName();
+      metaResponse = await sendDirectPaymentTemplateMessage(
+        to,
+        sampleEventId,
+        sampleStudent,
+        dueDate,
+        reminderType,
+      );
+      paymentPageUrl = buildDirectPaymentPageUrl(sampleEventId);
+    } else {
+      templateName = reminderTemplateName(reminderType);
+      metaResponse = await sendTemplateMessage(
+        to,
+        sampleEventId,
+        sampleStudent,
+        dueDate,
+        reminderType,
+      );
+      const amount = paymentAmountForReminderType(reminderType, "monthly");
+      paymentPageUrl = buildPaymentPageUrl(sampleStudent, "monthly", amount);
+      await sendTextMessage(
+        to,
+        `Sample Gen Alpha fee link: ${paymentPageUrl}\n\n${paymentContactDetails()}`,
+      );
+    }
   } catch (error) {
     const message = error instanceof Error
       ? error.message
@@ -2840,16 +2897,12 @@ async function handleSendSampleReminder(request: Request, payload: any) {
     }, 502);
   }
 
-  const amount = PLAN_AMOUNTS.monthly;
-  const paymentPageUrl = buildPaymentPageUrl(sampleStudent, "monthly", amount);
-  await sendTextMessage(
-    to,
-    `Sample Gen Alpha fee link: ${paymentPageUrl}\n\n${paymentContactDetails()}`,
-  );
-
   return jsonResponse({
     success: true,
-    message: `Sample WhatsApp reminder sent to ${to.slice(-10)}.`,
+    flow: sampleFlow,
+    sampleEventId,
+    templateName,
+    message: `${sampleFlow === "direct_pay" ? "V2 Direct Pay" : "Legacy"} sample WhatsApp reminder sent to ${to.slice(-10)}.`,
     metaResponse,
     paymentPageUrl,
   });
@@ -3634,7 +3687,14 @@ Deno.serve(async (request) => {
     if (payload?.action === "send_reminder") {
       return await handleSendReminder(request, payload);
     }
-    if (payload?.action === "send_sample_reminder") {
+    if (
+      [
+        "send_sample_reminder",
+        "send_sample_direct_pay_reminder",
+        "send_sample_v2_reminder",
+        "send_sample_legacy_reminder",
+      ].includes(String(payload?.action || ""))
+    ) {
       return await handleSendSampleReminder(request, payload);
     }
     if (payload?.action === "renewal_verified") {

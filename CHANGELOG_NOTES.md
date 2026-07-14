@@ -1,6 +1,6 @@
 # Gen Alpha Manager Changelog Notes
 
-Last updated: 2026-07-11
+Last updated: 2026-07-14
 
 This file records meaningful project changes and decisions so future Codex sessions can understand recent work without rereading the full chat. It is not a release changelog for users; it is a developer/manager memory log.
 
@@ -12,6 +12,14 @@ Use this file when:
 - A future agent needs to understand why a design or business rule exists.
 
 For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
+
+## 2026-07-14
+
+### Sample Reminder Flow Selector
+
+- Updated `send_sample_reminder` so sample WhatsApp sends can use either Direct Pay V2 or the legacy plan-button flow.
+- Added explicit sample actions: `send_sample_direct_pay_reminder` / `send_sample_v2_reminder` for the new Pay Now template, and `send_sample_legacy_reminder` for the old fallback template.
+- `send_sample_reminder` now defaults to Direct Pay V2, but callers can pass `flow: "legacy"`/`version: "old"` to test the old path.
 
 ## 2026-07-11
 

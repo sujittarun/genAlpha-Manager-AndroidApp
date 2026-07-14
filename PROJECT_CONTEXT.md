@@ -206,6 +206,7 @@ Current utility reminder templates:
   - Fallback plan-button templates: 1 Month, 3 Months, 6 Months, Need Help.
   - If Need Help: log it and provide manager/help flow.
 - Automatic fee reminders are enabled through the Supabase WhatsApp reminder scheduler; manual reminders can also be triggered from the app.
+- Sample reminder sends support both flows: `send_sample_reminder` defaults to Direct Pay V2, `send_sample_direct_pay_reminder` / `send_sample_v2_reminder` force the new Pay Now template, and `send_sample_legacy_reminder` or `flow: "legacy"` tests the old plan-button fallback.
 - `students.whatsapp_contact_status` is the durable parent-contact gate. `wrong_number` and `opted_out` block automatic reminders, manual sends, queued retries, and payment confirmation WhatsApp until staff reactivate the contact.
 - Do not expose wrong-number status controls in normal player UI. Only flagged players show a correction note in Edit Player; saving a different valid 10-digit number reactivates future reminders while historical failed reminders stay closed.
 - `reminder_events.manual_followup_reason` explains manual follow-up (`wrong_phone_number`, `whatsapp_opted_out`, `overdue_15_days`, `retry_exhausted`, `delivery_failure`, or `missing_phone`). Web and Android must show the reason without replacing the separate Next fee due day count.
