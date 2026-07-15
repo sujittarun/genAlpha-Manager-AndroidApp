@@ -110,3 +110,4 @@ The web fallback is also the recommended manual recovery path for unreadable med
 7. Enable the dedicated Meta test number.
 8. Test duplicate webhooks, two staff senders, out-of-order images, corrections, failed screenshots, and missing required fields.
 9. Enable the production intake number only after the above passes.
+10. Set `window.GEN_ALPHA_FEATURES.aiIntakeEnabled` to `true` in the web app config and deploy the web repo.
