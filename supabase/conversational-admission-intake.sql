@@ -1,6 +1,8 @@
 -- Conversational admission intake for WhatsApp and the manager web fallback.
 -- Safe incremental migration. AI output remains a draft until a human confirms it.
 
+begin;
+
 create extension if not exists pgcrypto;
 
 create sequence if not exists public.admission_intake_display_seq start 1;
@@ -556,3 +558,5 @@ on storage.objects for select to authenticated
 using (bucket_id = 'admission-intake');
 
 notify pgrst, 'reload schema';
+
+commit;

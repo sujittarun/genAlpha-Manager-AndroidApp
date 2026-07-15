@@ -20,6 +20,8 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 - Added a mandatory normalized `ADMISSION_INTAKE_STAFF_PHONES` allowlist before inbound WhatsApp messages can reach the admission model.
 - Shared-number intake now requires an exact Meta phone-number asset match and explicit `ADMISSION_INTAKE_SHARED_NUMBER=true` opt-in.
 - Non-staff messages on the reminder number continue through the existing renewal and payment reply flow.
+- Shared-number intake now inherits the existing reminder phone-number asset ID, avoiding a duplicate plaintext secret during activation.
+- Kept gateway JWT verification mandatory while allowing Supabase's signed dashboard test role for production smoke tests.
 
 ### Conversational AI Admission Intake Foundation
 

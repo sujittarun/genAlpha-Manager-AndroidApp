@@ -52,6 +52,8 @@ supabase functions deploy admission-intake
 supabase functions deploy whatsapp-reminder
 ```
 
+Keep JWT verification enabled for `admission-intake`. The function accepts manager sessions, the service-role key used by the WhatsApp router, and Supabase's short-lived dashboard `postgres` test token only after the gateway validates its signature.
+
 Required secrets:
 
 ```text
@@ -59,7 +61,7 @@ OPENAI_API_KEY
 OPENAI_ADMISSION_MODEL=gpt-5.4-mini
 META_WHATSAPP_TOKEN
 META_WHATSAPP_PHONE_NUMBER_ID
-META_ADMISSION_PHONE_NUMBER_ID
+META_ADMISSION_PHONE_NUMBER_ID=<optional dedicated intake asset ID>
 ADMISSION_INTAKE_ENABLED=true
 ADMISSION_INTAKE_SHARED_NUMBER=true
 ADMISSION_INTAKE_STAFF_PHONES=919876543210,919123456789
@@ -68,7 +70,7 @@ ADMISSION_INTAKE_WEBHOOK_SECRET=<random-long-secret>
 
 `META_ADMISSION_PHONE_NUMBER_ID` is Meta's phone-number asset ID, not the human-readable telephone number.
 
-For the academy's current setup, set `META_ADMISSION_PHONE_NUMBER_ID` to the same asset ID as `META_WHATSAPP_PHONE_NUMBER_ID` and opt in with `ADMISSION_INTAKE_SHARED_NUMBER=true`. `ADMISSION_INTAKE_STAFF_PHONES` is mandatory and comma-separated; values may include `+91` and spaces. The function normalizes them and fails closed when the list is empty. Messages from parents and other non-allowlisted senders continue to the existing reminder/payment reply handler and are never sent to the admission model.
+For the academy's current setup, leave `META_ADMISSION_PHONE_NUMBER_ID` unset so it safely inherits `META_WHATSAPP_PHONE_NUMBER_ID`, and opt in with `ADMISSION_INTAKE_SHARED_NUMBER=true`. Set `META_ADMISSION_PHONE_NUMBER_ID` only when a different dedicated Cloud API number is introduced. `ADMISSION_INTAKE_STAFF_PHONES` is mandatory and comma-separated; values may include `+91` and spaces. The function normalizes them and fails closed when the list is empty. Messages from parents and other non-allowlisted senders continue to the existing reminder/payment reply handler and are never sent to the admission model.
 
 Adding the number to an ordinary WhatsApp group is still not an ingestion method. Keep it in the group only for normal human communication unless Meta has enabled the separate Groups API for this exact Cloud API phone-number asset and API-created group.
 

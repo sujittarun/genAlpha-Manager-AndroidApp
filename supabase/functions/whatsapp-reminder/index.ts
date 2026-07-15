@@ -541,9 +541,9 @@ async function rest(path: string, init: RequestInit = {}) {
 
 async function forwardToAdmissionIntake(value: any, message: any) {
   if (!parseBoolean(env("ADMISSION_INTAKE_ENABLED"), false)) return null;
-  const configuredPhoneNumberId = env("META_ADMISSION_PHONE_NUMBER_ID");
-  const incomingPhoneNumberId = String(value?.metadata?.phone_number_id || "");
   const reminderPhoneNumberId = env("META_WHATSAPP_PHONE_NUMBER_ID");
+  const configuredPhoneNumberId = env("META_ADMISSION_PHONE_NUMBER_ID") || reminderPhoneNumberId;
+  const incomingPhoneNumberId = String(value?.metadata?.phone_number_id || "");
   const sharedNumber = parseBoolean(env("ADMISSION_INTAKE_SHARED_NUMBER"), false);
   if (!configuredPhoneNumberId || incomingPhoneNumberId !== configuredPhoneNumberId) {
     return null;
