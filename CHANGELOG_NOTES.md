@@ -15,6 +15,12 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 
 ## 2026-07-16
 
+### Shared WhatsApp Admission Intake Safety
+
+- Added a mandatory normalized `ADMISSION_INTAKE_STAFF_PHONES` allowlist before inbound WhatsApp messages can reach the admission model.
+- Shared-number intake now requires an exact Meta phone-number asset match and explicit `ADMISSION_INTAKE_SHARED_NUMBER=true` opt-in.
+- Non-staff messages on the reminder number continue through the existing renewal and payment reply flow.
+
 ### Conversational AI Admission Intake Foundation
 
 - Added a provider-neutral admission intake state machine for informal WhatsApp conversations and manager web uploads.

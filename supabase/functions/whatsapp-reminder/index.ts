@@ -82,6 +82,15 @@ function normalizePhone(value: string): string {
   return digits ? `91${digits}` : "";
 }
 
+function admissionIntakeStaffPhones(): Set<string> {
+  return new Set(
+    env("ADMISSION_INTAKE_STAFF_PHONES")
+      .split(",")
+      .map((value) => normalizePhone(value))
+      .filter(Boolean),
+  );
+}
+
 function isWhatsappContactBlocked(student: any): boolean {
   return ["wrong_number", "opted_out"].includes(
     String(student?.whatsapp_contact_status || "active").toLowerCase(),
@@ -534,8 +543,21 @@ async function forwardToAdmissionIntake(value: any, message: any) {
   if (!parseBoolean(env("ADMISSION_INTAKE_ENABLED"), false)) return null;
   const configuredPhoneNumberId = env("META_ADMISSION_PHONE_NUMBER_ID");
   const incomingPhoneNumberId = String(value?.metadata?.phone_number_id || "");
+  const reminderPhoneNumberId = env("META_WHATSAPP_PHONE_NUMBER_ID");
   const sharedNumber = parseBoolean(env("ADMISSION_INTAKE_SHARED_NUMBER"), false);
-  if (!sharedNumber && (!configuredPhoneNumberId || incomingPhoneNumberId !== configuredPhoneNumberId)) {
+  if (!configuredPhoneNumberId || incomingPhoneNumberId !== configuredPhoneNumberId) {
+    return null;
+  }
+  if (configuredPhoneNumberId === reminderPhoneNumberId && !sharedNumber) {
+    return null;
+  }
+
+  // The reminder number also receives replies from parents. Only explicitly
+  // allowlisted staff may start or correct an admission intake, so enabling the
+  // shared number can never redirect all inbound conversations to the model.
+  const senderPhone = normalizePhone(String(message?.from || ""));
+  const allowedStaffPhones = admissionIntakeStaffPhones();
+  if (!senderPhone || !allowedStaffPhones.has(senderPhone)) {
     return null;
   }
 

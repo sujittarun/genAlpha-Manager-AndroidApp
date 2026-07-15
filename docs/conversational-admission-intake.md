@@ -2,7 +2,7 @@
 
 ## Production channel decision
 
-Use a dedicated 1:1 Meta WhatsApp Cloud API number for the first production rollout. Staff can forward or send the same informal conversation, handwritten form image, and payment screenshot to that number. No `NEW ADMISSION` or `DONE` command is required.
+The academy's existing reminder number can also receive 1:1 admission messages from explicitly allowlisted staff. Staff can forward or send the same informal conversation, handwritten form image, and payment screenshot to that number. No `NEW ADMISSION` or `DONE` command is required.
 
 Do not add the proposed academy number to the existing admission group merely to enable automation. A normal group membership does not create an API webhook. Meta's Groups API is a separate, restricted surface for eligible Cloud API businesses and API-managed small groups. Confirm eligibility in WhatsApp Manager before attempting any group rollout.
 
@@ -61,13 +61,16 @@ META_WHATSAPP_TOKEN
 META_WHATSAPP_PHONE_NUMBER_ID
 META_ADMISSION_PHONE_NUMBER_ID
 ADMISSION_INTAKE_ENABLED=true
-ADMISSION_INTAKE_SHARED_NUMBER=false
+ADMISSION_INTAKE_SHARED_NUMBER=true
+ADMISSION_INTAKE_STAFF_PHONES=919876543210,919123456789
 ADMISSION_INTAKE_WEBHOOK_SECRET=<random-long-secret>
 ```
 
 `META_ADMISSION_PHONE_NUMBER_ID` is Meta's phone-number asset ID, not the human-readable telephone number.
 
-Keep `ADMISSION_INTAKE_SHARED_NUMBER=false` for rollout. This prevents renewal/payment replies on the current reminder number from being mistaken for new admissions. A shared-number classifier can be added only after an evaluation set proves reliable routing.
+For the academy's current setup, set `META_ADMISSION_PHONE_NUMBER_ID` to the same asset ID as `META_WHATSAPP_PHONE_NUMBER_ID` and opt in with `ADMISSION_INTAKE_SHARED_NUMBER=true`. `ADMISSION_INTAKE_STAFF_PHONES` is mandatory and comma-separated; values may include `+91` and spaces. The function normalizes them and fails closed when the list is empty. Messages from parents and other non-allowlisted senders continue to the existing reminder/payment reply handler and are never sent to the admission model.
+
+Adding the number to an ordinary WhatsApp group is still not an ingestion method. Keep it in the group only for normal human communication unless Meta has enabled the separate Groups API for this exact Cloud API phone-number asset and API-created group.
 
 ## Inactivity processing
 
@@ -107,7 +110,7 @@ The web fallback is also the recommended manual recovery path for unreadable med
 4. Verify that extraction creates only an intake session.
 5. Confirm and verify that one pending admission is created.
 6. Approve it and verify the payment claim; confirm exactly one player and one `student_payments` row exist.
-7. Enable the dedicated Meta test number.
+7. Add only test staff numbers to `ADMISSION_INTAKE_STAFF_PHONES`, then enable shared-number mode.
 8. Test duplicate webhooks, two staff senders, out-of-order images, corrections, failed screenshots, and missing required fields.
 9. Enable the production intake number only after the above passes.
 10. Set `window.GEN_ALPHA_FEATURES.aiIntakeEnabled` to `true` in the web app config and deploy the web repo.
