@@ -54,20 +54,6 @@ async function assertAuthorized(request: Request) {
   if (!token) throw new Error("Manager login or intake webhook secret is required.");
   if (token === env("SUPABASE_SERVICE_ROLE_KEY")) return;
 
-  // Supabase's authenticated dashboard function tester uses a short-lived
-  // postgres-role JWT. This role is accepted only behind the function's
-  // required gateway JWT verification; production deploys must not use
-  // --no-verify-jwt.
-  try {
-    const encodedPayload = token.split(".")[1] || "";
-    const paddedPayload = encodedPayload.replace(/-/g, "+").replace(/_/g, "/")
-      .padEnd(Math.ceil(encodedPayload.length / 4) * 4, "=");
-    const role = String(JSON.parse(atob(paddedPayload))?.role || "");
-    if (role === "postgres") return;
-  } catch {
-    // Continue to normal manager-session verification below.
-  }
-
   const response = await fetch(`${env("SUPABASE_URL").replace(/\/+$/, "")}/auth/v1/user`, {
     headers: {
       apikey: request.headers.get("apikey") || env("SUPABASE_ANON_KEY"),

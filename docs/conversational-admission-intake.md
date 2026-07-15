@@ -52,7 +52,7 @@ supabase functions deploy admission-intake
 supabase functions deploy whatsapp-reminder
 ```
 
-Keep JWT verification enabled for `admission-intake`. The function accepts manager sessions, the service-role key used by the WhatsApp router, and Supabase's short-lived dashboard `postgres` test token only after the gateway validates its signature.
+Keep JWT verification enabled for `admission-intake`. The function accepts authenticated manager sessions and the service-role key used internally by the WhatsApp router.
 
 Required secrets:
 
