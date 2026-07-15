@@ -1,6 +1,6 @@
 # Gen Alpha Manager Project Context
 
-Last updated: 2026-05-09
+Last updated: 2026-07-16
 
 This file is the source-of-truth briefing for Codex/future agents. Read this first before changing code, then verify the relevant implementation files. Do not rely only on old chat history because this project has many superseded decisions.
 
@@ -72,6 +72,9 @@ Important: keep Android-only code in the Android repo and web-only code in `web-
 - Manager can approve admission to roster or reject it.
 - Approval should create the student/player record.
 - If approval fails with missing columns like `filled_by`, add incremental migration, do not rerun destructive schema.
+- Conversational AI intake is active development again. It must accept informal, out-of-order staff conversation plus handwritten forms/payment proof, create only a temporary draft, send/show a confirmation summary, and persist to the existing pending admission queue only after human confirmation.
+- A claimed payment remains pending verification. Student creation still requires admission approval, and finance revenue is created only when a manager verifies the payment into `student_payments`.
+- Production WhatsApp intake should use a dedicated official Meta Cloud API 1:1 number unless the academy is explicitly eligible for Meta's restricted Groups API. Keep an authenticated manager web intake as the supported fallback; do not use unofficial WhatsApp Web automation.
 
 ### Staff/Manager View
 

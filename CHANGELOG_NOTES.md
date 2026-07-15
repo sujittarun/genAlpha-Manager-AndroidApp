@@ -1,6 +1,6 @@
 # Gen Alpha Manager Changelog Notes
 
-Last updated: 2026-07-14
+Last updated: 2026-07-16
 
 This file records meaningful project changes and decisions so future Codex sessions can understand recent work without rereading the full chat. It is not a release changelog for users; it is a developer/manager memory log.
 
@@ -12,6 +12,17 @@ Use this file when:
 - A future agent needs to understand why a design or business rule exists.
 
 For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
+
+## 2026-07-16
+
+### Conversational AI Admission Intake Foundation
+
+- Added a provider-neutral admission intake state machine for informal WhatsApp conversations and manager web uploads.
+- Added immutable message, extraction, correction, and payment-claim audit tables with private media storage.
+- Added human-confirmed admission finalization mapped to the existing admissions review queue and fee rules.
+- Added manager-only payment-claim verification that creates a joining payment ledger entry and updates roster/finance state atomically.
+- Added an authenticated `AI Intake` web fallback for pasted conversations, admission forms, PDFs, and payment screenshots.
+- Routed a configurable dedicated Meta Cloud API number into the new intake function without interfering with the current renewal reminder number.
 
 ## 2026-07-14
 
@@ -406,7 +417,7 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 - Finance appears only after staff login.
 - WhatsApp reminders are manual only for now, not automated.
 - Razorpay is paused; UPI payment link/page is used.
-- AI/OCR upload/import for handwritten forms is removed/paused.
+- AI/OCR intake is being reintroduced behind human confirmation, using the existing admission review and payment-verification lifecycle.
 - Current UPI ID is `9059962499@ybl`.
 - Current WhatsApp reminder template uses two variables and language `en`.
 

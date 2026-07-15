@@ -530,6 +530,55 @@ async function rest(path: string, init: RequestInit = {}) {
   return body;
 }
 
+async function forwardToAdmissionIntake(value: any, message: any) {
+  if (!parseBoolean(env("ADMISSION_INTAKE_ENABLED"), false)) return null;
+  const configuredPhoneNumberId = env("META_ADMISSION_PHONE_NUMBER_ID");
+  const incomingPhoneNumberId = String(value?.metadata?.phone_number_id || "");
+  const sharedNumber = parseBoolean(env("ADMISSION_INTAKE_SHARED_NUMBER"), false);
+  if (!sharedNumber && (!configuredPhoneNumberId || incomingPhoneNumberId !== configuredPhoneNumberId)) {
+    return null;
+  }
+
+  const groupId = String(message?.group_id || message?.context?.group_id || "");
+  const contact = (value?.contacts || []).find((item: any) =>
+    String(item?.wa_id || "") === String(message?.from || "")
+  ) || value?.contacts?.[0];
+  const messageType = String(message?.type || "text");
+  const response = await fetch(
+    `${env("SUPABASE_URL").replace(/\/+$/, "")}/functions/v1/admission-intake`,
+    {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify({
+        action: "ingest",
+        channel: groupId ? "whatsapp_group" : "whatsapp",
+        message: {
+          provider_message_id: String(message?.id || ""),
+          source_chat_id: groupId || String(message?.from || ""),
+          source_sender_id: String(message?.from || ""),
+          source_sender_name: String(contact?.profile?.name || ""),
+          reply_to_provider_message_id: String(message?.context?.id || ""),
+          message_type: messageType,
+          text_body: String(
+            message?.text?.body || message?.[messageType]?.caption ||
+              message?.interactive?.button_reply?.title || "",
+          ),
+          media_id: String(message?.[messageType]?.id || ""),
+          media_mime_type: String(message?.[messageType]?.mime_type || ""),
+          media_filename: String(message?.document?.filename || ""),
+          timestamp: message?.timestamp,
+          raw_payload: message,
+        },
+      }),
+    },
+  );
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body?.success === false) {
+    throw new Error(body?.error || `Admission intake returned ${response.status}.`);
+  }
+  return body;
+}
+
 async function assertAuthenticated(request: Request) {
   const authHeader = request.headers.get("authorization") || "";
   const token = authHeader.replace(/^Bearer\s+/i, "");
@@ -3242,6 +3291,15 @@ async function handleWebhook(payload: any) {
 
       for (const message of change?.value?.messages || []) {
         const from = String(message.from || "");
+        try {
+          const intakeResult = await forwardToAdmissionIntake(change?.value, message);
+          if (intakeResult) continue;
+        } catch (error) {
+          // A message addressed to the dedicated admission number must never
+          // fall through into the renewal-payment conversation handler.
+          console.error("Admission intake forwarding failed", error);
+          continue;
+        }
         const reply = message?.interactive?.button_reply || message?.button;
         const replyPayload = String(
           reply?.id || reply?.payload || reply?.title || reply?.text || "",
