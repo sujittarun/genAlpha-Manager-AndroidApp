@@ -149,6 +149,7 @@ class SupabaseRepository(
                 chatId = review.chatId,
                 messageType = "text",
                 text = "Correction: ${correction.trim()}",
+                explicitSessionId = review.sessionId,
             ),
         )
         val updated = ingested.optJSONObject("reprocessed") ?: callAgentAlpha(
@@ -200,6 +201,7 @@ class SupabaseRepository(
         mediaMimeType: String = "",
         mediaFileName: String = "",
         storagePath: String = "",
+        explicitSessionId: String = "",
         timestamp: String = Instant.now().toString(),
     ): JSONObject {
         val message = JSONObject()
@@ -210,6 +212,7 @@ class SupabaseRepository(
             .put("message_type", messageType)
             .put("message_timestamp", timestamp)
         if (text.isNotBlank()) message.put("text_body", text)
+        if (explicitSessionId.isNotBlank()) message.put("session_id", explicitSessionId)
         if (storagePath.isNotBlank()) {
             message
                 .put("media_mime_type", mediaMimeType)

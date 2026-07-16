@@ -4,7 +4,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const PROMPT_VERSION = "gen-alpha-conversation-v2";
+const PROMPT_VERSION = "gen-alpha-conversation-v3";
 const configuredDebounceSeconds = Number(env("ADMISSION_INTAKE_DEBOUNCE_SECONDS") || "20");
 const INTAKE_DEBOUNCE_SECONDS = Number.isFinite(configuredDebounceSeconds)
   ? Math.min(120, Math.max(5, configuredDebounceSeconds))
@@ -108,8 +108,8 @@ function normalizeMessage(input: any) {
 function confirmationIntent(text: string): ReplyIntent {
   const normalized = text.trim().toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ");
   if (!normalized) return "unknown";
-  if (/\b(?:cancel|discard|reject|ignore|stop|do not save|don t save|wrong (?:admission|renewal|payment|player))\b/.test(normalized)) return "reject";
-  if (/\b(?:change|correct|correction|instead|actually|should be|update|edit|not correct|is wrong|that s wrong)\b/.test(normalized)) return "correction";
+  if (/\b(?:change|correct|correction|instead|actually|should be|update|edit|not correct|is wrong|that s wrong|mark (?:it )?as|payment pending|not paid|unpaid|ignore (?:the )?(?:paid|payment|fee|date))\b/.test(normalized)) return "correction";
+  if (/^(?:cancel|discard|reject|ignore|stop|do not save|don t save|wrong (?:admission|renewal|payment|player))(?: it| this| that| the admission| the renewal| the payment)?$/.test(normalized)) return "reject";
   if (/^(confirm|confirmed|approve|approved|ok|okay|yes|yep|yeah|correct|all correct|looks good|all good|save|save it|proceed|go ahead|do it|sure|done)$/.test(normalized)) return "confirm";
   if (/^(?:yes |okay |ok |sure )?(?:please )?(?:confirm|approve|save|record|proceed|go ahead|do it)(?: it| this| the admission| the renewal| the payment)?$/.test(normalized)) return "confirm";
   if (/^(?:yes )?(?:confirm|confirmed|approve|approved)(?: (?:this|it|the|for|a|one|1|three|3|six|6|month|months|monthly|quarterly|half|yearly|halfyearly|renewal|admission|payment))*$/.test(normalized)) return "confirm";
@@ -196,12 +196,16 @@ async function getOrCreateCollectingSession(message: ReturnType<typeof normalize
 
 async function ingestMessage(input: any, channel = "whatsapp") {
   const message = normalizeMessage(input);
+  const explicitWebSessionId = channel === "web" ? String(input.session_id || "") : "";
   const existing = await rest(
     `admission_intake_messages?select=*,admission_intake_sessions(*)&provider_message_id=eq.${encodeURIComponent(message.provider_message_id)}&limit=1`,
   );
   if (existing?.[0]) return { duplicate: true, message: existing[0], session: existing[0].admission_intake_sessions };
 
-  const replySession = await findReplySession(message);
+  const explicitWebSession = explicitWebSessionId
+    ? (await rest(`admission_intake_sessions?select=*&id=eq.${encodeURIComponent(explicitWebSessionId)}&limit=1`))?.[0] || null
+    : null;
+  const replySession = explicitWebSession || await findReplySession(message);
   const normalizedGroupText = message.text_body.trim().toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ");
   const obviousGroupChatter = /^(?:wow|whoa|lol|haha|nice|super|interesting|what is this|what s this|what is that|how does this work)$/.test(normalizedGroupText);
   if (channel === "whatsapp_group" && obviousGroupChatter) {
@@ -466,7 +470,7 @@ A screenshot is successful only when a completed/successful status is visible. A
 When an attachment is the payment screenshot, copy its supplied storage path exactly into payment.proof_path. Do not use the admission-form path as payment proof.
 The printed admission form field "FEE Paid on" is only a claim that a payment may have happened. When it contains a date, set payment.claimed_paid=true, payment.payment_date to that date, and payment.evidence_type=form_date_only unless separate conversation evidence establishes a payment screenshot, cash payment, or transaction reference. Never infer an amount or payment method from that date alone.
 Set payment.evidence_type=payment_screenshot only for an actual payment receipt/screenshot, cash_statement only when staff explicitly says the payment was cash, and transaction_reference only when a real reference or UTR is supplied. Otherwise use none or form_date_only.
-For photographed paper forms, map every visible online-form equivalent: emergency contact to alternate_contact_no, Aadhaar/NIDA to parent_aadhaar_no, selected batting and bowling checkboxes, "Kick start my journey now" to ready_to_start, and a visibly completed parent/guardian declaration plus signature to consent_accepted and terms_accepted. Never mark consent or terms true without visible signed/checked evidence.
+For photographed paper forms, inspect the entire image including the bottom edge, declaration, consent, signature, name, and date areas. Map every visible online-form equivalent: emergency contact to alternate_contact_no, Aadhaar/NIDA to parent_aadhaar_no, selected batting and bowling checkboxes, and "Kick start my journey now" to ready_to_start. A parent/guardian signature, written name, or completed signature/date inside the printed declaration or consent block counts as acceptance: set both consent_accepted and terms_accepted=true even when there is no separate consent checkbox. Printed declaration text by itself is not acceptance; require visible handwriting, signature, name, date, or a checked acceptance control. Do not miss faint handwriting near the form edges.
 Dates must be YYYY-MM-DD, times HH:MM, Indian phone numbers must contain the final 10 digits only.
 For renewals, extract every available player identifier (registration number, exact name, parent phone, guardian), but never decide which database player it is. The application performs deterministic matching. A renewal requires a unique player match, plan or months, positive amount, payment date, and either a transaction reference/UTR or screenshot proof.
 Keep medical notes or unmodeled facts in comments. For admission, candidate_complete requires student name, DOB, 10-digit parent contact, joining date, and valid batch. For renewal, candidate_complete requires the renewal evidence above.`;
@@ -1253,6 +1257,12 @@ async function handleReply(ingested: any) {
       created_by: ingested.message.source_sender_name || ingested.message.source_sender_id || "WhatsApp staff",
     }),
   });
+  if (session.channel === "web") {
+    return {
+      intent: "correction",
+      reprocessed: await processSession(session.id, true),
+    };
+  }
   scheduleSessionProcessing(session.id, reset?.[0]?.updated_at || ingested.debounceToken || session.updated_at);
   return { intent: "correction", queued: true, debounce_seconds: INTAKE_DEBOUNCE_SECONDS };
 }
