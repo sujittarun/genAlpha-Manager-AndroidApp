@@ -103,6 +103,18 @@ Confirmation accepts concise natural phrases such as `confirm`, `confirm renewal
 
 A repeated confirmation within 30 minutes is attached to the recently confirmed session and returns the same idempotent success result instead of opening a new intake conversation.
 
+## AgentAlpha group protocol
+
+Direct staff chats keep their natural conversational behavior. In a WhatsApp group, intake is deliberately opt-in so unrelated academy conversation never reaches the model:
+
+- Put `AgentAlpha` in the caption of each new admission form or payment screenshot, for example `AgentAlpha renew Rohan`.
+- Each new AgentAlpha-tagged group item opens its own isolated session, so simultaneous screenshots cannot merge.
+- Reply to that item's AgentAlpha review when correcting or confirming it. Replies are routed by the WhatsApp message ID to the exact session.
+- Untagged group messages that are not replies inside an existing AgentAlpha thread are ignored.
+- A bare screenshot followed by an unrelated text message is intentionally not paired. Caption the screenshot or resend it with the AgentAlpha trigger.
+
+This routing protects application context only after Meta delivers group webhooks. WhatsApp Business Platform group availability and coexistence eligibility must still be verified with a live group test for the academy number.
+
 n8n workflow:
 
 ```text

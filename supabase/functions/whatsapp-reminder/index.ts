@@ -566,6 +566,13 @@ async function forwardToAdmissionIntake(value: any, message: any) {
     String(item?.wa_id || "") === String(message?.from || "")
   ) || value?.contacts?.[0];
   const messageType = String(message?.type || "text");
+  const messageText = String(
+    message?.text?.body || message?.[messageType]?.caption ||
+      message?.interactive?.button_reply?.title || "",
+  );
+  if (groupId && !message?.context?.id && !/\bagent\s*alpha\b/i.test(messageText)) {
+    return null;
+  }
   const response = await fetch(
     `${env("SUPABASE_URL").replace(/\/+$/, "")}/functions/v1/admission-intake`,
     {
@@ -581,10 +588,7 @@ async function forwardToAdmissionIntake(value: any, message: any) {
           source_sender_name: String(contact?.profile?.name || ""),
           reply_to_provider_message_id: String(message?.context?.id || ""),
           message_type: messageType,
-          text_body: String(
-            message?.text?.body || message?.[messageType]?.caption ||
-              message?.interactive?.button_reply?.title || "",
-          ),
+          text_body: messageText,
           media_id: String(message?.[messageType]?.id || ""),
           media_mime_type: String(message?.[messageType]?.mime_type || ""),
           media_filename: String(message?.document?.filename || ""),

@@ -5,6 +5,7 @@ const corsHeaders = {
 };
 
 const PROMPT_VERSION = "gen-alpha-conversation-v2";
+const AGENT_TRIGGER = /\bagent\s*alpha\b/i;
 type ReplyIntent = "confirm" | "reject" | "correction" | "unknown";
 
 function env(name: string): string {
@@ -126,11 +127,37 @@ async function findReplySession(message: ReturnType<typeof normalizeMessage>) {
     );
     if (rows?.[0]) return rows[0];
   }
+  if (message.reply_to_provider_message_id) {
+    const rows = await rest(
+      `admission_intake_messages?select=admission_intake_sessions(*)&provider_message_id=eq.${encodeURIComponent(message.reply_to_provider_message_id)}&limit=1`,
+    );
+    if (rows?.[0]?.admission_intake_sessions) return rows[0].admission_intake_sessions;
+  }
   const rows = await rest(
     `admission_intake_sessions?select=*&source_chat_id=eq.${encodeURIComponent(message.source_chat_id)}` +
       `&status=eq.waiting_for_confirmation&order=last_message_at.desc&limit=1`,
   );
   return rows?.[0] || null;
+}
+
+async function createGroupSession(message: ReturnType<typeof normalizeMessage>) {
+  const rows = await rest("admission_intake_sessions?select=*", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      channel: "whatsapp_group",
+      source_chat_id: message.source_chat_id,
+      source_sender_id: message.source_sender_id,
+      source_sender_name: message.source_sender_name,
+      provider_session_key: `agentalpha:${message.source_chat_id}:${message.provider_message_id}`,
+      status: "collecting",
+      opened_at: message.message_timestamp,
+      last_message_at: message.message_timestamp,
+      expires_at: new Date(Date.now() + 24 * 3600_000).toISOString(),
+      created_by: "AgentAlpha group intake",
+    }),
+  });
+  return rows?.[0];
 }
 
 async function findRecentlyConfirmedSession(message: ReturnType<typeof normalizeMessage>) {
@@ -164,9 +191,14 @@ async function ingestMessage(input: any, channel = "whatsapp") {
   if (existing?.[0]) return { duplicate: true, message: existing[0], session: existing[0].admission_intake_sessions };
 
   const replySession = await findReplySession(message);
+  if (channel === "whatsapp_group" && !replySession && !AGENT_TRIGGER.test(message.text_body)) {
+    return { ignored: true, reason: "Group messages require AgentAlpha or a reply inside an AgentAlpha thread." };
+  }
   const recentConfirmedSession = replySession ? null : await findRecentlyConfirmedSession(message);
   const responseSession = replySession || recentConfirmedSession;
-  const session = responseSession || await getOrCreateCollectingSession(message, channel);
+  const session = responseSession || (channel === "whatsapp_group"
+    ? await createGroupSession(message)
+    : await getOrCreateCollectingSession(message, channel));
   const rows = await rest("admission_intake_messages?select=*", {
     method: "POST",
     headers: { Prefer: "return=representation" },
@@ -631,6 +663,8 @@ function requiredMissingFields(intakeType: string, draft: any, match: any): stri
       ["join_date", draft?.join_date],
       ["time_slot", draft?.time_slot],
     ].filter(([, value]) => !value).map(([field]) => String(field));
+    const admissionAge = ageAt(String(draft?.join_date || ""), String(draft?.date_of_birth || ""));
+    if (admissionAge === null || admissionAge < 4 || admissionAge > 18) missing.push("join_date");
     if (!draft?.consent_accepted) missing.push("consent_accepted");
     if (!draft?.terms_accepted) missing.push("terms_accepted");
 
@@ -668,11 +702,53 @@ function requiredMissingFields(intakeType: string, draft: any, match: any): stri
 }
 
 function explicitlyCorrectedToUnpaid(messages: any[]): boolean {
-  const transcript = messages.map((message) => String(message?.text_body || "")).join("\n");
-  return (
-    /\bpayment\s+(?:was\s+)?not\s+(?:done|paid)\b/i.test(transcript) ||
-    /\b(?:fee\s+paid\s+on\s+)?date\s+(?:is|was)\s+(?:by\s+)?(?:a\s+)?mistake\b/i.test(transcript)
-  );
+  let disposition: "paid" | "unpaid" | "" = "";
+  for (const message of messages || []) {
+    const text = String(message?.text_body || "");
+    if (!text) continue;
+    if (
+      /\bpayment\s+(?:is\s+|was\s+|has\s+been\s+)?not\s+(?:do|done|paid|received)\b/i.test(text) ||
+      /\b(?:mark|keep)(?:\s+it)?\s+as\s+(?:payment\s+)?pending\b/i.test(text) ||
+      /\bpayment\s+pending\b/i.test(text) ||
+      /\bremove\b[^.\n]*(?:paid|payment)[^.\n]*\bdate\b/i.test(text) ||
+      /\b(?:fee\s+paid\s+on\s+)?date\s+(?:is|was)\s+(?:by\s+)?(?:a\s+)?mistake\b/i.test(text)
+    ) disposition = "unpaid";
+    if (
+      /\b(?:payment\s+(?:is\s+|was\s+)?(?:done|paid|received)|paid\s+(?:by\s+)?cash|cash\s+(?:rs\.?|₹)?\s*\d+)\b/i.test(text) &&
+      !/\bnot\s+(?:do|done|paid|received)\b/i.test(text)
+    ) disposition = "paid";
+  }
+  return disposition === "unpaid";
+}
+
+function ageAt(dateValue: string, birthValue: string): number | null {
+  const date = new Date(`${dateValue}T00:00:00Z`);
+  const birth = new Date(`${birthValue}T00:00:00Z`);
+  if (!Number.isFinite(date.getTime()) || !Number.isFinite(birth.getTime())) return null;
+  let age = date.getUTCFullYear() - birth.getUTCFullYear();
+  if (date.getUTCMonth() < birth.getUTCMonth() ||
+    (date.getUTCMonth() === birth.getUTCMonth() && date.getUTCDate() < birth.getUTCDate())) age -= 1;
+  return age;
+}
+
+function correctImplausibleJoiningYear(draft: any, messages: any[]): boolean {
+  const join = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(draft?.join_date || ""));
+  const dob = String(draft?.date_of_birth || "");
+  if (!join || !/^\d{4}-\d{2}-\d{2}$/.test(dob)) return false;
+  const extractedAgeAtJoin = ageAt(draft.join_date, dob);
+  if (extractedAgeAtJoin !== null && extractedAgeAtJoin >= 4 && extractedAgeAtJoin <= 18) return false;
+  const sourceTimestamp = String((messages || []).find((message) => ["image", "document"].includes(message?.message_type))?.message_timestamp || messages?.[0]?.message_timestamp || "");
+  const sourceDate = new Date(sourceTimestamp);
+  if (!Number.isFinite(sourceDate.getTime())) return false;
+  const candidate = `${sourceDate.getUTCFullYear()}-${join[2]}-${join[3]}`;
+  const candidateDate = new Date(`${candidate}T00:00:00Z`);
+  const distanceDays = Math.abs(candidateDate.getTime() - sourceDate.getTime()) / 86_400_000;
+  const candidateAge = ageAt(candidate, dob);
+  const statedAge = Number(draft?.age || 0);
+  if (distanceDays > 45 || candidateAge === null || candidateAge < 4 || candidateAge > 18 ||
+    (statedAge > 0 && Math.abs(candidateAge - statedAge) > 1)) return false;
+  draft.join_date = candidate;
+  return true;
 }
 
 function removeResolvedAdmissionConflicts(conflicts: unknown[], draft: any, messages: any[]): string[] {
@@ -850,6 +926,17 @@ async function processSession(sessionId: string, allowReprocess = false) {
     const activeDraft = intakeType === "renewal"
       ? normalizeRenewalDraft(extraction.result.renewal)
       : extraction.result.draft;
+    if (intakeType === "admission" && correctImplausibleJoiningYear(activeDraft, messages)) {
+      extraction.result.field_evidence = [
+        ...(extraction.result.field_evidence || []),
+        {
+          field: "draft.join_date",
+          confidence: 1,
+          source: "deterministic_date_sanity",
+          notes: "Corrected an impossible OCR year using the form message date, matching day/month, DOB, and stated age.",
+        },
+      ];
+    }
     const activePayment = activeDraft?.payment || {};
     if (intakeType === "admission" && explicitlyCorrectedToUnpaid(messages)) {
       Object.assign(activePayment, {
@@ -1075,13 +1162,27 @@ async function handleReply(ingested: any) {
   const interpretation = await classifyReplyIntent(session, ingested.message);
   const intent = interpretation.intent;
   if (intent === "confirm") {
-    const finalized = await finalizeConfirmedSession(
-      session,
-      ingested.message.provider_message_id,
-      ingested.message.source_sender_name || ingested.message.source_sender_id || "WhatsApp staff",
-    );
-    await sendWhatsappSummary(session, finalized.message);
-    return { intent, intakeType: finalized.intakeType, finalized: finalized.row };
+    try {
+      const finalized = await finalizeConfirmedSession(
+        session,
+        ingested.message.provider_message_id,
+        ingested.message.source_sender_name || ingested.message.source_sender_id || "WhatsApp staff",
+      );
+      await sendWhatsappSummary(session, finalized.message);
+      return { intent, intakeType: finalized.intakeType, finalized: finalized.row };
+    } catch (error) {
+      const reason = errorMessage(error);
+      await rest(`admission_intake_sessions?id=eq.${encodeURIComponent(session.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "waiting_for_confirmation", error_code: "confirmation_failed", error_message: reason }),
+      });
+      await sendWhatsappSummary(session, [
+        "⚠️ *AgentAlpha could not save this yet*",
+        `Reason: ${reason}`,
+        "Nothing was saved. Send the corrected detail and I’ll return a new review.",
+      ].join("\n"));
+      return { intent, finalized: false, error: reason };
+    }
   }
   if (intent === "reject") {
     await rest(`admission_intake_sessions?id=eq.${encodeURIComponent(session.id)}`, {
@@ -1136,6 +1237,7 @@ Deno.serve(async (request) => {
     const action = String(payload.action || "ingest");
     if (action === "ingest") {
       const ingested = await ingestMessage(payload.message || payload, payload.channel || "whatsapp");
+      if (ingested.ignored) return jsonResponse({ success: true, ignored: true, reason: ingested.reason });
       if (ingested.isReply || ingested.session?.status === "waiting_for_confirmation") {
         return jsonResponse({ success: true, ...await handleReply(ingested) });
       }
