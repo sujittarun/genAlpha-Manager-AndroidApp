@@ -11,6 +11,8 @@ const INTAKE_DEBOUNCE_SECONDS = Number.isFinite(configuredDebounceSeconds)
   : 20;
 const INTAKE_DEBOUNCE_MS = INTAKE_DEBOUNCE_SECONDS * 1_000;
 const AGENT_TRIGGER = /\b(?:agent\s*alpha|agen\s*alpha|agent\s*alfa)\b/i;
+const EXPLICIT_NEW_CASE = /\b(?:new admission|admission form|new player|renewal (?:for|payment|screenshot)|renewal screenshot)\b/i;
+const MEDIA_MESSAGE_TYPES = new Set(["image", "document", "audio", "video"]);
 type ReplyIntent = "confirm" | "reject" | "correction" | "unknown";
 
 function env(name: string): string {
@@ -138,11 +140,62 @@ async function findReplySession(message: ReturnType<typeof normalizeMessage>) {
     );
     if (rows?.[0]?.admission_intake_sessions) return rows[0].admission_intake_sessions;
   }
+  // An unthreaded attachment is a new case. Staff must use WhatsApp Reply when
+  // an image/document is evidence for a review that is already waiting.
+  if (message.message_type !== "text") return null;
+  if (EXPLICIT_NEW_CASE.test(message.text_body)) return null;
   const rows = await rest(
     `admission_intake_sessions?select=*&source_chat_id=eq.${encodeURIComponent(message.source_chat_id)}` +
       `&status=eq.waiting_for_confirmation&order=last_message_at.desc&limit=1`,
   );
   return rows?.[0] || null;
+}
+
+async function findRecentTextOnlyCollectingSession(message: ReturnType<typeof normalizeMessage>) {
+  const since = new Date(Date.now() - 2 * 60_000).toISOString();
+  const sessions = await rest(
+    `admission_intake_sessions?select=*&channel=eq.whatsapp` +
+      `&source_chat_id=eq.${encodeURIComponent(message.source_chat_id)}` +
+      `&source_sender_id=eq.${encodeURIComponent(message.source_sender_id)}` +
+      `&status=eq.collecting&last_message_at=gte.${encodeURIComponent(since)}` +
+      `&order=last_message_at.desc&limit=1`,
+  );
+  const session = sessions?.[0];
+  if (!session) return null;
+  const messages = await rest(
+    `admission_intake_messages?select=message_type,text_body&session_id=eq.${encodeURIComponent(session.id)}&limit=50`,
+  );
+  const hasMedia = (messages || []).some((item: any) => MEDIA_MESSAGE_TYPES.has(String(item.message_type || "")));
+  const hasMeaningfulText = (messages || []).some((item: any) =>
+    String(item.message_type || "") === "text" && String(item.text_body || "").trim().length > 0
+  );
+  return hasMeaningfulText && !hasMedia ? session : null;
+}
+
+async function createStandaloneWhatsappSession(message: ReturnType<typeof normalizeMessage>) {
+  const providerSessionKey = `agentalpha:${message.source_chat_id}:${message.provider_message_id}`;
+  const rows = await rest("admission_intake_sessions?select=*&on_conflict=provider_session_key", {
+    method: "POST",
+    headers: { Prefer: "resolution=ignore-duplicates,return=representation" },
+    body: JSON.stringify({
+      channel: "whatsapp",
+      source_chat_id: message.source_chat_id,
+      source_sender_id: message.source_sender_id,
+      source_sender_name: message.source_sender_name,
+      provider_session_key: providerSessionKey,
+      status: "collecting",
+      opened_at: message.message_timestamp,
+      last_message_at: message.message_timestamp,
+      expires_at: new Date(Date.now() + 24 * 3600_000).toISOString(),
+      created_by: "AgentAlpha standalone WhatsApp media intake",
+    }),
+  });
+  if (rows?.[0]) return rows[0];
+  const existing = await rest(
+    `admission_intake_sessions?select=*&provider_session_key=eq.${encodeURIComponent(providerSessionKey)}&limit=1`,
+  );
+  if (!existing?.[0]) throw new Error("Unable to create or retrieve the standalone WhatsApp intake.");
+  return existing[0];
 }
 
 async function createGroupSession(message: ReturnType<typeof normalizeMessage>) {
@@ -216,9 +269,16 @@ async function ingestMessage(input: any, channel = "whatsapp") {
   }
   const recentConfirmedSession = replySession ? null : await findRecentlyConfirmedSession(message);
   const responseSession = replySession || recentConfirmedSession;
-  const session = responseSession || (channel === "whatsapp_group"
-    ? await createGroupSession(message)
-    : await getOrCreateCollectingSession(message, channel));
+  let session = responseSession;
+  if (!session && channel === "whatsapp_group") {
+    session = await createGroupSession(message);
+  } else if (!session && channel === "whatsapp" && MEDIA_MESSAGE_TYPES.has(message.message_type)) {
+    session = await findRecentTextOnlyCollectingSession(message) || await createStandaloneWhatsappSession(message);
+  } else if (!session && channel === "whatsapp" && EXPLICIT_NEW_CASE.test(message.text_body)) {
+    session = await createStandaloneWhatsappSession(message);
+  } else if (!session) {
+    session = await getOrCreateCollectingSession(message, channel);
+  }
   const rows = await rest("admission_intake_messages?select=*&on_conflict=provider_message_id", {
     method: "POST",
     headers: { Prefer: "resolution=ignore-duplicates,return=representation" },
