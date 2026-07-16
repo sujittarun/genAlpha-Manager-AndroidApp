@@ -150,6 +150,10 @@ declare
   v_to_date date;
   v_reference text;
   v_proof_path text;
+  v_is_joining boolean;
+  v_coaching numeric(10, 2);
+  v_admission_fee numeric(10, 2);
+  v_jersey numeric(10, 2);
   v_payment_id uuid;
 begin
   select * into v_session
@@ -219,41 +223,68 @@ begin
     raise exception 'This payment reference was already recorded.';
   end if;
 
-  v_cycle_start := public.student_paid_through_date(v_student.id);
+  v_is_joining := not v_student.fees_paid;
+  v_cycle_start := case when v_is_joining then v_student.join_date else public.student_paid_through_date(v_student.id) end;
   v_to_date := (v_cycle_start + make_interval(months => v_months))::date;
   if exists(
     select 1 from public.student_payments p
     where p.student_id = v_student.id
-      and p.payment_type = 'renewal'
+      and p.payment_type = case when v_is_joining then 'joining' else 'renewal' end
       and p.cycle_start_date = v_cycle_start
   ) then
-    raise exception 'This player already has a renewal for the current cycle.';
+    raise exception 'This player already has a payment for the current cycle.';
   end if;
+
+  v_admission_fee := case when v_plan = 'special' then 0 else 500 end;
+  v_jersey := greatest(coalesce(v_student.jersey_pairs, 0), 0) * 750;
+  v_coaching := case v_plan
+    when 'monthly' then 3500
+    when 'quarterly' then 9975
+    when 'halfyearly' then 18900
+    when 'special' then round(10000 * v_months * case when v_months >= 6 then 0.90 when v_months >= 3 then 0.95 else 1 end, 2)
+    else greatest(v_amount - v_admission_fee - v_jersey, 0)
+  end;
 
   insert into public.student_payments (
     student_id, payment_type, plan_type, cycle_start_date, months_covered,
     amount, paid_on, comment, recorded_by, proof_path, payment_reference,
     intake_session_id, verification_status
   ) values (
-    v_student.id, 'renewal', v_plan, v_cycle_start, v_months,
+    v_student.id, case when v_is_joining then 'joining' else 'renewal' end, v_plan, v_cycle_start, v_months,
     v_amount, v_paid_on,
-    concat('Confirmed conversational renewal. ', coalesce(v_draft->>'comments', '')),
+    concat(case when v_is_joining then 'Confirmed conversational joining payment. ' else 'Confirmed conversational renewal. ' end, coalesce(v_draft->>'comments', '')),
     coalesce(nullif(p_confirmed_by, ''), 'WhatsApp staff'), v_proof_path,
     v_reference, v_session.id, 'staff_confirmed'
   ) returning id into v_payment_id;
 
   update public.students
-  set renewals = (
+  set renewals = case when v_is_joining then public.students.renewals else (
         select array_agg(distinct d order by d)
         from unnest(coalesce(public.students.renewals, '{}'::date[]) || array[v_cycle_start]) d
-      ),
+      ) end,
+      fees_paid = case when v_is_joining then true else public.students.fees_paid end,
+      amount_paid = case when v_is_joining then v_amount else public.students.amount_paid end,
+      payment_status = case when v_is_joining then 'paid' else public.students.payment_status end,
       fee_plan = v_plan,
+      coaching_fee = case when v_is_joining then v_coaching else public.students.coaching_fee end,
+      admission_fee = case when v_is_joining then v_admission_fee else public.students.admission_fee end,
+      jersey_amount = case when v_is_joining then v_jersey else public.students.jersey_amount end,
+      total_fee_amount = case when v_is_joining then v_amount else public.students.total_fee_amount end,
       discontinued = false,
       rejoined_at = case when public.students.discontinued then v_paid_on else public.students.rejoined_at end,
       discontinued_at = case when public.students.discontinued then null else public.students.discontinued_at end,
       updated_by = coalesce(nullif(p_confirmed_by, ''), 'WhatsApp staff'),
       updated_at = now()
   where id = v_student.id;
+
+  if v_is_joining then
+    update public.admissions
+    set fees_paid = true, amount_paid = v_amount, fee_plan = v_plan,
+        coaching_fee = v_coaching, admission_fee = v_admission_fee,
+        jersey_amount = v_jersey, total_fee_amount = v_amount,
+        payment_verification_status = 'verified'
+    where id = v_student.admission_id;
+  end if;
 
   update public.admission_intake_sessions
   set status = 'confirmed', renewal_payment_id = v_payment_id,

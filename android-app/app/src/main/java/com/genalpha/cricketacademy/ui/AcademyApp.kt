@@ -256,6 +256,7 @@ private const val AdmissionOneTimeFee = 500.0
 private const val JerseyExtraPairFee = 750.0
 private const val SpecialTrainingMonthlyFee = 10000.0
 private val AdmissionFeePlanOptions = listOf(
+    SlotOption("pending", "Decide when paying"),
     SlotOption("monthly", "Monthly"),
     SlotOption("quarterly", "3 months - 5% off"),
     SlotOption("halfyearly", "6 months - 10% off"),
@@ -265,6 +266,7 @@ private val AdmissionFeePlanOptions = listOf(
 private val AdmissionFilledByOptions = listOf("Parent / Guardian", "Coach", "Manager")
 
 private fun admissionPlanBase(plan: String): Double = when (plan) {
+    "pending" -> 0.0
     "quarterly" -> 9975.0
     "halfyearly" -> 18900.0
     "special" -> SpecialTrainingMonthlyFee
@@ -7455,7 +7457,7 @@ private fun AdmissionFormSheet(
     var timeSlot by rememberSaveable { mutableStateOf("") }
     var joinDate by rememberSaveable { mutableStateOf(todayIsoDate()) }
     var feesPaid by rememberSaveable { mutableStateOf(false) }
-    var feePlan by rememberSaveable { mutableStateOf("monthly") }
+    var feePlan by rememberSaveable { mutableStateOf("pending") }
     var customAmount by rememberSaveable { mutableStateOf("") }
     var specialTrainingMonths by rememberSaveable { mutableStateOf("1") }
     var jerseySize by rememberSaveable { mutableStateOf("") }
@@ -7481,9 +7483,11 @@ private fun AdmissionFormSheet(
         }
     }
     val admissionFee = remember(feePlan) {
-        if (feePlan == "special") 0.0 else AdmissionOneTimeFee
+        if (feePlan == "pending" || feePlan == "special") 0.0 else AdmissionOneTimeFee
     }
-    val admissionExtraJerseyAmount = remember(jerseyPairs) { extraJerseyAmount(jerseyPairs) }
+    val admissionExtraJerseyAmount = remember(jerseyPairs, feePlan) {
+        if (feePlan == "pending") 0.0 else extraJerseyAmount(jerseyPairs)
+    }
     val planAmount = remember(coachingFee, admissionFee, admissionExtraJerseyAmount) {
         coachingFee + admissionFee + admissionExtraJerseyAmount
     }
@@ -7733,13 +7737,13 @@ private fun AdmissionFormSheet(
                 )
                 AdmissionDropdownField(
                     label = "Fee plan",
-                    value = AdmissionFeePlanOptions.firstOrNull { it.value == feePlan }?.label ?: "Monthly",
+                    value = AdmissionFeePlanOptions.firstOrNull { it.value == feePlan }?.label ?: "Decide when paying",
                     options = AdmissionFeePlanOptions.map { it.label },
                     modifier = Modifier
                         .fillMaxWidth()
                         .then(rememberBringIntoViewOnFocusModifier()),
                     onSelect = { selectedLabel ->
-                        feePlan = AdmissionFeePlanOptions.firstOrNull { it.label == selectedLabel }?.value ?: "monthly"
+                        feePlan = AdmissionFeePlanOptions.firstOrNull { it.label == selectedLabel }?.value ?: "pending"
                     },
                 )
                 if (feePlan == "special") {
@@ -8033,6 +8037,10 @@ private fun AdmissionFormSheet(
                     enabled = !isSubmitting && consentAccepted && termsAccepted,
                     onClick = {
                         scope.launch {
+                            if (feesPaid && feePlan == "pending") {
+                                inlineMessage = "Choose a fee plan before marking payment as made."
+                                return@launch
+                            }
                             isSubmitting = true
                             inlineMessage = ""
                             val draft = AdmissionDraft(

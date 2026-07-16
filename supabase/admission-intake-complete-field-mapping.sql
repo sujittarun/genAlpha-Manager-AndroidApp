@@ -1,5 +1,8 @@
 begin;
 
+alter table public.admissions alter column fee_plan set default 'pending';
+alter table public.students alter column fee_plan set default 'pending';
+
 -- This migration is applied after add-fee-breakdown-fields.sql. It makes the
 -- conversational intake path enforce the same required fields as the online
 -- admission form and preserves every extracted admission field.
@@ -122,27 +125,9 @@ begin
   if v_address = '' then raise exception 'Home address is required.'; end if;
   if v_slot = '' then raise exception 'Batch timing is missing or invalid.'; end if;
   if v_join_date is null then raise exception 'Joining date is required.'; end if;
-  if v_plan not in ('monthly', 'quarterly', 'halfyearly', 'special', 'custom') then
-    raise exception 'A valid fee plan is required.';
-  end if;
   if not v_consent_accepted or not v_terms_accepted then
     raise exception 'Signed parent consent and academy terms are required.';
   end if;
-
-  v_months := greatest(coalesce(nullif(v_draft->>'months_covered', '')::integer, 1), 1);
-  v_jersey_pairs := greatest(coalesce(nullif(v_draft->>'jersey_pairs', '')::integer, 0), 0);
-  v_coaching := case v_plan
-    when 'monthly' then 3500
-    when 'quarterly' then 9975
-    when 'halfyearly' then 18900
-    when 'special' then round(10000 * v_months * case when v_months >= 6 then 0.90 when v_months >= 3 then 0.95 else 1 end, 2)
-    else greatest(coalesce(nullif(v_draft->>'custom_coaching_fee', '')::numeric, 0), 0)
-  end;
-  if v_plan = 'custom' and v_coaching <= 0 then
-    raise exception 'A positive custom coaching fee is required.';
-  end if;
-  v_jersey := v_jersey_pairs * 750;
-  v_total := v_coaching + v_admission_fee + v_jersey;
 
   v_claim_amount := greatest(coalesce(nullif(v_payment->>'amount', '')::numeric, 0), 0);
   v_claimed_paid := coalesce((v_payment->>'claimed_paid')::boolean, false)
@@ -152,6 +137,31 @@ begin
   v_payment_date := nullif(v_payment->>'payment_date', '')::date;
   v_payment_method := btrim(coalesce(v_payment->>'payment_method', ''));
   v_payment_reference := coalesce(nullif(v_payment->>'transaction_id', ''), v_payment->>'utr', '');
+
+  if v_claimed_paid then
+    if v_plan not in ('monthly', 'quarterly', 'halfyearly', 'special', 'custom') then
+      raise exception 'A valid fee plan is required when payment is marked paid.';
+    end if;
+  elsif v_plan not in ('monthly', 'quarterly', 'halfyearly', 'special', 'custom') then
+    v_plan := 'pending';
+  end if;
+
+  v_months := greatest(coalesce(nullif(v_draft->>'months_covered', '')::integer, 1), 1);
+  v_jersey_pairs := greatest(coalesce(nullif(v_draft->>'jersey_pairs', '')::integer, 0), 0);
+  v_coaching := case v_plan
+    when 'monthly' then 3500
+    when 'quarterly' then 9975
+    when 'halfyearly' then 18900
+    when 'special' then round(10000 * v_months * case when v_months >= 6 then 0.90 when v_months >= 3 then 0.95 else 1 end, 2)
+    when 'custom' then greatest(coalesce(nullif(v_draft->>'custom_coaching_fee', '')::numeric, 0), 0)
+    else 0
+  end;
+  if v_plan = 'custom' and v_coaching <= 0 then
+    raise exception 'A positive custom coaching fee is required.';
+  end if;
+  v_admission_fee := case when v_plan in ('pending', 'special') then 0 else 500 end;
+  v_jersey := case when v_plan = 'pending' then 0 else v_jersey_pairs * 750 end;
+  v_total := v_coaching + v_admission_fee + v_jersey;
 
   if v_claimed_paid then
     if v_payment_date is null then raise exception 'Payment date is required for the marked-paid fee.'; end if;

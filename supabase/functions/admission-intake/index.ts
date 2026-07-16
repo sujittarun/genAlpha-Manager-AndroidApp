@@ -395,7 +395,7 @@ Never invent a name, date, phone number, payment amount, transaction ID, UTR, or
 Later explicit staff corrections outrank earlier staff text; explicit staff text outranks clearly visible form text; form text outranks inference. Once a later correction clearly resolves an earlier discrepancy, use the corrected value and do not keep that discrepancy in conflicts. Report only contradictions that remain unresolved.
 Set intent=admission for a new player, intent=renewal for an existing player's fee renewal, or intent=unknown when the conversation does not establish either. Populate only the matching draft meaningfully; keep the other draft's fields empty or zero. missing_fields must contain only fields required for the selected intent.
 Allowed app batch values are 6AM, 7:30AM, 4PM, 5:30PM, and 7PM. Normalize a clearly matching full interval to one of these; otherwise leave it empty.
-Allowed fee plans are monthly, quarterly, halfyearly, special, and custom. Do not calculate academy fees; deterministic app logic does that.
+Allowed fee plans are monthly, quarterly, halfyearly, special, custom, and pending. For an admission with no payment claim, a fee plan is optional: use pending when none was selected. A marked-paid admission must have a real non-pending plan. Do not calculate academy fees; deterministic app logic does that.
 A screenshot is successful only when a completed/successful status is visible. A screenshot alone never verifies payment.
 When an attachment is the payment screenshot, copy its supplied storage path exactly into payment.proof_path. Do not use the admission-form path as payment proof.
 The printed admission form field "FEE Paid on" is only a claim that a payment may have happened. When it contains a date, set payment.claimed_paid=true, payment.payment_date to that date, and payment.evidence_type=form_date_only unless separate conversation evidence establishes a payment screenshot, cash payment, or transaction reference. Never infer an amount or payment method from that date alone.
@@ -630,7 +630,6 @@ function requiredMissingFields(intakeType: string, draft: any, match: any): stri
       ["address", draft?.address],
       ["join_date", draft?.join_date],
       ["time_slot", draft?.time_slot],
-      ["fee_plan", ["monthly", "quarterly", "halfyearly", "special", "custom"].includes(String(draft?.fee_plan || "").toLowerCase()) ? draft?.fee_plan : ""],
     ].filter(([, value]) => !value).map(([field]) => String(field));
     if (!draft?.consent_accepted) missing.push("consent_accepted");
     if (!draft?.terms_accepted) missing.push("terms_accepted");
@@ -638,6 +637,7 @@ function requiredMissingFields(intakeType: string, draft: any, match: any): stri
     const payment = draft?.payment || {};
     const paymentClaimed = Boolean(payment.claimed_paid) || String(payment.evidence_type || "") === "form_date_only";
     if (paymentClaimed) {
+      if (!["monthly", "quarterly", "halfyearly", "special", "custom"].includes(String(draft?.fee_plan || "").toLowerCase())) missing.push("fee_plan");
       if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payment.payment_date || ""))) missing.push("payment.payment_date");
       if (Number(payment.amount || 0) <= 0) missing.push("payment.amount");
       const evidenceType = String(payment.evidence_type || "none");
@@ -667,16 +667,18 @@ function requiredMissingFields(intakeType: string, draft: any, match: any): stri
   return ["intent"];
 }
 
+function explicitlyCorrectedToUnpaid(messages: any[]): boolean {
+  const transcript = messages.map((message) => String(message?.text_body || "")).join("\n");
+  return (
+    /\bpayment\s+(?:was\s+)?not\s+(?:done|paid)\b/i.test(transcript) ||
+    /\b(?:fee\s+paid\s+on\s+)?date\s+(?:is|was)\s+(?:by\s+)?(?:a\s+)?mistake\b/i.test(transcript)
+  );
+}
+
 function removeResolvedAdmissionConflicts(conflicts: unknown[], draft: any, messages: any[]): string[] {
   const values = (conflicts || []).map((value) => String(value)).filter(Boolean);
-  if (draft?.payment?.claimed_paid !== false || String(draft?.payment?.evidence_type || "none") !== "none") {
-    return values;
-  }
-  const transcript = messages.map((message) => String(message?.text_body || "")).join("\n");
-  const explicitlyCorrectedToUnpaid =
-    /\bpayment\s+(?:was\s+)?not\s+(?:done|paid)\b/i.test(transcript) ||
-    /\b(?:fee\s+paid\s+on\s+)?date\s+(?:is|was)\s+(?:by\s+)?(?:a\s+)?mistake\b/i.test(transcript);
-  if (!explicitlyCorrectedToUnpaid) return values;
+  if (draft?.payment?.claimed_paid !== false || String(draft?.payment?.evidence_type || "none") !== "none" ||
+    !explicitlyCorrectedToUnpaid(messages)) return values;
   return values.filter((conflict) => !/fee\s+paid\s+on|payment[^.]*date|date[^.]*payment/i.test(conflict));
 }
 
@@ -721,7 +723,7 @@ function displayDate(value: unknown): string {
 
 function planLabel(value: unknown): string {
   const plan = String(value || "").toLowerCase();
-  return ({ monthly: "Monthly", quarterly: "Quarterly", halfyearly: "Half-yearly", special: "Special", custom: "Custom" } as Record<string, string>)[plan] || "Not found";
+  return ({ monthly: "Monthly", quarterly: "Quarterly", halfyearly: "Half-yearly", special: "Special", custom: "Custom", pending: "Decide when paying" } as Record<string, string>)[plan] || "Decide when paying";
 }
 
 function summary(session: any, result: any, match: any = null) {
@@ -739,10 +741,11 @@ function summary(session: any, result: any, match: any = null) {
     const d = result.renewal || {};
     const p = d.payment || {};
     const student = match?.student;
+    const isJoiningPayment = student?.fees_paid === false;
     const warnings = [...(result.conflicts || []), ...(result.missing_fields || []).map((x: string) => `Missing: ${x}`)];
     const reference = p.utr || p.transaction_id || "Not found";
     return [
-      `💳 *Renewal check* • ${session.display_id}`,
+      `💳 *${isJoiningPayment ? "Joining payment" : "Renewal"} review* • ${session.display_id}`,
       `*${student?.name || d.player_name || "Player not matched"}*${student?.reg_no ? ` • Reg ${student.reg_no}` : ""}`,
       `Paid through: ${displayDate(match?.paidThrough)}`,
       `*₹${p.amount ? Number(p.amount).toLocaleString("en-IN") : "Not found"}* • ${displayDate(p.payment_date)} • ${planLabel(d.plan_type)} (${d.months_covered || 0} month${Number(d.months_covered || 0) === 1 ? "" : "s"})`,
@@ -848,6 +851,32 @@ async function processSession(sessionId: string, allowReprocess = false) {
       ? normalizeRenewalDraft(extraction.result.renewal)
       : extraction.result.draft;
     const activePayment = activeDraft?.payment || {};
+    if (intakeType === "admission" && explicitlyCorrectedToUnpaid(messages)) {
+      Object.assign(activePayment, {
+        amount: 0,
+        payment_date: "",
+        payment_time: "",
+        payment_method: "",
+        upi_id: "",
+        transaction_id: "",
+        utr: "",
+        payer_name: "",
+        receiver_name: "",
+        screenshot_status: "unknown",
+        claimed_paid: false,
+        evidence_type: "none",
+        confidence: 1,
+        proof_bucket: "",
+        proof_path: "",
+      });
+    }
+    const admissionPaymentClaimed = Boolean(activePayment.claimed_paid) ||
+      Number(activePayment.amount || 0) > 0 ||
+      String(activePayment.evidence_type || "none") !== "none";
+    if (intakeType === "admission" && !admissionPaymentClaimed &&
+      !["monthly", "quarterly", "halfyearly", "special", "custom"].includes(String(activeDraft?.fee_plan || "").toLowerCase())) {
+      activeDraft.fee_plan = "pending";
+    }
     const requestedProofPath = String(activePayment.proof_path || "");
     const proof = media.find((m) => m.path === requestedProofPath) ||
       (media.length === 1 ? media[0] : null);
@@ -905,7 +934,7 @@ async function processSession(sessionId: string, allowReprocess = false) {
         intake_type: intakeType,
         matched_student_id: match?.student?.id || null,
         matched_student_snapshot: match?.student
-          ? { id: match.student.id, reg_no: match.student.reg_no, name: match.student.name, paid_through: match.paidThrough, matched_by: match.evidence }
+          ? { id: match.student.id, reg_no: match.student.reg_no, name: match.student.name, fees_paid: match.student.fees_paid, paid_through: match.paidThrough, matched_by: match.evidence }
           : {},
         conflicts: extraction.result.conflicts, missing_fields: extraction.result.missing_fields,
         overall_confidence: extraction.result.overall_confidence, extraction_version: version,
@@ -929,6 +958,7 @@ async function finalizeConfirmedSession(session: any, confirmationMessageId: str
     throw new Error(`Cannot confirm yet. Resolve: ${session.conflicts.join(" ")}`);
   }
   if (session.intake_type === "renewal") {
+    const isJoiningPayment = session.matched_student_snapshot?.fees_paid === false;
     session = await promotePaymentProof(session);
     const result = await rpc("finalize_renewal_intake", {
       p_session_id: session.id,
@@ -937,10 +967,10 @@ async function finalizeConfirmedSession(session: any, confirmationMessageId: str
     });
     const row = result?.[0] || result;
     return {
-      intakeType: "renewal",
+      intakeType: isJoiningPayment ? "joining_payment" : "renewal",
       row,
       message: [
-        "✅ *RENEWAL SAVED*",
+        isJoiningPayment ? "✅ *JOINING PAYMENT SAVED*" : "✅ *RENEWAL SAVED*",
         `Player: ${row?.student_name || "Player"}`,
         `Coverage: ${displayDate(row?.cycle_start_date)} → ${displayDate(row?.renewal_to_date)}`,
         "Payment and finance ledger updated.",
