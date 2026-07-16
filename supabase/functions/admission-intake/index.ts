@@ -11,7 +11,8 @@ const INTAKE_DEBOUNCE_SECONDS = Number.isFinite(configuredDebounceSeconds)
   : 20;
 const INTAKE_DEBOUNCE_MS = INTAKE_DEBOUNCE_SECONDS * 1_000;
 const AGENT_TRIGGER = /\b(?:agent\s*alpha|agen\s*alpha|agent\s*alfa)\b/i;
-const EXPLICIT_NEW_CASE = /\b(?:new admission|admission form|new player|renewal (?:for|payment|screenshot)|renewal screenshot)\b/i;
+const EXPLICIT_NEW_CASE = /\b(?:new admission|admission form|new player|renewal|payment|paid)\b/i;
+const CORRECTION_CONTEXT = /\b(?:change|correct|correction|instead|actually|should be|update|edit|remove|ignore|mark (?:it )?as|pending|not paid|unpaid|not do(?:ne)?|wrong)\b/i;
 const MEDIA_MESSAGE_TYPES = new Set(["image", "document", "audio", "video"]);
 type ReplyIntent = "confirm" | "reject" | "correction" | "unknown";
 
@@ -127,6 +128,13 @@ function statedRenewalPlan(text: string): string {
   return "";
 }
 
+function startsNewCaseText(text: string): boolean {
+  const normalized = text.trim().toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ");
+  if (!normalized || CORRECTION_CONTEXT.test(normalized)) return false;
+  if (/^(?:confirm|confirmed|approve|approved|cancel|discard|reject|save|proceed)\b/.test(normalized)) return false;
+  return EXPLICIT_NEW_CASE.test(normalized);
+}
+
 async function findReplySession(message: ReturnType<typeof normalizeMessage>) {
   if (message.reply_to_provider_message_id) {
     const rows = await rest(
@@ -143,7 +151,7 @@ async function findReplySession(message: ReturnType<typeof normalizeMessage>) {
   // An unthreaded attachment is a new case. Staff must use WhatsApp Reply when
   // an image/document is evidence for a review that is already waiting.
   if (message.message_type !== "text") return null;
-  if (EXPLICIT_NEW_CASE.test(message.text_body)) return null;
+  if (startsNewCaseText(message.text_body)) return null;
   const rows = await rest(
     `admission_intake_sessions?select=*&source_chat_id=eq.${encodeURIComponent(message.source_chat_id)}` +
       `&status=eq.waiting_for_confirmation&order=last_message_at.desc&limit=1`,
@@ -274,7 +282,7 @@ async function ingestMessage(input: any, channel = "whatsapp") {
     session = await createGroupSession(message);
   } else if (!session && channel === "whatsapp" && MEDIA_MESSAGE_TYPES.has(message.message_type)) {
     session = await findRecentTextOnlyCollectingSession(message) || await createStandaloneWhatsappSession(message);
-  } else if (!session && channel === "whatsapp" && EXPLICIT_NEW_CASE.test(message.text_body)) {
+  } else if (!session && channel === "whatsapp" && startsNewCaseText(message.text_body)) {
     session = await createStandaloneWhatsappSession(message);
   } else if (!session) {
     session = await getOrCreateCollectingSession(message, channel);

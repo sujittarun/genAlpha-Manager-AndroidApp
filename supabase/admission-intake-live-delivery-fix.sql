@@ -84,7 +84,7 @@ $$;
 
 select cron.schedule(
   'admission-intake-process-due',
-  '* * * * *',
+  '10 seconds',
   $cron$
   select net.http_post(
     url := 'https://hwxhigwaklzedxufwedv.supabase.co/functions/v1/admission-intake',
