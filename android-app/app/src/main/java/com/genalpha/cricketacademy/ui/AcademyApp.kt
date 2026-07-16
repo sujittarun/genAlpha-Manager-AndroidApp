@@ -3849,7 +3849,7 @@ private fun AdmissionReviewCard(
                         fontWeight = FontWeight.ExtraBold,
                     )
                     Text(
-                        "${admission.age} yrs • ${admission.timeSlot.orEmpty().ifBlank { "Slot not set" }} • ${displayDate(admission.joinDate)}",
+                        "${admission.age} yrs • DOB ${admission.dateOfBirth.orEmpty().takeIf { it.isNotBlank() }?.let(::displayDate) ?: "not set"} • ${admission.timeSlot.orEmpty().ifBlank { "Slot not set" }} • ${displayDate(admission.joinDate)}",
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
                         fontSize = 12.sp,
                         lineHeight = 16.sp,
@@ -3871,13 +3871,25 @@ private fun AdmissionReviewCard(
             }
 
             Text(
-                "Parent: ${admission.fatherGuardianName.orEmpty().ifBlank { "-" }} • ${admission.parentContactNo.orEmpty().ifBlank { admission.alternateContactNo.orEmpty().ifBlank { "No phone" } }}",
+                "Parent: ${admission.fatherGuardianName.orEmpty().ifBlank { "-" }} • ${admission.parentContactNo.orEmpty().ifBlank { "No phone" }} • Alt ${admission.alternateContactNo.orEmpty().ifBlank { "-" }}",
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
                 fontSize = 12.sp,
                 lineHeight = 16.sp,
             )
             Text(
-                "School: ${admission.schoolCollege.orEmpty().ifBlank { "-" }} • Jersey ${admission.jerseySize.orEmpty().ifBlank { "not set" }} / ${admission.jerseyPairs ?: 0} pair${if ((admission.jerseyPairs ?: 0) == 1) "" else "s"}",
+                "School: ${admission.schoolCollege.orEmpty().ifBlank { "-" }} • Grade ${admission.grade.orEmpty().ifBlank { "-" }} • Jersey ${admission.jerseySize.orEmpty().ifBlank { "not set" }} / ${admission.jerseyPairs ?: 0} pair${if ((admission.jerseyPairs ?: 0) == 1) "" else "s"}",
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+            )
+            Text(
+                "Address: ${listOf(admission.address, admission.city).map { it.orEmpty().trim() }.filter { it.isNotBlank() }.joinToString(", ").ifBlank { "-" }}",
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+            )
+            Text(
+                "Skills: ${listOf(admission.batsmanStyle.orEmpty(), admission.bowlingStyles.orEmpty().joinToString(", ")).filter { it.isNotBlank() }.joinToString(" • ").ifBlank { "Not set" }} • Consent ${if (admission.consentAccepted == true && admission.termsAccepted == true) "signed" else "missing"} • Ready now ${if (admission.readyToStart == true) "yes" else "no"}",
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
                 fontSize = 11.sp,
                 lineHeight = 15.sp,

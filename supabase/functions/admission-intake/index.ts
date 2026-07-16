@@ -318,9 +318,11 @@ const paymentSchema = {
     payment_method: { type: "string" }, upi_id: { type: "string" }, transaction_id: { type: "string" },
     utr: { type: "string" }, payer_name: { type: "string" }, receiver_name: { type: "string" },
     screenshot_status: { type: "string", enum: ["successful", "failed", "pending", "processing", "unknown"] },
+    claimed_paid: { type: "boolean" },
+    evidence_type: { type: "string", enum: ["none", "payment_screenshot", "cash_statement", "transaction_reference", "form_date_only"] },
     confidence: { type: "number" }, proof_bucket: { type: "string" }, proof_path: { type: "string" },
   },
-  required: ["amount", "payment_date", "payment_time", "payment_method", "upi_id", "transaction_id", "utr", "payer_name", "receiver_name", "screenshot_status", "confidence", "proof_bucket", "proof_path"],
+  required: ["amount", "payment_date", "payment_time", "payment_method", "upi_id", "transaction_id", "utr", "payer_name", "receiver_name", "screenshot_status", "claimed_paid", "evidence_type", "confidence", "proof_bucket", "proof_path"],
 };
 
 const extractionSchema = {
@@ -339,10 +341,12 @@ const extractionSchema = {
         school_college: { type: "string" }, grade: { type: "string" }, time_slot: { type: "string" },
         join_date: { type: "string" }, fee_plan: { type: "string" }, months_covered: { type: "integer" },
         custom_coaching_fee: { type: "number" }, jersey_size: { type: "string" }, jersey_pairs: { type: "integer" },
-        filled_by: { type: "string" }, comments: { type: "string" }, batsman_style: { type: "string" },
+        parent_aadhaar_no: { type: "string" }, filled_by: { type: "string" }, comments: { type: "string" },
+        batsman_style: { type: "string" }, bowling_styles: { type: "array", items: { type: "string" } },
+        ready_to_start: { type: "boolean" }, consent_accepted: { type: "boolean" }, terms_accepted: { type: "boolean" },
         payment: paymentSchema,
       },
-      required: ["applicant_name", "nationality", "date_of_birth", "age", "gender", "father_guardian_name", "parent_contact_no", "alternate_contact_no", "city", "address", "school_college", "grade", "time_slot", "join_date", "fee_plan", "months_covered", "custom_coaching_fee", "jersey_size", "jersey_pairs", "filled_by", "comments", "batsman_style", "payment"],
+      required: ["applicant_name", "nationality", "date_of_birth", "age", "gender", "father_guardian_name", "parent_contact_no", "alternate_contact_no", "city", "address", "school_college", "grade", "time_slot", "join_date", "fee_plan", "months_covered", "custom_coaching_fee", "jersey_size", "jersey_pairs", "parent_aadhaar_no", "filled_by", "comments", "batsman_style", "bowling_styles", "ready_to_start", "consent_accepted", "terms_accepted", "payment"],
     },
     renewal: {
       type: "object",
@@ -394,6 +398,9 @@ Allowed app batch values are 6AM, 7:30AM, 4PM, 5:30PM, and 7PM. Normalize a clea
 Allowed fee plans are monthly, quarterly, halfyearly, special, and custom. Do not calculate academy fees; deterministic app logic does that.
 A screenshot is successful only when a completed/successful status is visible. A screenshot alone never verifies payment.
 When an attachment is the payment screenshot, copy its supplied storage path exactly into payment.proof_path. Do not use the admission-form path as payment proof.
+The printed admission form field "FEE Paid on" is only a claim that a payment may have happened. When it contains a date, set payment.claimed_paid=true, payment.payment_date to that date, and payment.evidence_type=form_date_only unless separate conversation evidence establishes a payment screenshot, cash payment, or transaction reference. Never infer an amount or payment method from that date alone.
+Set payment.evidence_type=payment_screenshot only for an actual payment receipt/screenshot, cash_statement only when staff explicitly says the payment was cash, and transaction_reference only when a real reference or UTR is supplied. Otherwise use none or form_date_only.
+For photographed paper forms, map every visible online-form equivalent: emergency contact to alternate_contact_no, Aadhaar/NIDA to parent_aadhaar_no, selected batting and bowling checkboxes, "Kick start my journey now" to ready_to_start, and a visibly completed parent/guardian declaration plus signature to consent_accepted and terms_accepted. Never mark consent or terms true without visible signed/checked evidence.
 Dates must be YYYY-MM-DD, times HH:MM, Indian phone numbers must contain the final 10 digits only.
 For renewals, extract every available player identifier (registration number, exact name, parent phone, guardian), but never decide which database player it is. The application performs deterministic matching. A renewal requires a unique player match, plan or months, positive amount, payment date, and either a transaction reference/UTR or screenshot proof.
 Keep medical notes or unmodeled facts in comments. For admission, candidate_complete requires student name, DOB, 10-digit parent contact, joining date, and valid batch. For renewal, candidate_complete requires the renewal evidence above.`;
@@ -611,14 +618,35 @@ async function matchRenewalPlayer(renewal: any) {
 
 function requiredMissingFields(intakeType: string, draft: any, match: any): string[] {
   if (intakeType === "admission") {
-    return [
+    const missing = [
       ["applicant_name", draft?.applicant_name],
+      ["nationality", draft?.nationality],
       ["date_of_birth", draft?.date_of_birth],
+      ["gender", draft?.gender],
+      ["father_guardian_name", draft?.father_guardian_name],
       ["parent_contact_no", normalizedIndianPhone(draft?.parent_contact_no).length === 10 ? draft?.parent_contact_no : ""],
+      ["alternate_contact_no", normalizedIndianPhone(draft?.alternate_contact_no).length === 10 ? draft?.alternate_contact_no : ""],
+      ["school_college", draft?.school_college],
+      ["address", draft?.address],
       ["join_date", draft?.join_date],
       ["time_slot", draft?.time_slot],
       ["fee_plan", ["monthly", "quarterly", "halfyearly", "special", "custom"].includes(String(draft?.fee_plan || "").toLowerCase()) ? draft?.fee_plan : ""],
     ].filter(([, value]) => !value).map(([field]) => String(field));
+    if (!draft?.consent_accepted) missing.push("consent_accepted");
+    if (!draft?.terms_accepted) missing.push("terms_accepted");
+
+    const payment = draft?.payment || {};
+    const paymentClaimed = Boolean(payment.claimed_paid) || String(payment.evidence_type || "") === "form_date_only";
+    if (paymentClaimed) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payment.payment_date || ""))) missing.push("payment.payment_date");
+      if (Number(payment.amount || 0) <= 0) missing.push("payment.amount");
+      const evidenceType = String(payment.evidence_type || "none");
+      const hasProof = Boolean(String(payment.proof_path || "").trim());
+      const hasReference = Boolean(String(payment.transaction_id || payment.utr || "").trim());
+      const isCash = evidenceType === "cash_statement" || /\bcash\b/i.test(String(payment.payment_method || ""));
+      if (!hasProof && !hasReference && !isCash) missing.push("payment.proof_or_cash_confirmation");
+    }
+    return [...new Set(missing)];
   }
   if (intakeType === "renewal") {
     const payment = draft?.payment || {};
@@ -637,6 +665,29 @@ function requiredMissingFields(intakeType: string, draft: any, match: any): stri
     return [...new Set(missing)];
   }
   return ["intent"];
+}
+
+function missingFieldLabel(field: string, paymentDate = ""): string {
+  const labels: Record<string, string> = {
+    applicant_name: "student name",
+    nationality: "nationality",
+    date_of_birth: "date of birth",
+    gender: "gender",
+    father_guardian_name: "father / guardian name",
+    parent_contact_no: "10-digit parent number",
+    alternate_contact_no: "10-digit alternate / emergency number",
+    school_college: "school / college",
+    address: "home address",
+    join_date: "joining date",
+    time_slot: "batch time",
+    fee_plan: "fee plan",
+    consent_accepted: "signed parent consent",
+    terms_accepted: "accepted academy terms",
+    "payment.payment_date": "payment date",
+    "payment.amount": paymentDate ? `amount paid on ${displayDate(paymentDate)}` : "payment amount",
+    "payment.proof_or_cash_confirmation": "payment screenshot, or cash amount confirmation",
+  };
+  return labels[field] || field;
 }
 
 function renewalPlanAmountConflict(draft: any): string {
@@ -690,16 +741,29 @@ function summary(session: any, result: any, match: any = null) {
   const d = result.draft;
   const p = d.payment || {};
   const warnings = [...(result.conflicts || []), ...(result.missing_fields || []).map((x: string) => `Missing: ${x}`)];
+  const missingLabels = (result.missing_fields || []).map((field: string) => missingFieldLabel(field, p.payment_date));
+  const reviewProblems = [...(result.conflicts || []), ...missingLabels];
+  const styles = [d.batsman_style, ...(d.bowling_styles || [])].filter(Boolean).join(", ") || "Not marked";
+  const paymentClaimed = Boolean(p.claimed_paid) || String(p.evidence_type || "") === "form_date_only";
+  const paymentLine = paymentClaimed
+    ? `Payment: marked paid ${displayDate(p.payment_date)} • ${p.amount ? `₹${Number(p.amount).toLocaleString("en-IN")}` : "amount missing"} • ${String(p.evidence_type || "form_date_only").replaceAll("_", " ")}`
+    : "Payment: not claimed on the supplied evidence";
   return [
-    `🏏 *Admission check* • ${session.display_id}`,
+    `🏏 *Admission review* • ${session.display_id}`,
     `*${d.applicant_name || "Student not found"}* • DOB ${displayDate(d.date_of_birth)}${d.age ? ` • Age ${d.age}` : ""}`,
-    `Guardian: ${d.father_guardian_name || "Not found"}`,
-    `Phone: ${d.parent_contact_no || "Not found"}`,
+    `${d.gender || "Gender missing"} • ${d.nationality || "Nationality missing"}`,
+    `Guardian: ${d.father_guardian_name || "Not found"} • Parent: ${d.parent_contact_no || "Not found"} • Alt: ${d.alternate_contact_no || "Not found"}`,
+    `School: ${d.school_college || "Not found"}${d.grade ? ` • ${d.grade}` : ""} • ${d.city || "City not set"}`,
+    `Address: ${d.address || "Not found"}`,
     `Joining: ${displayDate(d.join_date)} • ${d.time_slot || "Batch not found"} • ${planLabel(d.fee_plan)}`,
-    ...(p.amount ? [`Payment: ₹${Number(p.amount).toLocaleString("en-IN")} • ${p.screenshot_status || "Unknown"} • Ref ${p.utr || p.transaction_id || "Not found"}`] : []),
-    ...(warnings.length ? ["⚠️ *Please check*", ...warnings.map((x: string) => `• ${x}`,), ""] : []),
-    warnings.length ? "Send the missing or corrected detail." : "Reply *CONFIRM* to create, or send a correction.",
-  ].join("\n");
+    `Skills: ${styles} • Start now: ${d.ready_to_start ? "✅" : "No"} • Signed consent: ${d.consent_accepted && d.terms_accepted ? "✅" : "Missing"}`,
+    paymentLine,
+    ...(warnings.length ? ["", "⚠️ *Need before saving*", ...reviewProblems.map((x: string, index: number) => `${index + 1}. ${x}`)] : []),
+    paymentClaimed && missingLabels.some((label: string) => /payment screenshot|amount paid/i.test(label))
+      ? "Send the payment screenshot; if it was cash, send e.g. *Cash ₹4,000*."
+      : "",
+    warnings.length ? "Send all missing details in one reply. I’ll return one final review." : "Reply *CONFIRM* to create, or send one correction message.",
+  ].filter(Boolean).join("\n");
 }
 
 async function sendWhatsappSummary(session: any, text: string) {
@@ -774,10 +838,11 @@ async function processSession(sessionId: string, allowReprocess = false) {
     const requestedProofPath = String(activePayment.proof_path || "");
     const proof = media.find((m) => m.path === requestedProofPath) ||
       (media.length === 1 ? media[0] : null);
-    if (proof && (activePayment.amount > 0 || intakeType === "renewal")) {
+    const isPaymentScreenshot = String(activePayment.evidence_type || "") === "payment_screenshot";
+    if (proof && (activePayment.amount > 0 || intakeType === "renewal" || isPaymentScreenshot)) {
       activePayment.proof_bucket = "admission-intake";
       activePayment.proof_path = proof.path;
-    } else if (intakeType === "admission" && Number(activePayment.amount || 0) <= 0) {
+    } else if (intakeType === "admission" && !isPaymentScreenshot) {
       // A photographed admission form is source evidence, not a payment proof.
       // Some vision responses echo its attachment path despite that distinction.
       activePayment.proof_bucket = "";
@@ -1031,7 +1096,9 @@ Deno.serve(async (request) => {
       if (payload.process_now) return jsonResponse({ success: true, ...(await processSession(ingested.session.id)) });
       return jsonResponse({ success: true, sessionId: ingested.session.id, duplicate: ingested.duplicate });
     }
-    if (action === "process_session") return jsonResponse({ success: true, ...(await processSession(String(payload.session_id))) });
+    if (action === "process_session") {
+      return jsonResponse({ success: true, ...(await processSession(String(payload.session_id), Boolean(payload.force))) });
+    }
     if (action === "process_due") return jsonResponse({ success: true, results: await processDueSessions() });
     if (action === "meta_token_health") return jsonResponse({ success: true, ...(await metaTokenHealth()) });
     if (action === "promote_session_proof") {
