@@ -4,7 +4,10 @@ import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,12 +16,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
@@ -37,6 +43,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -45,10 +52,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -78,6 +88,7 @@ data class AgentAlphaShareRequest(
     val items: List<AgentAlphaShareItem>,
 )
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AgentAlphaShareSheet(
     request: AgentAlphaShareRequest,
@@ -86,6 +97,10 @@ fun AgentAlphaShareSheet(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val listState = rememberLazyListState()
+    val correctionBringIntoViewRequester = remember { BringIntoViewRequester() }
     var notes by remember(request.id) { mutableStateOf(request.text) }
     var review by remember(request.id) { mutableStateOf<AgentAlphaIntakeReview?>(null) }
     var confirmation by remember(request.id) { mutableStateOf<AgentAlphaConfirmation?>(null) }
@@ -96,6 +111,8 @@ fun AgentAlphaShareSheet(
 
     fun startExtraction() {
         if (isWorking) return
+        focusManager.clearFocus()
+        keyboardController?.hide()
         scope.launch {
             isWorking = true
             error = ""
@@ -123,6 +140,8 @@ fun AgentAlphaShareSheet(
     fun applyCorrection() {
         val currentReview = review ?: return
         if (correction.isBlank() || isWorking) return
+        focusManager.clearFocus()
+        keyboardController?.hide()
         scope.launch {
             isWorking = true
             error = ""
@@ -142,6 +161,8 @@ fun AgentAlphaShareSheet(
     fun confirmReview() {
         val currentReview = review ?: return
         if (isWorking) return
+        focusManager.clearFocus()
+        keyboardController?.hide()
         scope.launch {
             isWorking = true
             error = ""
@@ -159,6 +180,22 @@ fun AgentAlphaShareSheet(
             } finally {
                 isWorking = false
             }
+        }
+    }
+
+    LaunchedEffect(review?.summary) {
+        if (review != null) {
+            delay(120)
+            val reviewIndex = if (request.items.isEmpty()) 0 else request.items.size + 1
+            listState.animateScrollToItem(reviewIndex)
+        }
+    }
+
+    LaunchedEffect(confirmation) {
+        if (confirmation != null) {
+            delay(120)
+            val lastItem = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+            listState.animateScrollToItem(lastItem)
         }
     }
 
@@ -219,7 +256,9 @@ fun AgentAlphaShareSheet(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                        .navigationBarsPadding(),
+                        .navigationBarsPadding()
+                        .imePadding(),
+                    state = listState,
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
@@ -279,7 +318,17 @@ fun AgentAlphaShareSheet(
                                 OutlinedTextField(
                                     value = correction,
                                     onValueChange = { correction = it },
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .bringIntoViewRequester(correctionBringIntoViewRequester)
+                                        .onFocusEvent { focusState ->
+                                            if (focusState.isFocused) {
+                                                scope.launch {
+                                                    delay(250)
+                                                    correctionBringIntoViewRequester.bringIntoView()
+                                                }
+                                            }
+                                        },
                                     label = { Text("Correction or missing detail") },
                                     placeholder = { Text("Example: Address is … and payment is pending") },
                                     minLines = 2,
@@ -290,8 +339,11 @@ fun AgentAlphaShareSheet(
                             item {
                                 OutlinedButton(
                                     onClick = ::applyCorrection,
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 52.dp),
                                     enabled = correction.isNotBlank() && !isWorking,
+                                    shape = RoundedCornerShape(16.dp),
                                 ) {
                                     Text("Apply correction and re-check")
                                 }
@@ -338,7 +390,7 @@ fun AgentAlphaShareSheet(
                                     onClick = if (review == null) ::startExtraction else ::confirmReview,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(54.dp),
+                                        .heightIn(min = 54.dp),
                                     enabled = !isWorking && (review != null || notes.isNotBlank() || request.items.isNotEmpty()),
                                     shape = RoundedCornerShape(16.dp),
                                 ) {
@@ -366,7 +418,7 @@ fun AgentAlphaShareSheet(
                                     onClick = onDismiss,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(54.dp),
+                                        .heightIn(min = 54.dp),
                                     shape = RoundedCornerShape(16.dp),
                                 ) {
                                     Text("Done", fontWeight = FontWeight.SemiBold)

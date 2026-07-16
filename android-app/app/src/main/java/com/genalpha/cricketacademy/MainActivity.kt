@@ -90,8 +90,12 @@ class MainActivity : ComponentActivity() {
                 sizeBytes = metadata.second,
             )
         }
-        val text = shareIntent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty()
-        val subject = shareIntent.getCharSequenceExtra(Intent.EXTRA_SUBJECT)?.toString().orEmpty()
+        val text = sanitizeSharedText(
+            shareIntent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty(),
+        )
+        val subject = sanitizeSharedText(
+            shareIntent.getCharSequenceExtra(Intent.EXTRA_SUBJECT)?.toString().orEmpty(),
+        )
         if (items.isEmpty() && text.isBlank() && subject.isBlank()) return
 
         agentAlphaShareQueue = agentAlphaShareQueue + AgentAlphaShareRequest(
@@ -100,6 +104,15 @@ class MainActivity : ComponentActivity() {
             items = items,
         )
     }
+
+    private fun sanitizeSharedText(value: String): String = value
+        .lineSequence()
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .filterNot { line ->
+            GENERATED_WHATSAPP_MEDIA_CAPTION.matches(line)
+        }
+        .joinToString("\n")
 
     private fun queryShareMetadata(uri: Uri): Pair<String, Long> {
         var name = uri.lastPathSegment?.substringAfterLast('/').orEmpty().ifBlank { "shared-file" }
@@ -123,5 +136,10 @@ class MainActivity : ComponentActivity() {
             cursor?.close()
         }
         return name to size
+    }
+
+    companion object {
+        private val GENERATED_WHATSAPP_MEDIA_CAPTION =
+            Regex("^(?:photos?|videos?|documents?|files?|audio) from\\s+.+$", RegexOption.IGNORE_CASE)
     }
 }
