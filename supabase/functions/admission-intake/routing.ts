@@ -1,5 +1,6 @@
 const REVIEW_ACTION = /^(?:confirm(?:ed)?|approve(?:d)?|save(?: it)?|proceed|cancel|discard|reject|yes|yep|yeah|ok(?:ay)?|correct|all correct|looks good|all good|go ahead|do it|sure|done)(?:\s|$)/i;
 const CORRECTION_CONTEXT = /\b(?:change|check|correct|correction|instead|actually|should be|update|edit|remove|ignore|mark (?:it )?as|pending|not paid|unpaid|not do(?:ne)?|wrong)\b/i;
+const FIELD_UPDATE_CONTEXT = /(?:^|\b)(?:(?:school|college|address|city|name|student name|guardian|father|mother|phone|contact|dob|date of birth|gender|nationality|batch|time slot|joining date|payment date|fee plan|plan|amount)\s+(?:is|are|should be|will be)|(?:mark|set|use|take|put|register)\b)/i;
 
 export function shouldTargetWaitingReview(
   messageType: string,
@@ -10,7 +11,8 @@ export function shouldTargetWaitingReview(
   if (messageType !== "text") return false;
   const normalized = text.trim().toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ");
   if (!normalized) return false;
-  return REVIEW_ACTION.test(normalized) || CORRECTION_CONTEXT.test(normalized);
+  return REVIEW_ACTION.test(normalized) || CORRECTION_CONTEXT.test(normalized) ||
+    FIELD_UPDATE_CONTEXT.test(normalized);
 }
 
 type WaitingReview = {

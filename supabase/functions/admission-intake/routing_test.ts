@@ -26,6 +26,8 @@ Deno.test("explicit review actions target the waiting review", () => {
   assertRoute(true, "text", "cancel this admission");
   assertRoute(true, "text", "ignore paid on date, mark payment pending");
   assertRoute(true, "text", "check for student name with Adil");
+  assertRoute(true, "text", "School is Sloka\nMark today as payment date and register for 3 months plan");
+  assertRoute(true, "text", "Set batch to 5:30 PM and address is Jubilee Hills");
 });
 
 Deno.test("standalone media starts a case unless it replies to a review", () => {

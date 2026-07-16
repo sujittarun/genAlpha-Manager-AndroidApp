@@ -1,4 +1,9 @@
 import { selectWaitingReviewCandidate, shouldTargetWaitingReview } from "./routing.ts";
+import {
+  normalizeAdmissionPlan,
+  removeResolvedBlankFormPaymentConflicts,
+  shouldUseMediaAsPaymentProof,
+} from "./admission_rules.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -914,10 +919,13 @@ function correctImplausibleJoiningYear(draft: any, messages: any[]): boolean {
 }
 
 function removeResolvedAdmissionConflicts(conflicts: unknown[], draft: any, messages: any[]): string[] {
-  const values = (conflicts || []).map((value) => String(value)).filter(Boolean);
+  const withoutResolvedBlankFormDates = removeResolvedBlankFormPaymentConflicts(
+    conflicts,
+    draft?.payment?.payment_date,
+  );
   if (draft?.payment?.claimed_paid !== false || String(draft?.payment?.evidence_type || "none") !== "none" ||
-    !explicitlyCorrectedToUnpaid(messages)) return values;
-  return values.filter((conflict) => !/fee\s+paid\s+on|payment[^.]*date|date[^.]*payment/i.test(conflict));
+    !explicitlyCorrectedToUnpaid(messages)) return withoutResolvedBlankFormDates;
+  return withoutResolvedBlankFormDates.filter((conflict) => !/fee\s+paid\s+on|payment[^.]*date|date[^.]*payment/i.test(conflict));
 }
 
 function missingFieldLabel(field: string, paymentDate = ""): string {
@@ -1087,7 +1095,7 @@ async function processSession(sessionId: string, allowReprocess = false) {
       : "unknown";
     const activeDraft = intakeType === "renewal"
       ? normalizeRenewalDraft(extraction.result.renewal)
-      : extraction.result.draft;
+      : normalizeAdmissionPlan(extraction.result.draft);
     if (intakeType === "admission" && correctImplausibleJoiningYear(activeDraft, messages)) {
       extraction.result.field_evidence = [
         ...(extraction.result.field_evidence || []),
@@ -1130,7 +1138,7 @@ async function processSession(sessionId: string, allowReprocess = false) {
     const proof = media.find((m) => m.path === requestedProofPath) ||
       (media.length === 1 ? media[0] : null);
     const isPaymentScreenshot = String(activePayment.evidence_type || "") === "payment_screenshot";
-    if (proof && (activePayment.amount > 0 || intakeType === "renewal" || isPaymentScreenshot)) {
+    if (proof && shouldUseMediaAsPaymentProof(intakeType, String(activePayment.evidence_type || ""))) {
       activePayment.proof_bucket = "admission-intake";
       activePayment.proof_path = proof.path;
     } else if (intakeType === "admission" && !isPaymentScreenshot) {
