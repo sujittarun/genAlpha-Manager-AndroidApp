@@ -1,6 +1,64 @@
 const REVIEW_ACTION = /^(?:confirm(?:ed)?|approve(?:d)?|save(?: it)?|proceed|cancel|discard|reject|yes|yep|yeah|ok(?:ay)?|correct|all correct|looks good|all good|go ahead|do it|sure|done)(?:\s|$)/i;
 const CORRECTION_CONTEXT = /\b(?:change|check|correct|correction|instead|actually|should be|update|edit|remove|ignore|mark (?:it )?as|pending|not paid|unpaid|not do(?:ne)?|wrong)\b/i;
 const FIELD_UPDATE_CONTEXT = /(?:^|\b)(?:(?:school|college|address|city|name|student name|guardian|father|mother|phone|contact|dob|date of birth|gender|nationality|batch|time slot|joining date|payment date|fee plan|plan|amount)\s+(?:is|are|should be|will be)|(?:mark|set|use|take|put|register)\b)/i;
+const NEW_CASE_BOUNDARY = /(?:\b(?:agent\s*alpha|agen\s*alpha|agent\s*alfa)\b.*\b(?:new|start|read|process|admission|renewal)\b|\b(?:new|start)\s+(?:admission|renewal)\b|\bread\s+and\s+process\b|\bprocess\s+this\b)/i;
+
+type ActiveBundleSession = {
+  status?: string;
+  intake_type?: string;
+  last_message_at?: string;
+  updated_at?: string;
+};
+
+type BundleMessage = {
+  message_type?: string;
+  text_body?: string;
+  reply_to_provider_message_id?: string;
+};
+
+type ProcessingGeneration = {
+  status?: string;
+  updated_at?: string;
+};
+
+export function hasExplicitNewCaseBoundary(text: string): boolean {
+  return NEW_CASE_BOUNDARY.test(text.trim());
+}
+
+/**
+ * Meta can deliver the text and media from one staff action as separate HTTP
+ * requests. Keep them in one short-lived bundle even when the first request
+ * has already moved from collecting to processing/review.
+ */
+export function shouldContinueActiveBundle(
+  session: ActiveBundleSession,
+  message: BundleMessage,
+  now = Date.now(),
+  captureWindowMs = 2 * 60_000,
+): boolean {
+  if (String(message.reply_to_provider_message_id || "").trim()) return false;
+  if (!["text", "image", "document", "audio", "video"].includes(String(message.message_type || ""))) return false;
+  if (!["collecting", "processing", "waiting_for_confirmation"].includes(String(session.status || ""))) return false;
+
+  const lastActivity = Date.parse(String(session.last_message_at || session.updated_at || ""));
+  if (!Number.isFinite(lastActivity) || now - lastActivity < 0 || now - lastActivity > captureWindowMs) return false;
+
+  const knownCase = session.intake_type === "admission" || session.intake_type === "renewal";
+  if (knownCase && hasExplicitNewCaseBoundary(String(message.text_body || ""))) return false;
+
+  // Unthreaded media after a complete review is more safely treated as a new
+  // case. Staff can use WhatsApp Reply to attach payment proof to that review.
+  if (knownCase && session.status === "waiting_for_confirmation" && message.message_type !== "text") return false;
+  return true;
+}
+
+export function isSameProcessingGeneration(
+  claimed: ProcessingGeneration,
+  current: ProcessingGeneration,
+): boolean {
+  return claimed.status === "processing" && current.status === "processing" &&
+    Boolean(claimed.updated_at) && claimed.updated_at === current.updated_at;
+}
 
 export function shouldTargetWaitingReview(
   messageType: string,

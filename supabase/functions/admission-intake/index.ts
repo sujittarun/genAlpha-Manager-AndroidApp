@@ -1,6 +1,8 @@
 import {
+  isSameProcessingGeneration,
   selectRecentExpiredReviewCandidate,
   selectWaitingReviewCandidate,
+  shouldContinueActiveBundle,
   shouldTargetWaitingReview,
 } from "./routing.ts";
 import {
@@ -194,37 +196,18 @@ async function findReplySession(message: ReturnType<typeof normalizeMessage>) {
   return expired;
 }
 
-async function findRecentTextOnlyCollectingSession(message: ReturnType<typeof normalizeMessage>) {
+async function findActiveWhatsappBundle(message: ReturnType<typeof normalizeMessage>) {
   const since = new Date(Date.now() - 2 * 60_000).toISOString();
   const sessions = await rest(
     `admission_intake_sessions?select=*&channel=eq.whatsapp` +
       `&source_chat_id=eq.${encodeURIComponent(message.source_chat_id)}` +
       `&source_sender_id=eq.${encodeURIComponent(message.source_sender_id)}` +
-      `&status=eq.collecting&last_message_at=gte.${encodeURIComponent(since)}` +
+      `&status=in.(collecting,processing,waiting_for_confirmation)` +
+      `&last_message_at=gte.${encodeURIComponent(since)}` +
       `&order=last_message_at.desc&limit=1`,
   );
   const session = sessions?.[0];
-  if (!session) return null;
-  const messages = await rest(
-    `admission_intake_messages?select=message_type,text_body&session_id=eq.${encodeURIComponent(session.id)}&limit=50`,
-  );
-  const hasMedia = (messages || []).some((item: any) => MEDIA_MESSAGE_TYPES.has(String(item.message_type || "")));
-  const hasMeaningfulText = (messages || []).some((item: any) =>
-    String(item.message_type || "") === "text" && String(item.text_body || "").trim().length > 0
-  );
-  return hasMeaningfulText && !hasMedia ? session : null;
-}
-
-async function findActiveTextBundle(message: ReturnType<typeof normalizeMessage>) {
-  const since = new Date(Date.now() - 30 * 60_000).toISOString();
-  const sessions = await rest(
-    `admission_intake_sessions?select=*&channel=eq.whatsapp` +
-      `&source_chat_id=eq.${encodeURIComponent(message.source_chat_id)}` +
-      `&source_sender_id=eq.${encodeURIComponent(message.source_sender_id)}` +
-      `&status=eq.collecting&last_message_at=gte.${encodeURIComponent(since)}` +
-      `&order=last_message_at.desc&limit=1`,
-  );
-  return sessions?.[0] || null;
+  return session && shouldContinueActiveBundle(session, message) ? session : null;
 }
 
 async function createStandaloneWhatsappSession(message: ReturnType<typeof normalizeMessage>) {
@@ -318,11 +301,10 @@ async function ingestMessage(input: any, channel = "whatsapp") {
   }
   const explicitReviewDecision = message.message_type === "text" &&
     ["confirm", "reject"].includes(confirmationIntent(message.text_body));
-  const activeTextBundle = !explicitWebSession && channel === "whatsapp" &&
-      message.message_type === "text" && !message.reply_to_provider_message_id && !explicitReviewDecision
-    ? await findActiveTextBundle(message)
+  const activeBundle = !explicitWebSession && channel === "whatsapp" && !explicitReviewDecision
+    ? await findActiveWhatsappBundle(message)
     : null;
-  const replyRouting = explicitWebSession || activeTextBundle || await findReplySession(message);
+  const replyRouting = explicitWebSession || (activeBundle ? null : await findReplySession(message));
   if (replyRouting?.routing_ambiguous) {
     await sendWhatsappSummary({
       channel,
@@ -357,11 +339,32 @@ async function ingestMessage(input: any, channel = "whatsapp") {
   }
   const recentConfirmedSession = replySession ? null : await findRecentlyConfirmedSession(message);
   const responseSession = replySession || recentConfirmedSession;
-  let session = responseSession;
+  let session = responseSession || activeBundle;
+  if (activeBundle && activeBundle.status !== "collecting") {
+    const reopened = await rest(
+      `admission_intake_sessions?id=eq.${encodeURIComponent(activeBundle.id)}` +
+        `&status=in.(processing,waiting_for_confirmation)&admission_id=is.null&renewal_payment_id=is.null&select=*`,
+      {
+        method: "PATCH",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({
+          status: "collecting",
+          confirmation_message_id: "",
+          error_code: "",
+          error_message: "",
+        }),
+      },
+    );
+    if (reopened?.[0]) session = reopened[0];
+    else {
+      const latest = await rest(`admission_intake_sessions?select=*&id=eq.${encodeURIComponent(activeBundle.id)}&limit=1`);
+      session = latest?.[0]?.status === "collecting" ? latest[0] : null;
+    }
+  }
   if (!session && channel === "whatsapp_group") {
     session = await createGroupSession(message);
   } else if (!session && channel === "whatsapp" && MEDIA_MESSAGE_TYPES.has(message.message_type)) {
-    session = await findRecentTextOnlyCollectingSession(message) || await createStandaloneWhatsappSession(message);
+    session = await createStandaloneWhatsappSession(message);
   } else if (!session) {
     session = await getOrCreateCollectingSession(message, channel);
   }
@@ -404,6 +407,7 @@ async function ingestMessage(input: any, channel = "whatsapp") {
     message: rows[0],
     session: touchedSession,
     isReply: Boolean(responseSession),
+    isBundleContinuation: Boolean(activeBundle),
     debounceToken: touchedSession.updated_at,
   };
 }
@@ -1105,6 +1109,7 @@ async function processSession(sessionId: string, allowReprocess = false) {
     };
   }
   session = claimed[0];
+  let ownedGeneration = { status: "processing", updated_at: String(session.updated_at || "") };
   try {
     const messages = await rest(`admission_intake_messages?select=*&session_id=eq.${encodeURIComponent(sessionId)}&order=message_timestamp.asc`);
     const media: Array<{ bytes: Uint8Array; mime: string; path: string }> = [];
@@ -1221,6 +1226,43 @@ async function processSession(sessionId: string, allowReprocess = false) {
     ])];
     extraction.result.missing_fields = requiredMissingFields(intakeType, activeDraft, match);
     const version = Number(session.extraction_version || 0) + 1;
+    const messageBody = summary(session, extraction.result, match);
+    const latestBeforeCommit = await rest(
+      `admission_intake_sessions?select=status,updated_at&id=eq.${encodeURIComponent(sessionId)}&limit=1`,
+    );
+    if (!isSameProcessingGeneration(session, latestBeforeCommit?.[0] || {})) {
+      return { sessionId, stale: true, reprocessQueued: latestBeforeCommit?.[0]?.status === "collecting" };
+    }
+    const committed = await rest(
+      `admission_intake_sessions?id=eq.${encodeURIComponent(sessionId)}` +
+        `&status=eq.processing&updated_at=eq.${encodeURIComponent(String(session.updated_at || ""))}&select=*`,
+      {
+        method: "PATCH",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({
+          status: "waiting_for_confirmation", draft: activeDraft,
+          intake_type: intakeType,
+          matched_student_id: match?.student?.id || null,
+          matched_student_snapshot: match?.student
+            ? { id: match.student.id, reg_no: match.student.reg_no, name: match.student.name, fees_paid: match.student.fees_paid, paid_through: match.paidThrough, matched_by: match.evidence }
+            : {},
+          conflicts: extraction.result.conflicts, missing_fields: extraction.result.missing_fields,
+          overall_confidence: extraction.result.overall_confidence, extraction_version: version,
+          confirmation_message_id: "", expires_at: sessionExpiry(session.channel),
+          error_code: "", error_message: "",
+        }),
+      },
+    );
+    if (!committed?.[0]) {
+      const latest = await rest(
+        `admission_intake_sessions?select=status,updated_at&id=eq.${encodeURIComponent(sessionId)}&limit=1`,
+      );
+      return { sessionId, stale: true, reprocessQueued: latest?.[0]?.status === "collecting" };
+    }
+    ownedGeneration = {
+      status: "waiting_for_confirmation",
+      updated_at: String(committed[0].updated_at || ""),
+    };
     await rest("admission_ai_extractions", {
       method: "POST",
       body: JSON.stringify({
@@ -1231,28 +1273,42 @@ async function processSession(sessionId: string, allowReprocess = false) {
         missing_fields: extraction.result.missing_fields, overall_confidence: extraction.result.overall_confidence,
       }),
     });
-    const messageBody = summary(session, extraction.result, match);
+    const latestBeforeSend = await rest(
+      `admission_intake_sessions?select=status,updated_at&id=eq.${encodeURIComponent(sessionId)}&limit=1`,
+    );
+    if (latestBeforeSend?.[0]?.status !== ownedGeneration.status ||
+      latestBeforeSend?.[0]?.updated_at !== ownedGeneration.updated_at) {
+      return { sessionId, stale: true, reprocessQueued: latestBeforeSend?.[0]?.status === "collecting" };
+    }
     const confirmationMessageId = await sendWhatsappSummary(session, messageBody);
-    await rest(`admission_intake_sessions?id=eq.${encodeURIComponent(sessionId)}`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        status: "waiting_for_confirmation", draft: activeDraft,
-        intake_type: intakeType,
-        matched_student_id: match?.student?.id || null,
-        matched_student_snapshot: match?.student
-          ? { id: match.student.id, reg_no: match.student.reg_no, name: match.student.name, fees_paid: match.student.fees_paid, paid_through: match.paidThrough, matched_by: match.evidence }
-          : {},
-        conflicts: extraction.result.conflicts, missing_fields: extraction.result.missing_fields,
-        overall_confidence: extraction.result.overall_confidence, extraction_version: version,
-        confirmation_message_id: confirmationMessageId, expires_at: sessionExpiry(session.channel),
-        error_code: "", error_message: "",
-      }),
-    });
+    const linked = await rest(
+      `admission_intake_sessions?id=eq.${encodeURIComponent(sessionId)}` +
+        `&status=eq.waiting_for_confirmation&updated_at=eq.${encodeURIComponent(ownedGeneration.updated_at)}&select=id`,
+      {
+        method: "PATCH",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({ confirmation_message_id: confirmationMessageId }),
+      },
+    );
+    if (!linked?.[0]) {
+      return { sessionId, stale: true, reprocessQueued: true, supersededAfterSend: true };
+    }
     return { sessionId, intakeType, draft: activeDraft, summary: messageBody, confirmationMessageId };
   } catch (error) {
-    await rest(`admission_intake_sessions?id=eq.${encodeURIComponent(sessionId)}`, {
-      method: "PATCH", body: JSON.stringify({ status: "error", error_code: "processing_failed", error_message: errorMessage(error) }),
-    });
+    const current = await rest(
+      `admission_intake_sessions?select=status,updated_at&id=eq.${encodeURIComponent(sessionId)}&limit=1`,
+    );
+    if (current?.[0]?.status === ownedGeneration.status && current?.[0]?.updated_at === ownedGeneration.updated_at) {
+      await rest(
+        `admission_intake_sessions?id=eq.${encodeURIComponent(sessionId)}` +
+          `&status=eq.${encodeURIComponent(ownedGeneration.status)}` +
+          `&updated_at=eq.${encodeURIComponent(ownedGeneration.updated_at)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ status: "error", error_code: "processing_failed", error_message: errorMessage(error) }),
+        },
+      );
+    }
     throw error;
   }
 }

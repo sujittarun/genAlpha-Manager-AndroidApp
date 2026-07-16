@@ -1,6 +1,9 @@
 import {
+  hasExplicitNewCaseBoundary,
+  isSameProcessingGeneration,
   selectRecentExpiredReviewCandidate,
   selectWaitingReviewCandidate,
+  shouldContinueActiveBundle,
   shouldTargetWaitingReview,
 } from "./routing.ts";
 
@@ -127,5 +130,78 @@ Deno.test("a tiny split correction resumes the more complete expired review", ()
   ], now);
   if (selected === null || selected === "ambiguous" || selected.id !== "complete-form-review") {
     throw new Error("Expected the more complete form review to absorb the split correction.");
+  }
+});
+
+Deno.test("late plan text rejoins an unknown review instead of starting a second session", () => {
+  const joins = shouldContinueActiveBundle({
+    status: "waiting_for_confirmation",
+    intake_type: "unknown",
+    last_message_at: "2026-07-16T14:15:00.000Z",
+  }, {
+    message_type: "text",
+    text_body: "Paid 3 months",
+  }, Date.parse("2026-07-16T14:15:40.000Z"));
+  if (!joins) throw new Error("Late plan text should remain in the unknown bundle.");
+});
+
+Deno.test("late payment image rejoins an unknown review", () => {
+  const joins = shouldContinueActiveBundle({
+    status: "waiting_for_confirmation",
+    intake_type: "unknown",
+    last_message_at: "2026-07-16T14:15:00.000Z",
+  }, {
+    message_type: "image",
+    text_body: "Image received",
+  }, Date.parse("2026-07-16T14:15:45.000Z"));
+  if (!joins) throw new Error("Late media should remain in the unknown bundle.");
+});
+
+Deno.test("a message arriving during model processing reopens the same bundle", () => {
+  const joins = shouldContinueActiveBundle({
+    status: "processing",
+    intake_type: "unknown",
+    last_message_at: "2026-07-16T14:15:00.000Z",
+  }, {
+    message_type: "text",
+    text_body: "10k paid for 3 months",
+  }, Date.parse("2026-07-16T14:15:25.000Z"));
+  if (!joins) throw new Error("Processing must not make the bundle invisible to late messages.");
+});
+
+Deno.test("an explicit new-case boundary does not merge into a known review", () => {
+  if (!hasExplicitNewCaseBoundary("AgentAlpha new admission")) {
+    throw new Error("Expected an explicit AgentAlpha boundary.");
+  }
+  const joins = shouldContinueActiveBundle({
+    status: "waiting_for_confirmation",
+    intake_type: "admission",
+    last_message_at: "2026-07-16T14:15:00.000Z",
+  }, {
+    message_type: "text",
+    text_body: "AgentAlpha new admission",
+  }, Date.parse("2026-07-16T14:15:25.000Z"));
+  if (joins) throw new Error("A clearly marked new case must get a fresh session.");
+});
+
+Deno.test("unthreaded media does not attach to a completed known review", () => {
+  const joins = shouldContinueActiveBundle({
+    status: "waiting_for_confirmation",
+    intake_type: "renewal",
+    last_message_at: "2026-07-16T14:15:00.000Z",
+  }, {
+    message_type: "image",
+    text_body: "",
+  }, Date.parse("2026-07-16T14:15:25.000Z"));
+  if (joins) throw new Error("Known reviews require WhatsApp Reply for late media proof.");
+});
+
+Deno.test("a superseded processing generation cannot publish", () => {
+  const claimed = { status: "processing", updated_at: "2026-07-16T14:15:20.000Z" };
+  if (!isSameProcessingGeneration(claimed, { ...claimed })) {
+    throw new Error("The unchanged generation should still own the result.");
+  }
+  if (isSameProcessingGeneration(claimed, { status: "collecting", updated_at: "2026-07-16T14:15:30.000Z" })) {
+    throw new Error("A reopened bundle must supersede the older model run.");
   }
 });
