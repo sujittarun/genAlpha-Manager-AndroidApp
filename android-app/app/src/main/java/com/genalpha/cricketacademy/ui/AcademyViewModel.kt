@@ -983,13 +983,18 @@ class AcademyViewModel(
         if (followUp?.isPendingVerification() != true && !isJoiningFee) {
             return OperationResult(false, "No pending payment proof found for this player.")
         }
-        val planType = followUp?.selectedPlan?.takeIf { it in setOf("monthly", "quarterly", "halfyearly", "special", "custom") } ?: "monthly"
+        val validPlans = setOf("monthly", "quarterly", "halfyearly", "special", "custom")
+        val planType = followUp?.selectedPlan?.takeIf { it in validPlans }
+            ?: student.feePlan.takeIf { it in validPlans }
+            ?: "monthly"
         val monthsCovered = followUp?.monthsCovered?.takeIf { it > 0 } ?: when (planType) {
             "quarterly" -> 3
             "halfyearly" -> 6
             else -> 1
         }
-        val amount = followUp?.amount?.takeIf { it > 0.0 } ?: when (planType) {
+        val amount = followUp?.amount?.takeIf { it > 0.0 }
+            ?: student.amountPaid.takeIf { isJoiningFee && it > 0.0 }
+            ?: when (planType) {
             "quarterly" -> 9975.0
             "halfyearly" -> 18900.0
             "special" -> 10000.0

@@ -547,8 +547,14 @@ fun Student.isSpecialTraining(payments: List<StudentPayment>): Boolean {
     if (feePlan.equals("special", ignoreCase = true)) {
         return true
     }
+    if (feePlan.lowercase() in setOf("monthly", "quarterly", "halfyearly", "custom")) {
+        return false
+    }
     if (payments.any { it.studentId == id && it.planType == "special" }) {
         return true
+    }
+    if (payments.any { it.studentId == id && it.planType in setOf("monthly", "quarterly", "halfyearly", "custom") }) {
+        return false
     }
     val firstPaymentAmount = kotlin.math.round(
         (amountPaid - (chargeableJerseyPairCount(jerseyPairs) * JERSEY_PAIR_REVENUE)).coerceAtLeast(0.0)
@@ -834,6 +840,11 @@ private fun Student.initialMonthsCovered(): Int {
     val feeOnlyAmount = (amountPaid - (chargeableJerseyPairCount(jerseyPairs) * JERSEY_PAIR_REVENUE)).coerceAtLeast(0.0)
     if (feePlan.equals("special", ignoreCase = true)) {
         return inferSpecialTrainingMonthsFromAmount(feeOnlyAmount)
+    }
+    when (feePlan.lowercase()) {
+        "monthly" -> return 1
+        "quarterly" -> return 3
+        "halfyearly" -> return 6
     }
     val withoutAdmissionFee = (feeOnlyAmount - 500.0).coerceAtLeast(0.0)
     val roundedAmount = kotlin.math.round(feeOnlyAmount).toInt()

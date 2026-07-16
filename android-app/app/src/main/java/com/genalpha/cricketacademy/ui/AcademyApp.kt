@@ -5675,11 +5675,23 @@ private fun PlayerDetailSheet(
     val manualFollowUpReason = student.manualFollowUpReasonLabel(paymentFollowUp, payments)
     val pendingFollowUp = paymentFollowUp?.takeIf { it.isPendingVerification() }
         ?: if (student.isPaymentPendingVerification()) {
+            val savedPlan = student.feePlan.takeIf {
+                it in setOf("monthly", "quarterly", "halfyearly", "special", "custom")
+            } ?: "monthly"
             PaymentFollowUp(
                 studentId = student.id,
-                selectedPlan = "monthly",
-                amount = student.amountPaid ?: 3500.0,
-                monthsCovered = 1,
+                selectedPlan = savedPlan,
+                amount = student.amountPaid.takeIf { it > 0.0 } ?: when (savedPlan) {
+                    "quarterly" -> 9975.0
+                    "halfyearly" -> 18900.0
+                    "special" -> 10000.0
+                    else -> 3500.0
+                },
+                monthsCovered = when (savedPlan) {
+                    "quarterly" -> 3
+                    "halfyearly" -> 6
+                    else -> 1
+                },
                 cycleStartDate = student.joinDate,
                 reminderType = "joining_fee"
             )
