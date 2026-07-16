@@ -5,7 +5,6 @@ const corsHeaders = {
 };
 
 const PROMPT_VERSION = "gen-alpha-conversation-v2";
-const ACTIVE_WINDOW_MINUTES = 30;
 
 function env(name: string): string {
   return Deno.env.get(name) || "";
@@ -48,11 +47,21 @@ async function assertAuthorized(request: Request) {
   const suppliedSecret = request.headers.get("x-intake-secret") || "";
   const expectedSecret = env("ADMISSION_INTAKE_WEBHOOK_SECRET");
   if (expectedSecret && suppliedSecret && suppliedSecret === expectedSecret) return;
+  const suppliedCronSecret = request.headers.get("x-cron-secret") || "";
+  const expectedCronSecret = env("WHATSAPP_CRON_SECRET");
+  if (expectedCronSecret && suppliedCronSecret && suppliedCronSecret === expectedCronSecret) return;
 
   const auth = request.headers.get("authorization") || "";
   const token = auth.replace(/^Bearer\s+/i, "");
   if (!token) throw new Error("Manager login or intake webhook secret is required.");
   if (token === env("SUPABASE_SERVICE_ROLE_KEY")) return;
+  try {
+    const encodedPayload = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(encodedPayload.padEnd(Math.ceil(encodedPayload.length / 4) * 4, "=")));
+    if (payload?.role === "service_role") return;
+  } catch {
+    // Non-JWT project secret keys and malformed tokens continue to normal auth validation.
+  }
 
   const response = await fetch(`${env("SUPABASE_URL").replace(/\/+$/, "")}/auth/v1/user`, {
     headers: {
@@ -107,34 +116,15 @@ async function findReplySession(message: ReturnType<typeof normalizeMessage>) {
   return rows?.[0] || null;
 }
 
-async function findCollectingSession(message: ReturnType<typeof normalizeMessage>, channel: string) {
-  const since = new Date(Date.now() - ACTIVE_WINDOW_MINUTES * 60_000).toISOString();
-  const senderFilter = channel === "whatsapp_group"
-    ? ""
-    : `&source_sender_id=eq.${encodeURIComponent(message.source_sender_id)}`;
-  const rows = await rest(
-    `admission_intake_sessions?select=*&source_chat_id=eq.${encodeURIComponent(message.source_chat_id)}` +
-      senderFilter +
-      `&status=eq.collecting&last_message_at=gte.${encodeURIComponent(since)}` +
-      `&order=last_message_at.desc&limit=1`,
-  );
-  return rows?.[0] || null;
-}
-
-async function createSession(message: ReturnType<typeof normalizeMessage>, channel: string) {
-  const rows = await rest("admission_intake_sessions?select=*", {
-    method: "POST",
-    headers: { Prefer: "return=representation" },
-    body: JSON.stringify({
-      channel,
-      source_chat_id: message.source_chat_id,
-      source_sender_id: message.source_sender_id,
-      source_sender_name: message.source_sender_name,
-      status: "collecting",
-      created_by: channel === "web" ? "Manager web intake" : "WhatsApp intake",
-    }),
+async function getOrCreateCollectingSession(message: ReturnType<typeof normalizeMessage>, channel: string) {
+  const result = await rpc("get_or_create_admission_intake_session", {
+    p_channel: channel,
+    p_source_chat_id: message.source_chat_id,
+    p_source_sender_id: message.source_sender_id,
+    p_source_sender_name: message.source_sender_name,
+    p_message_timestamp: message.message_timestamp,
   });
-  return rows[0];
+  return result?.[0] || result;
 }
 
 async function ingestMessage(input: any, channel = "whatsapp") {
@@ -145,7 +135,7 @@ async function ingestMessage(input: any, channel = "whatsapp") {
   if (existing?.[0]) return { duplicate: true, message: existing[0], session: existing[0].admission_intake_sessions };
 
   const replySession = await findReplySession(message);
-  const session = replySession || await findCollectingSession(message, channel) || await createSession(message, channel);
+  const session = replySession || await getOrCreateCollectingSession(message, channel);
   const rows = await rest("admission_intake_messages?select=*", {
     method: "POST",
     headers: { Prefer: "return=representation" },
@@ -174,10 +164,45 @@ async function downloadMetaMedia(mediaId: string) {
     headers: { Authorization: `Bearer ${token}` },
   });
   const descriptor = await meta.json();
-  if (!meta.ok || !descriptor?.url) throw new Error(descriptor?.error?.message || "Unable to resolve WhatsApp media.");
+  if (!meta.ok || !descriptor?.url) throw new Error(formatMetaError("Unable to resolve WhatsApp media", descriptor, meta.status));
   const media = await fetch(descriptor.url, { headers: { Authorization: `Bearer ${token}` } });
-  if (!media.ok) throw new Error("Unable to download WhatsApp media.");
+  if (!media.ok) {
+    const body = await media.json().catch(() => null);
+    throw new Error(formatMetaError("Unable to download WhatsApp media", body, media.status));
+  }
   return { bytes: new Uint8Array(await media.arrayBuffer()), mime: media.headers.get("content-type") || descriptor.mime_type || "application/octet-stream" };
+}
+
+function formatMetaError(prefix: string, body: any, status: number): string {
+  const error = body?.error || {};
+  const details = [
+    error.type ? `type ${error.type}` : "",
+    error.code ? `code ${error.code}` : "",
+    error.error_subcode ? `subcode ${error.error_subcode}` : "",
+    `HTTP ${status}`,
+  ].filter(Boolean).join(", ");
+  return `${prefix}: ${error.message || "Meta request failed"} (${details})`;
+}
+
+async function metaTokenHealth() {
+  const token = env("META_WHATSAPP_TOKEN");
+  if (!token) throw new Error("META_WHATSAPP_TOKEN is missing.");
+  const headers = { Authorization: `Bearer ${token}` };
+  const [identityResponse, permissionsResponse] = await Promise.all([
+    fetch("https://graph.facebook.com/v20.0/me?fields=id", { headers }),
+    fetch("https://graph.facebook.com/v20.0/me/permissions", { headers }),
+  ]);
+  const identity = await identityResponse.json().catch(() => null);
+  const permissions = await permissionsResponse.json().catch(() => null);
+  return {
+    identity_ok: identityResponse.ok,
+    identity_error: identityResponse.ok ? "" : formatMetaError("Token identity check failed", identity, identityResponse.status),
+    permissions_ok: permissionsResponse.ok,
+    permissions_error: permissionsResponse.ok ? "" : formatMetaError("Token permission check failed", permissions, permissionsResponse.status),
+    permissions: Array.isArray(permissions?.data)
+      ? permissions.data.map((item: any) => ({ permission: String(item.permission || ""), status: String(item.status || "") }))
+      : [],
+  };
 }
 
 async function downloadStoredMedia(bucket: string, path: string) {
@@ -328,6 +353,39 @@ function normalizedIdentity(value: unknown): string {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "").trim();
 }
 
+function identityTokens(value: unknown): string[] {
+  return String(value || "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+}
+
+function levenshteinDistance(left: string, right: string): number {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= left.length; i += 1) {
+    let diagonal = previous[0];
+    previous[0] = i;
+    for (let j = 1; j <= right.length; j += 1) {
+      const above = previous[j];
+      previous[j] = Math.min(
+        previous[j] + 1,
+        previous[j - 1] + 1,
+        diagonal + (left[i - 1] === right[j - 1] ? 0 : 1),
+      );
+      diagonal = above;
+    }
+  }
+  return previous[right.length];
+}
+
+function isNearPlayerName(requested: unknown, candidate: unknown): boolean {
+  const requestedTokens = identityTokens(requested);
+  const candidateTokens = identityTokens(candidate);
+  if (!requestedTokens.length || !candidateTokens.length) return false;
+  return requestedTokens.some((requestedToken) =>
+    requestedToken.length >= 4 && candidateTokens.some((candidateToken) =>
+      candidateToken.length >= 4 && levenshteinDistance(requestedToken, candidateToken) <= 1
+    )
+  );
+}
+
 function normalizedIndianPhone(value: unknown): string {
   return String(value || "").replace(/\D/g, "").slice(-10);
 }
@@ -340,8 +398,34 @@ function normalizeRenewalDraft(draft: any) {
   return normalized;
 }
 
+function applyDeterministicRenewalPlan(draft: any, match: any) {
+  const validPlans = ["monthly", "quarterly", "halfyearly", "special", "custom"];
+  if (validPlans.includes(String(draft?.plan_type || "").toLowerCase())) return null;
+  const amount = Number(draft?.payment?.amount || 0);
+  const standardPlans: Record<string, { amount: number; months: number }> = {
+    monthly: { amount: 3500, months: 1 },
+    quarterly: { amount: 9975, months: 3 },
+    halfyearly: { amount: 18900, months: 6 },
+  };
+  const inferredPlan = Object.entries(standardPlans).find(([, option]) =>
+    Math.abs(amount - option.amount) < 0.01
+  );
+  if (!inferredPlan) return null;
+  const [planType, option] = inferredPlan;
+  const existingPlan = String(match?.student?.fee_plan || "").toLowerCase();
+  if (existingPlan && validPlans.includes(existingPlan) && existingPlan !== planType) return null;
+  draft.plan_type = planType;
+  draft.months_covered = option.months;
+  return {
+    plan_type: planType,
+    months_covered: option.months,
+    source: `Exact academy renewal price Rs ${option.amount} and existing player plan`,
+  };
+}
+
 async function matchRenewalPlayer(renewal: any) {
   const requestedRegNo = Number(renewal?.reg_no || 0);
+  const requestedNameRaw = String(renewal?.player_name || "");
   const requestedName = normalizedIdentity(renewal?.player_name);
   const requestedPhone = normalizedIndianPhone(renewal?.parent_contact_no);
   const requestedGuardian = normalizedIdentity(renewal?.father_guardian_name);
@@ -358,16 +442,17 @@ async function matchRenewalPlayer(renewal: any) {
     if (requestedRegNo && Number(student.reg_no || 0) === requestedRegNo) { score += 120; evidence.push("registration number"); }
     if (requestedPhone && normalizedIndianPhone(student.parent_contact_no) === requestedPhone) { score += 100; evidence.push("parent phone"); }
     if (requestedName && normalizedIdentity(student.name) === requestedName) { score += 60; evidence.push("exact player name"); }
+    else if (requestedName && isNearPlayerName(requestedNameRaw, student.name)) { score += 50; evidence.push("near player name"); }
     if (requestedGuardian && normalizedIdentity(student.father_guardian_name) === requestedGuardian) { score += 30; evidence.push("guardian name"); }
     return { student, score, evidence };
   }).filter((item: any) => item.score > 0).sort((a: any, b: any) => b.score - a.score);
 
   const best = ranked[0];
   const next = ranked[1];
-  if (!best || best.score < 60) {
+  if (!best || best.score < 50) {
     return { student: null, conflicts: ["No player matched the supplied renewal identifiers."], missing: ["matched_student"], score: best?.score || 0, paidThrough: "" };
   }
-  if (next && next.score === best.score) {
+  if (next && next.score >= best.score - 10) {
     return { student: null, conflicts: ["More than one player matches this renewal. Add registration number or parent phone."], missing: ["unique_matched_student"], score: best.score, paidThrough: "" };
   }
   const paidThroughResult = await rpc("student_paid_through_date", { p_student_id: best.student.id });
@@ -430,7 +515,7 @@ function summary(session: any, result: any, match: any = null) {
       `Player: ${student?.name || d.player_name || "Not matched"}${student?.reg_no ? ` • Reg ${student.reg_no}` : ""}`,
       `Matched by: ${match?.evidence?.join(", ") || "No unique match"}`,
       `Currently paid through: ${match?.paidThrough || "Not available"}`,
-      `Plan / Months: ${d.plan_type || "Not found"} / ${d.months_covered || 0}`,
+      `Plan / Months: ${d.plan_type || "Not found"} / ${d.months_covered || 0}${result.deterministic_plan_inference ? " (matched from academy fee rules)" : ""}`,
       `Amount / Paid on: ${p.amount ? `Rs ${Number(p.amount).toLocaleString("en-IN")}` : "Not found"} / ${p.payment_date || "Not found"}`,
       `Reference: ${p.transaction_id || p.utr || "Not found"}`,
       `Screenshot status: ${p.screenshot_status || "unknown"}`,
@@ -524,6 +609,19 @@ async function processSession(sessionId: string) {
       activePayment.proof_path = proof.path;
     }
     const match = intakeType === "renewal" ? await matchRenewalPlayer(activeDraft) : null;
+    const planInference = intakeType === "renewal" ? applyDeterministicRenewalPlan(activeDraft, match) : null;
+    if (planInference) {
+      extraction.result.deterministic_plan_inference = planInference;
+      extraction.result.field_evidence = [
+        ...(extraction.result.field_evidence || []),
+        {
+          field: "renewal.plan_type",
+          confidence: 1,
+          source: "deterministic_app_fee_rules",
+          notes: planInference.source,
+        },
+      ];
+    }
     extraction.result.conflicts = [...new Set([...(extraction.result.conflicts || []), ...(match?.conflicts || [])])];
     extraction.result.missing_fields = requiredMissingFields(intakeType, activeDraft, match);
     const version = Number(session.extraction_version || 0) + 1;
@@ -660,6 +758,7 @@ Deno.serve(async (request) => {
     }
     if (action === "process_session") return jsonResponse({ success: true, ...(await processSession(String(payload.session_id))) });
     if (action === "process_due") return jsonResponse({ success: true, results: await processDueSessions() });
+    if (action === "meta_token_health") return jsonResponse({ success: true, ...(await metaTokenHealth()) });
     if (action === "confirm") {
       const sessions = await rest(`admission_intake_sessions?select=*&id=eq.${encodeURIComponent(String(payload.session_id))}&limit=1`);
       if (!sessions?.[0]) throw new Error("Intake session not found.");

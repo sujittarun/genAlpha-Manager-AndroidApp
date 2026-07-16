@@ -28,6 +28,10 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 - Added deterministic player matching, authoritative paid-through calculation, staff confirmation, and atomic renewal/payment recording.
 - Added duplicate UTR/reference, intake-session, and renewal-cycle protection; failed or pending screenshots cannot be confirmed.
 - Combined official Groups API messages by group ID while preserving the 1:1 forwarding and manager web fallbacks.
+- Serialized live intake session creation so a text and screenshot delivered in parallel remain in one conversation.
+- Added the missing one-minute idle-session processor and conservative near-name matching for unique player spellings such as Adil/Aadil.
+- Added protected Meta token health diagnostics, detailed media-auth errors, and service-JWT compatibility for rotated Supabase project keys.
+- Added deterministic renewal-plan inference when an exact academy price matches the uniquely matched player's existing standard plan.
 
 ### Conversational AI Admission Intake Foundation
 

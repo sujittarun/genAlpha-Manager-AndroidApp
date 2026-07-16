@@ -93,6 +93,12 @@ Messages from multiple allowlisted staff are combined by group ID when the offic
 
 The receiver stores messages immediately. A scheduler calls `process_due` after the conversation has been idle for at least 60 seconds, allowing images and text to arrive out of order.
 
+The scheduler is installed as the `admission-intake-process-due` pg_cron job and authenticates with the existing `whatsapp_cron_secret` in Supabase Vault. Collecting-session creation uses a database advisory lock so simultaneous Meta webhook deliveries cannot split one conversation into separate sessions.
+
+Use a non-expiring Meta system-user token with `whatsapp_business_management` and `whatsapp_business_messaging` for `META_WHATSAPP_TOKEN`; temporary developer tokens will eventually stop media downloads and confirmation messages. The protected `meta_token_health` action reports only permission state and sanitized Meta error codes, never the token.
+
+For renewals, the extractor never invents a plan. After a unique player match, deterministic app logic may fill monthly, quarterly, or half-yearly only when the screenshot amount exactly matches the academy price and is consistent with that player's existing standard plan. The confirmation message labels this inference before staff approves it.
+
 n8n workflow:
 
 ```text
