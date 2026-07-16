@@ -1,4 +1,4 @@
-import { shouldTargetWaitingReview } from "./routing.ts";
+import { selectWaitingReviewCandidate, shouldTargetWaitingReview } from "./routing.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -150,10 +150,11 @@ async function findReplySession(message: ReturnType<typeof normalizeMessage>) {
   )) return null;
   const rows = await rest(
     `admission_intake_sessions?select=*&source_chat_id=eq.${encodeURIComponent(message.source_chat_id)}` +
-      `&status=eq.waiting_for_confirmation&order=last_message_at.desc&limit=2`,
+      `&status=eq.waiting_for_confirmation&intake_type=in.(admission,renewal)&order=updated_at.desc&limit=10`,
   );
-  if ((rows || []).length > 1) return { routing_ambiguous: true };
-  return rows?.[0] || null;
+  const selected = selectWaitingReviewCandidate(rows || []);
+  if (selected === "ambiguous") return { routing_ambiguous: true };
+  return selected;
 }
 
 async function findRecentTextOnlyCollectingSession(message: ReturnType<typeof normalizeMessage>) {
@@ -275,8 +276,10 @@ async function ingestMessage(input: any, channel = "whatsapp") {
   const explicitWebSession = explicitWebSessionId
     ? (await rest(`admission_intake_sessions?select=*&id=eq.${encodeURIComponent(explicitWebSessionId)}&limit=1`))?.[0] || null
     : null;
+  const explicitReviewDecision = message.message_type === "text" &&
+    ["confirm", "reject"].includes(confirmationIntent(message.text_body));
   const activeTextBundle = !explicitWebSession && channel === "whatsapp" &&
-      message.message_type === "text" && !message.reply_to_provider_message_id
+      message.message_type === "text" && !message.reply_to_provider_message_id && !explicitReviewDecision
     ? await findActiveTextBundle(message)
     : null;
   const replyRouting = explicitWebSession || activeTextBundle || await findReplySession(message);
