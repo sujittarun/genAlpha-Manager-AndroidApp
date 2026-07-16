@@ -35,6 +35,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -167,8 +168,7 @@ fun AgentAlphaShareSheet(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .statusBarsPadding()
-                    .navigationBarsPadding(),
+                    .statusBarsPadding(),
             ) {
                 Row(
                     modifier = Modifier
@@ -210,7 +210,8 @@ fun AgentAlphaShareSheet(
                 LazyColumn(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        .navigationBarsPadding(),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
@@ -318,42 +319,51 @@ fun AgentAlphaShareSheet(
                             }
                         }
                     }
-                }
 
-                HorizontalDivider()
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (confirmation == null) {
-                        OutlinedButton(
-                            onClick = onDismiss,
-                            modifier = Modifier.weight(1f),
-                            enabled = !isWorking,
+                    item {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            Text("Cancel")
-                        }
-                        Button(
-                            onClick = if (review == null) ::startExtraction else ::confirmReview,
-                            modifier = Modifier.weight(1.5f),
-                            enabled = !isWorking && (review != null || notes.isNotBlank() || request.items.isNotEmpty()),
-                        ) {
-                            Text(
-                                if (review == null) {
-                                    "Read with AgentAlpha"
-                                } else if (review?.intakeType == "renewal") {
-                                    "Confirm renewal"
-                                } else {
-                                    "Confirm admission"
-                                },
-                            )
-                        }
-                    } else {
-                        Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                            Text("Done")
+                            if (confirmation == null) {
+                                Button(
+                                    onClick = if (review == null) ::startExtraction else ::confirmReview,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(54.dp),
+                                    enabled = !isWorking && (review != null || notes.isNotBlank() || request.items.isNotEmpty()),
+                                    shape = RoundedCornerShape(16.dp),
+                                ) {
+                                    Text(
+                                        text = if (review == null) {
+                                            "Read with AgentAlpha"
+                                        } else if (review?.intakeType == "renewal") {
+                                            "Confirm renewal"
+                                        } else {
+                                            "Confirm admission"
+                                        },
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                                TextButton(
+                                    onClick = onDismiss,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    enabled = !isWorking,
+                                ) {
+                                    Text("Cancel and close")
+                                }
+                            } else {
+                                Button(
+                                    onClick = onDismiss,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(54.dp),
+                                    shape = RoundedCornerShape(16.dp),
+                                ) {
+                                    Text("Done", fontWeight = FontWeight.SemiBold)
+                                }
+                            }
                         }
                     }
                 }
