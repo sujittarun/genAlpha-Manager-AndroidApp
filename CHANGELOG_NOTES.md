@@ -22,6 +22,13 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 - Non-staff messages on the reminder number continue through the existing renewal and payment reply flow.
 - Shared-number intake now inherits the existing reminder phone-number asset ID, avoiding a duplicate plaintext secret during activation.
 
+### Conversational Renewal Intake
+
+- Added admission-versus-renewal classification for messy staff conversations and payment screenshots.
+- Added deterministic player matching, authoritative paid-through calculation, staff confirmation, and atomic renewal/payment recording.
+- Added duplicate UTR/reference, intake-session, and renewal-cycle protection; failed or pending screenshots cannot be confirmed.
+- Combined official Groups API messages by group ID while preserving the 1:1 forwarding and manager web fallbacks.
+
 ### Conversational AI Admission Intake Foundation
 
 - Added a provider-neutral admission intake state machine for informal WhatsApp conversations and manager web uploads.

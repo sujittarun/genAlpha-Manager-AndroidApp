@@ -2,7 +2,7 @@
 
 ## Production channel decision
 
-The academy's existing reminder number can also receive 1:1 admission messages from explicitly allowlisted staff. Staff can forward or send the same informal conversation, handwritten form image, and payment screenshot to that number. No `NEW ADMISSION` or `DONE` command is required.
+The academy's existing reminder number can receive 1:1 admission or renewal messages from explicitly allowlisted staff. Staff can forward or send the same informal conversation, handwritten form image, and payment screenshot to that number. No fixed command is required.
 
 Do not add the proposed academy number to the existing admission group merely to enable automation. A normal group membership does not create an API webhook. Meta's Groups API is a separate, restricted surface for eligible Cloud API businesses and API-managed small groups. Confirm eligibility in WhatsApp Manager before attempting any group rollout.
 
@@ -48,6 +48,7 @@ Deploy the migration before the functions:
 
 ```bash
 supabase db push
+supabase db query --linked --file supabase/conversational-renewal-intake.sql
 supabase functions deploy admission-intake
 supabase functions deploy whatsapp-reminder
 ```
@@ -73,6 +74,20 @@ ADMISSION_INTAKE_WEBHOOK_SECRET=<random-long-secret>
 For the academy's current setup, leave `META_ADMISSION_PHONE_NUMBER_ID` unset so it safely inherits `META_WHATSAPP_PHONE_NUMBER_ID`, and opt in with `ADMISSION_INTAKE_SHARED_NUMBER=true`. Set `META_ADMISSION_PHONE_NUMBER_ID` only when a different dedicated Cloud API number is introduced. `ADMISSION_INTAKE_STAFF_PHONES` is mandatory and comma-separated; values may include `+91` and spaces. The function normalizes them and fails closed when the list is empty. Messages from parents and other non-allowlisted senders continue to the existing reminder/payment reply handler and are never sent to the admission model.
 
 Adding the number to an ordinary WhatsApp group is still not an ingestion method. Keep it in the group only for normal human communication unless Meta has enabled the separate Groups API for this exact Cloud API phone-number asset and API-created group.
+
+## Existing-player renewals
+
+The same model classifies each conversation as `admission`, `renewal`, or `unknown`. For renewals it extracts player identifiers, plan/months, amount, payment date, UTR/reference, and screenshot status. The application—not the model—then:
+
+1. matches the player deterministically using registration number, parent phone, exact player name, and guardian name;
+2. calculates the next cycle from the existing joining/renewal ledger and legacy renewal dates;
+3. posts a renewal draft back for staff review;
+4. records the `student_payments` row and advances `students.renewals` only after explicit confirmation;
+5. blocks duplicate intake sessions, UTRs/payment references, and duplicate renewal cycles.
+
+A failed, pending, or processing screenshot cannot be confirmed. A screenshot or transaction reference is evidence; the allowlisted staff member's explicit confirmation is the payment-verification action.
+
+Messages from multiple allowlisted staff are combined by group ID when the official Groups API supplies that ID. With an ordinary WhatsApp Business App group, Meta does not send those messages to the current webhook. Staff must forward the relevant conversation/screenshots 1:1 to the academy number or use the manager web intake until Groups API eligibility is verified.
 
 ## Inactivity processing
 
