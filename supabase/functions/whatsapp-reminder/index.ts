@@ -697,10 +697,20 @@ async function insertWhatsappFlowEvent(payload: Record<string, unknown>) {
 async function findWhatsappFlowEventByMessageId(messageId: string) {
   if (!messageId) return null;
   try {
+    // Always prefer the original outbound row. Provider delivery receipts use
+    // the same message id and are inserted later, so ordering only by newest
+    // can select a receipt with no message body and lose the exact sent text.
+    const outboundRows = await rest(
+      `whatsapp_flow_events?select=*&message_id=eq.${
+        encodeURIComponent(messageId)
+      }&direction=eq.outbound&order=created_at.asc&limit=1`,
+    );
+    if (outboundRows?.[0]) return outboundRows[0];
+
     const rows = await rest(
       `whatsapp_flow_events?select=*&message_id=eq.${
         encodeURIComponent(messageId)
-      }&order=created_at.desc&limit=1`,
+      }&order=created_at.asc&limit=1`,
     );
     return rows?.[0] || null;
   } catch (_error) {
@@ -2304,6 +2314,12 @@ async function sendManagerPaymentAlert(
       : "sent",
     status_at: sentAt,
     sent_at: sentAt,
+    payment_plan: String(reminderEvent.selected_plan || ""),
+    payment_amount: Number(reminderEvent.amount || 0) || null,
+    payment_months: String(reminderEvent.selected_plan || "") === "special"
+      ? inferSpecialTrainingMonthsFromAmount(Number(reminderEvent.amount || 0))
+      : PLAN_MONTHS[String(reminderEvent.selected_plan || "")] || null,
+    payment_from_date: reminderEvent.due_date || null,
     proof_bucket: proofBucket,
     proof_path: proofPath,
     provider_payload: {
@@ -3232,6 +3248,7 @@ async function handleWebhook(payload: any) {
             direction: "provider",
             parent_phone: String(trackedFlowEvent?.parent_phone || ""),
             message_kind: String(trackedFlowEvent?.message_kind || ""),
+            message_body: String(trackedFlowEvent?.message_body || ""),
             message_id: messageId,
             status,
             status_at: timestamp,
@@ -3241,6 +3258,13 @@ async function handleWebhook(payload: any) {
             failed_at: status === "failed" ? timestamp : null,
             error_code: String(statusUpdate?.errors?.[0]?.code || ""),
             error_message: String(statusUpdate?.errors?.[0]?.message || ""),
+            payment_plan: trackedFlowEvent?.payment_plan || null,
+            payment_amount: trackedFlowEvent?.payment_amount || null,
+            payment_months: trackedFlowEvent?.payment_months || null,
+            payment_from_date: trackedFlowEvent?.payment_from_date || null,
+            payment_to_date: trackedFlowEvent?.payment_to_date || null,
+            proof_bucket: trackedFlowEvent?.proof_bucket || null,
+            proof_path: trackedFlowEvent?.proof_path || null,
             provider_payload: statusUpdate,
             created_by: "Meta",
           });
