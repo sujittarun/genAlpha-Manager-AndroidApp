@@ -12,6 +12,11 @@ const INTAKE_DEBOUNCE_SECONDS = Number.isFinite(configuredDebounceSeconds)
   ? Math.min(120, Math.max(5, configuredDebounceSeconds))
   : 20;
 const INTAKE_DEBOUNCE_MS = INTAKE_DEBOUNCE_SECONDS * 1_000;
+const configuredIdleSeconds = Number(env("AGENTALPHA_SESSION_IDLE_SECONDS") || "120");
+const SESSION_IDLE_SECONDS = Number.isFinite(configuredIdleSeconds)
+  ? Math.min(900, Math.max(60, configuredIdleSeconds))
+  : 120;
+const SESSION_IDLE_MS = SESSION_IDLE_SECONDS * 1_000;
 const AGENT_TRIGGER = /\b(?:agent\s*alpha|agen\s*alpha|agent\s*alfa)\b/i;
 const MEDIA_MESSAGE_TYPES = new Set(["image", "document", "audio", "video"]);
 type ReplyIntent = "confirm" | "reject" | "correction" | "unknown";
@@ -29,6 +34,10 @@ function jsonResponse(body: unknown, status = 200) {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function sessionExpiry(): string {
+  return new Date(Date.now() + SESSION_IDLE_MS).toISOString();
 }
 
 function serviceHeaders(extra: Record<string, string> = {}) {
@@ -204,7 +213,7 @@ async function createStandaloneWhatsappSession(message: ReturnType<typeof normal
       status: "collecting",
       opened_at: message.message_timestamp,
       last_message_at: message.message_timestamp,
-      expires_at: new Date(Date.now() + 24 * 3600_000).toISOString(),
+      expires_at: sessionExpiry(),
       created_by: "AgentAlpha standalone WhatsApp media intake",
     }),
   });
@@ -230,7 +239,7 @@ async function createGroupSession(message: ReturnType<typeof normalizeMessage>) 
       status: "collecting",
       opened_at: message.message_timestamp,
       last_message_at: message.message_timestamp,
-      expires_at: new Date(Date.now() + 24 * 3600_000).toISOString(),
+      expires_at: sessionExpiry(),
       created_by: "AgentAlpha group intake",
     }),
   });
@@ -276,6 +285,9 @@ async function ingestMessage(input: any, channel = "whatsapp") {
   const explicitWebSession = explicitWebSessionId
     ? (await rest(`admission_intake_sessions?select=*&id=eq.${encodeURIComponent(explicitWebSessionId)}&limit=1`))?.[0] || null
     : null;
+  if (explicitWebSession && !["collecting", "waiting_for_confirmation", "error"].includes(explicitWebSession.status)) {
+    throw new Error("This AgentAlpha session has ended. Share the form or payment again to start a new session.");
+  }
   const explicitReviewDecision = message.message_type === "text" &&
     ["confirm", "reject"].includes(confirmationIntent(message.text_body));
   const activeTextBundle = !explicitWebSession && channel === "whatsapp" &&
@@ -296,6 +308,17 @@ async function ingestMessage(input: any, channel = "whatsapp") {
     return { ignored: true, reason: "Multiple open reviews require a threaded WhatsApp reply." };
   }
   const replySession = replyRouting;
+  if (!replySession && explicitReviewDecision && channel !== "web") {
+    await sendWhatsappSummary({
+      channel,
+      source_chat_id: message.source_chat_id,
+      source_sender_id: message.source_sender_id,
+    }, [
+      "That AgentAlpha review has ended.",
+      "Send the admission form or renewal payment again to start a fresh session.",
+    ].join("\n"));
+    return { ignored: true, reason: "No active AgentAlpha review to confirm or cancel." };
+  }
   const normalizedGroupText = message.text_body.trim().toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ");
   const obviousGroupChatter = /^(?:wow|whoa|lol|haha|nice|super|interesting|what is this|what s this|what is that|how does this work)$/.test(normalizedGroupText);
   if (channel === "whatsapp_group" && obviousGroupChatter) {
@@ -331,7 +354,7 @@ async function ingestMessage(input: any, channel = "whatsapp") {
     headers: { Prefer: "return=representation" },
     body: JSON.stringify({
       last_message_at: message.message_timestamp,
-      expires_at: new Date(Date.now() + 24 * 3600_000).toISOString(),
+      expires_at: sessionExpiry(),
     }),
   });
   const touchedSession = touched?.[0] || session;
@@ -1158,7 +1181,8 @@ async function processSession(sessionId: string, allowReprocess = false) {
           : {},
         conflicts: extraction.result.conflicts, missing_fields: extraction.result.missing_fields,
         overall_confidence: extraction.result.overall_confidence, extraction_version: version,
-        confirmation_message_id: confirmationMessageId, error_code: "", error_message: "",
+        confirmation_message_id: confirmationMessageId, expires_at: sessionExpiry(),
+        error_code: "", error_message: "",
       }),
     });
     return { sessionId, intakeType, draft: activeDraft, summary: messageBody, confirmationMessageId };
@@ -1380,6 +1404,7 @@ function scheduleSessionProcessing(sessionId: string, debounceToken: string) {
 }
 
 async function processDueSessions() {
+  await expireIdleSessions();
   const before = new Date(Date.now() - INTAKE_DEBOUNCE_MS).toISOString();
   const rows = await rest(
     `admission_intake_sessions?select=id&status=eq.collecting&updated_at=lte.${encodeURIComponent(before)}&order=updated_at.asc&limit=10`,
@@ -1392,6 +1417,24 @@ async function processDueSessions() {
   return results;
 }
 
+async function expireIdleSessions() {
+  const before = new Date(Date.now() - SESSION_IDLE_MS).toISOString();
+  return await rest(
+    `admission_intake_sessions?status=in.(collecting,ready_for_processing,waiting_for_confirmation)` +
+      `&updated_at=lte.${encodeURIComponent(before)}&select=id,display_id`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({
+        status: "expired",
+        expires_at: new Date().toISOString(),
+        error_code: "session_idle_timeout",
+        error_message: `AgentAlpha session ended after ${SESSION_IDLE_SECONDS} seconds of inactivity.`,
+      }),
+    },
+  );
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return jsonResponse({ error: "POST required." }, 405);
@@ -1399,6 +1442,7 @@ Deno.serve(async (request) => {
     await assertAuthorized(request);
     const payload = await request.json();
     const action = String(payload.action || "ingest");
+    if (action === "ingest") await expireIdleSessions();
     if (action === "ingest") {
       const ingested = await ingestMessage(payload.message || payload, payload.channel || "whatsapp");
       if (ingested.ignored) return jsonResponse({ success: true, ignored: true, reason: ingested.reason });
@@ -1437,6 +1481,9 @@ Deno.serve(async (request) => {
     if (action === "confirm") {
       const sessions = await rest(`admission_intake_sessions?select=*&id=eq.${encodeURIComponent(String(payload.session_id))}&limit=1`);
       if (!sessions?.[0]) throw new Error("Intake session not found.");
+      if (sessions[0].status !== "waiting_for_confirmation") {
+        throw new Error("This AgentAlpha review has ended. Share the form or payment again to start a new session.");
+      }
       const finalized = await finalizeConfirmedSession(
         sessions[0],
         payload.confirmation_message_id || "web",
