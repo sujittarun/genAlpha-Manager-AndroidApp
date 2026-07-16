@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
@@ -26,11 +27,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.FactCheck
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -60,6 +65,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -292,25 +300,7 @@ fun AgentAlphaShareSheet(
 
                     review?.let { currentReview ->
                         item {
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(18.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                            ) {
-                                Column(modifier = Modifier.padding(18.dp)) {
-                                    Text(
-                                        text = if (currentReview.intakeType == "renewal") {
-                                            "Renewal review"
-                                        } else {
-                                            "Admission review"
-                                        },
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                    )
-                                    Spacer(Modifier.height(10.dp))
-                                    Text(currentReview.summary, style = MaterialTheme.typography.bodyMedium)
-                                }
-                            }
+                            AgentAlphaReviewCard(currentReview)
                         }
 
                         if (confirmation == null) {
@@ -429,6 +419,290 @@ fun AgentAlphaShareSheet(
                 }
             }
         }
+    }
+}
+
+private data class AgentAlphaReviewPresentation(
+    val title: String,
+    val caseId: String,
+    val details: List<String>,
+    val warnings: List<String>,
+    val guidance: List<String>,
+)
+
+@Composable
+private fun AgentAlphaReviewCard(review: AgentAlphaIntakeReview) {
+    val presentation = remember(review.summary, review.intakeType) {
+        buildAgentAlphaReviewPresentation(review)
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        tonalElevation = 2.dp,
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.primaryContainer)
+                    .padding(horizontal = 18.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(MaterialTheme.colorScheme.primary, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.FactCheck,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = presentation.title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    if (presentation.caseId.isNotBlank()) {
+                        Text(
+                            text = presentation.caseId,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f),
+                        )
+                    }
+                }
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
+                ) {
+                    Text(
+                        text = "DRAFT",
+                        modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                presentation.details.forEachIndexed { index, line ->
+                    if (index == 0 && !line.contains(':')) {
+                        Text(
+                            text = styledReviewText(line),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    } else {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(5.dp),
+                        ) {
+                            reviewDetailSectionTitle(line).takeIf(String::isNotBlank)?.let { sectionTitle ->
+                                Text(
+                                    text = sectionTitle,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(13.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                            ) {
+                                Text(
+                                    text = styledReviewText(line),
+                                    modifier = Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (presentation.warnings.isNotEmpty()) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.errorContainer,
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(15.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(9.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.WarningAmber,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                                Text(
+                                    text = "Check before saving",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                )
+                            }
+                            presentation.warnings.forEach { warning ->
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(9.dp),
+                                    verticalAlignment = Alignment.Top,
+                                ) {
+                                    Text(
+                                        text = "•",
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                    Text(
+                                        text = styledReviewText(warning),
+                                        modifier = Modifier.weight(1f),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (presentation.guidance.isNotEmpty()) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.Top,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Info,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                            Text(
+                                text = styledReviewText(
+                                    presentation.guidance.joinToString("\n\n") { cleanReviewLine(it) },
+                                ),
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun buildAgentAlphaReviewPresentation(review: AgentAlphaIntakeReview): AgentAlphaReviewPresentation {
+    val lines = review.summary.lineSequence().map(String::trim).filter(String::isNotBlank).toList()
+    val caseId = Regex("\\bGA-[A-Za-z0-9-]+\\b", RegexOption.IGNORE_CASE)
+        .find(review.summary)?.value.orEmpty()
+    val title = when {
+        review.intakeType == "renewal" -> "Renewal review"
+        review.intakeType == "admission" -> "Admission review"
+        else -> "More details needed"
+    }
+    val content = lines.drop(1).filterNot { line ->
+        line.startsWith("ID:", ignoreCase = true) || line.equals(caseId, ignoreCase = true)
+    }
+    val warningHeaderIndex = content.indexOfFirst { line ->
+        line.contains("need before saving", ignoreCase = true) ||
+            line.contains("please check", ignoreCase = true) ||
+            line.contains("more details needed", ignoreCase = true)
+    }
+    val guidanceStart = content.indexOfFirst { line ->
+        line.startsWith("Send ", ignoreCase = true) ||
+            line.startsWith("Reply ", ignoreCase = true)
+    }
+    val detailsEnd = listOf(warningHeaderIndex, guidanceStart)
+        .filter { it >= 0 }
+        .minOrNull() ?: content.size
+    val details = content.take(detailsEnd)
+    val warningEnd = if (guidanceStart >= 0) guidanceStart else content.size
+    val warnings = if (warningHeaderIndex >= 0) {
+        content.subList((warningHeaderIndex + 1).coerceAtMost(content.size), warningEnd.coerceAtLeast(warningHeaderIndex + 1))
+            .map(::cleanWarningLine)
+            .filter(String::isNotBlank)
+    } else {
+        emptyList()
+    }
+    val guidance = if (guidanceStart >= 0) content.drop(guidanceStart) else emptyList()
+    return AgentAlphaReviewPresentation(
+        title = title,
+        caseId = caseId,
+        details = details,
+        warnings = warnings,
+        guidance = guidance,
+    )
+}
+
+private fun styledReviewText(line: String): AnnotatedString = buildAnnotatedString {
+    val segments = cleanReviewLine(line).split(" • ")
+    segments.forEachIndexed { index, rawSegment ->
+        if (index > 0) append("  •  ")
+        val segment = rawSegment.trim()
+        val colon = segment.indexOf(':')
+        if (colon in 1..24) {
+            pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
+            append(segment.substring(0, colon + 1))
+            pop()
+            val value = segment.substring(colon + 1)
+            if (value.isNotBlank()) append(value)
+        } else {
+            appendAsteriskStyledText(segment)
+        }
+    }
+}
+
+private fun AnnotatedString.Builder.appendAsteriskStyledText(value: String) {
+    var cursor = 0
+    Regex("\\*([^*]+)\\*").findAll(value).forEach { match ->
+        if (match.range.first > cursor) append(value.substring(cursor, match.range.first))
+        pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
+        append(match.groupValues[1])
+        pop()
+        cursor = match.range.last + 1
+    }
+    if (cursor < value.length) append(value.substring(cursor))
+}
+
+private fun cleanReviewLine(line: String): String = line
+    .replace("⚠️", "")
+    .trim()
+
+private fun cleanWarningLine(line: String): String = cleanReviewLine(line)
+    .replace(Regex("^(?:[•*-]|\\d+[.)])\\s*"), "")
+    .trim()
+
+private fun reviewDetailSectionTitle(line: String): String {
+    val normalized = cleanReviewLine(line).lowercase()
+    return when {
+        normalized.startsWith("guardian:") -> "CONTACT"
+        normalized.startsWith("school:") -> "ACADEMY & EDUCATION"
+        normalized.startsWith("address:") -> "ADDRESS"
+        normalized.startsWith("joining:") || normalized.startsWith("paid through:") -> "SCHEDULE"
+        normalized.startsWith("skills:") -> "CRICKET PROFILE"
+        normalized.startsWith("payment:") || normalized.startsWith("*₹") -> "PAYMENT"
+        normalized.startsWith("ref:") -> "PAYMENT REFERENCE"
+        else -> "DETAILS"
     }
 }
 
