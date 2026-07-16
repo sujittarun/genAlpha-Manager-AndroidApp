@@ -1,16 +1,21 @@
 package com.genalpha.cricketacademy.ui
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.pdf.PdfRenderer
 import android.net.Uri
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -59,7 +64,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -194,8 +203,7 @@ fun AgentAlphaShareSheet(
     LaunchedEffect(review?.summary) {
         if (review != null) {
             delay(120)
-            val reviewIndex = if (request.items.isEmpty()) 0 else request.items.size + 1
-            listState.animateScrollToItem(reviewIndex)
+            listState.animateScrollToItem(0)
         }
     }
 
@@ -270,7 +278,7 @@ fun AgentAlphaShareSheet(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    if (request.items.isNotEmpty()) {
+                    if (request.items.isNotEmpty() && review == null) {
                         item {
                             Text(
                                 text = "Shared attachments (${request.items.size})",
@@ -300,7 +308,10 @@ fun AgentAlphaShareSheet(
 
                     review?.let { currentReview ->
                         item {
-                            AgentAlphaReviewCard(currentReview)
+                            AgentAlphaComparisonPanel(
+                                items = request.items,
+                                review = currentReview,
+                            )
                         }
 
                         if (confirmation == null) {
@@ -429,6 +440,318 @@ private data class AgentAlphaReviewPresentation(
     val warnings: List<String>,
     val guidance: List<String>,
 )
+
+private data class AgentAlphaSourcePreviewState(
+    val isLoading: Boolean = true,
+    val bitmap: ImageBitmap? = null,
+)
+
+@Composable
+private fun AgentAlphaComparisonPanel(
+    items: List<AgentAlphaShareItem>,
+    review: AgentAlphaIntakeReview,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.secondaryContainer,
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 15.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.FactCheck,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Compare source with AgentAlpha",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                    Text(
+                        text = "Check every value against the original before confirming.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                }
+            }
+        }
+
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val useSideBySide = maxWidth >= 700.dp && items.isNotEmpty()
+            if (useSideBySide) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    AgentAlphaSourceDocument(
+                        items = items,
+                        modifier = Modifier.weight(1f),
+                        previewHeight = 560.dp,
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        ComparisonPaneLabel("EXTRACTED DRAFT")
+                        AgentAlphaReviewCard(review)
+                    }
+                }
+            } else {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    if (items.isNotEmpty()) {
+                        AgentAlphaSourceDocument(
+                            items = items,
+                            modifier = Modifier.fillMaxWidth(),
+                            previewHeight = 340.dp,
+                        )
+                    }
+                    ComparisonPaneLabel("EXTRACTED DRAFT")
+                    AgentAlphaReviewCard(review)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ComparisonPaneLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.primary,
+    )
+}
+
+@Composable
+private fun AgentAlphaSourceDocument(
+    items: List<AgentAlphaShareItem>,
+    modifier: Modifier = Modifier,
+    previewHeight: androidx.compose.ui.unit.Dp,
+) {
+    val context = LocalContext.current
+    var selectedIndex by remember(items) { mutableStateOf(0) }
+    var showExpanded by remember { mutableStateOf(false) }
+    val selected = items[selectedIndex.coerceIn(items.indices)]
+    val previewState by produceState(
+        initialValue = AgentAlphaSourcePreviewState(),
+        selected.uri,
+        selected.mimeType,
+    ) {
+        val bitmap = withContext(Dispatchers.IO) {
+            context.decodeSourcePreview(selected, maxDimension = 1800)
+        }
+        value = AgentAlphaSourcePreviewState(isLoading = false, bitmap = bitmap)
+    }
+    val preview = previewState.bitmap
+
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        tonalElevation = 2.dp,
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Description,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    ComparisonPaneLabel("SOURCE DOCUMENT")
+                    Text(
+                        text = selected.fileName,
+                        maxLines = 1,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (items.size > 1) {
+                    Text(
+                        text = "${selectedIndex + 1}/${items.size}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(previewHeight)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                    .clickable(enabled = preview != null) { showExpanded = true },
+                contentAlignment = Alignment.Center,
+            ) {
+                when {
+                    preview != null -> Image(
+                        bitmap = preview,
+                        contentDescription = "Original ${selected.fileName}",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(8.dp),
+                        contentScale = ContentScale.Fit,
+                    )
+                    previewState.isLoading -> CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp)
+                    else -> Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(Icons.Outlined.Description, contentDescription = null)
+                        Text(
+                            text = "Preview unavailable",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (items.size > 1) {
+                    TextButton(
+                        onClick = { selectedIndex = (selectedIndex - 1 + items.size) % items.size },
+                    ) { Text("Previous") }
+                    TextButton(
+                        onClick = { selectedIndex = (selectedIndex + 1) % items.size },
+                    ) { Text("Next") }
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { showExpanded = true }, enabled = preview != null) {
+                    Text("Open & zoom")
+                }
+            }
+        }
+    }
+
+    if (showExpanded && preview != null) {
+        AgentAlphaExpandedSource(
+            preview = preview,
+            fileName = selected.fileName,
+            onDismiss = { showExpanded = false },
+        )
+    }
+}
+
+@Composable
+private fun AgentAlphaExpandedSource(
+    preview: ImageBitmap,
+    fileName: String,
+    onDismiss: () -> Unit,
+) {
+    var scale by remember(preview) { mutableStateOf(1f) }
+    var offset by remember(preview) { mutableStateOf(Offset.Zero) }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = Color(0xFF111318),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding(),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Original document",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                        )
+                        Text(
+                            text = fileName,
+                            maxLines = 1,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.7f),
+                        )
+                    }
+                    TextButton(onClick = {
+                        scale = 1f
+                        offset = Offset.Zero
+                    }) {
+                        Text("Reset", color = Color.White)
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Outlined.Close, contentDescription = "Close document", tint = Color.White)
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .pointerInput(preview) {
+                            detectTransformGestures { _, pan, zoom, _ ->
+                                scale = (scale * zoom).coerceIn(1f, 5f)
+                                offset = if (scale <= 1f) Offset.Zero else offset + pan
+                            }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(
+                        bitmap = preview,
+                        contentDescription = "Original $fileName",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(10.dp)
+                            .graphicsLayer {
+                                scaleX = scale
+                                scaleY = scale
+                                translationX = offset.x
+                                translationY = offset.y
+                            },
+                        contentScale = ContentScale.Fit,
+                    )
+                }
+                Text(
+                    text = "Pinch to zoom • drag to inspect handwriting",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.72f),
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun AgentAlphaReviewCard(review: AgentAlphaIntakeReview) {
@@ -710,10 +1033,8 @@ private fun reviewDetailSectionTitle(line: String): String {
 private fun AgentAlphaAttachmentRow(item: AgentAlphaShareItem) {
     val context = LocalContext.current
     val preview by produceState<ImageBitmap?>(initialValue = null, item.uri, item.mimeType) {
-        value = if (item.mimeType.startsWith("image/")) {
-            withContext(Dispatchers.IO) { context.decodeSharePreview(item.uri) }
-        } else {
-            null
+        value = withContext(Dispatchers.IO) {
+            context.decodeSourcePreview(item, maxDimension = 512)
         }
     }
     Row(
@@ -787,14 +1108,48 @@ private suspend fun Context.readAgentAlphaAttachments(
     }
 }
 
-private fun Context.decodeSharePreview(uri: Uri): ImageBitmap? = runCatching {
+private fun Context.decodeSourcePreview(
+    item: AgentAlphaShareItem,
+    maxDimension: Int,
+): ImageBitmap? = if (
+    item.mimeType.equals("application/pdf", ignoreCase = true) ||
+    item.fileName.endsWith(".pdf", ignoreCase = true) ||
+    contentResolver.getType(item.uri).equals("application/pdf", ignoreCase = true)
+) {
+    decodePdfPreview(item.uri, maxDimension)
+} else {
+    decodeImagePreview(item.uri, maxDimension)
+}
+
+private fun Context.decodeImagePreview(uri: Uri, maxDimension: Int): ImageBitmap? = runCatching {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
     var sample = 1
-    while (bounds.outWidth / sample > 512 || bounds.outHeight / sample > 512) sample *= 2
+    while (bounds.outWidth / sample > maxDimension || bounds.outHeight / sample > maxDimension) sample *= 2
     val options = BitmapFactory.Options().apply { inSampleSize = sample }
     contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
         ?.asImageBitmap()
+}.getOrNull()
+
+private fun Context.decodePdfPreview(uri: Uri, maxDimension: Int): ImageBitmap? = runCatching {
+    contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
+        PdfRenderer(descriptor).use { renderer ->
+            if (renderer.pageCount == 0) {
+                null
+            } else {
+                renderer.openPage(0).use { page ->
+                    val longestSide = maxOf(page.width, page.height).coerceAtLeast(1)
+                    val renderScale = (maxDimension.toFloat() / longestSide).coerceAtMost(2f)
+                    val width = (page.width * renderScale).toInt().coerceAtLeast(1)
+                    val height = (page.height * renderScale).toInt().coerceAtLeast(1)
+                    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                    bitmap.eraseColor(android.graphics.Color.WHITE)
+                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    bitmap.asImageBitmap()
+                }
+            }
+        }
+    }
 }.getOrNull()
 
 private fun formatBytes(bytes: Long): String = when {

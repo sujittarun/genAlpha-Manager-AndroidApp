@@ -17,6 +17,11 @@ const SESSION_IDLE_SECONDS = Number.isFinite(configuredIdleSeconds)
   ? Math.min(900, Math.max(60, configuredIdleSeconds))
   : 120;
 const SESSION_IDLE_MS = SESSION_IDLE_SECONDS * 1_000;
+const configuredAppReviewSeconds = Number(env("AGENTALPHA_APP_REVIEW_SECONDS") || "900");
+const APP_REVIEW_SECONDS = Number.isFinite(configuredAppReviewSeconds)
+  ? Math.min(3600, Math.max(300, configuredAppReviewSeconds))
+  : 900;
+const APP_REVIEW_MS = APP_REVIEW_SECONDS * 1_000;
 const AGENT_TRIGGER = /\b(?:agent\s*alpha|agen\s*alpha|agent\s*alfa)\b/i;
 const MEDIA_MESSAGE_TYPES = new Set(["image", "document", "audio", "video"]);
 type ReplyIntent = "confirm" | "reject" | "correction" | "unknown";
@@ -36,8 +41,9 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function sessionExpiry(): string {
-  return new Date(Date.now() + SESSION_IDLE_MS).toISOString();
+function sessionExpiry(channel = "whatsapp"): string {
+  const ttl = channel === "web" ? APP_REVIEW_MS : SESSION_IDLE_MS;
+  return new Date(Date.now() + ttl).toISOString();
 }
 
 function serviceHeaders(extra: Record<string, string> = {}) {
@@ -213,7 +219,7 @@ async function createStandaloneWhatsappSession(message: ReturnType<typeof normal
       status: "collecting",
       opened_at: message.message_timestamp,
       last_message_at: message.message_timestamp,
-      expires_at: sessionExpiry(),
+      expires_at: sessionExpiry("whatsapp"),
       created_by: "AgentAlpha standalone WhatsApp media intake",
     }),
   });
@@ -239,7 +245,7 @@ async function createGroupSession(message: ReturnType<typeof normalizeMessage>) 
       status: "collecting",
       opened_at: message.message_timestamp,
       last_message_at: message.message_timestamp,
-      expires_at: sessionExpiry(),
+      expires_at: sessionExpiry("whatsapp_group"),
       created_by: "AgentAlpha group intake",
     }),
   });
@@ -354,7 +360,7 @@ async function ingestMessage(input: any, channel = "whatsapp") {
     headers: { Prefer: "return=representation" },
     body: JSON.stringify({
       last_message_at: message.message_timestamp,
-      expires_at: sessionExpiry(),
+      expires_at: sessionExpiry(channel),
     }),
   });
   const touchedSession = touched?.[0] || session;
@@ -1181,7 +1187,7 @@ async function processSession(sessionId: string, allowReprocess = false) {
           : {},
         conflicts: extraction.result.conflicts, missing_fields: extraction.result.missing_fields,
         overall_confidence: extraction.result.overall_confidence, extraction_version: version,
-        confirmation_message_id: confirmationMessageId, expires_at: sessionExpiry(),
+        confirmation_message_id: confirmationMessageId, expires_at: sessionExpiry(session.channel),
         error_code: "", error_message: "",
       }),
     });
@@ -1418,21 +1424,26 @@ async function processDueSessions() {
 }
 
 async function expireIdleSessions() {
-  const before = new Date(Date.now() - SESSION_IDLE_MS).toISOString();
-  return await rest(
-    `admission_intake_sessions?status=in.(collecting,ready_for_processing,waiting_for_confirmation)` +
-      `&updated_at=lte.${encodeURIComponent(before)}&select=id,display_id`,
-    {
-      method: "PATCH",
-      headers: { Prefer: "return=representation" },
-      body: JSON.stringify({
-        status: "expired",
-        expires_at: new Date().toISOString(),
-        error_code: "session_idle_timeout",
-        error_message: `AgentAlpha session ended after ${SESSION_IDLE_SECONDS} seconds of inactivity.`,
-      }),
-    },
-  );
+  async function expireChannels(channels: string, idleMs: number, idleSeconds: number) {
+    const before = new Date(Date.now() - idleMs).toISOString();
+    return await rest(
+      `admission_intake_sessions?status=in.(collecting,ready_for_processing,waiting_for_confirmation)` +
+        `&channel=in.(${channels})&updated_at=lte.${encodeURIComponent(before)}&select=id,display_id`,
+      {
+        method: "PATCH",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({
+          status: "expired",
+          expires_at: new Date().toISOString(),
+          error_code: "session_idle_timeout",
+          error_message: `AgentAlpha session ended after ${idleSeconds} seconds of inactivity.`,
+        }),
+      },
+    );
+  }
+  const whatsapp = await expireChannels("whatsapp,whatsapp_group", SESSION_IDLE_MS, SESSION_IDLE_SECONDS);
+  const app = await expireChannels("web", APP_REVIEW_MS, APP_REVIEW_SECONDS);
+  return [...(whatsapp || []), ...(app || [])];
 }
 
 Deno.serve(async (request) => {
