@@ -282,8 +282,9 @@ async function uploadPaymentProof(path: string, bytes: Uint8Array, mime: string)
   if (!response.ok) throw new Error(`Unable to store canonical payment proof: ${await response.text()}`);
 }
 
-async function promoteRenewalProof(session: any) {
-  if (session.intake_type !== "renewal" || !session.matched_student_id) return session;
+async function promotePaymentProof(session: any) {
+  if (!["admission", "renewal"].includes(String(session.intake_type || ""))) return session;
+  if (session.intake_type === "renewal" && !session.matched_student_id) return session;
   const draft = structuredClone(session.draft || {});
   const payment = draft.payment || {};
   const sourcePath = String(payment.proof_path || "");
@@ -293,7 +294,10 @@ async function promoteRenewalProof(session: any) {
 
   const source = await downloadStoredMedia(sourceBucket, sourcePath);
   const extension = mediaExtension(sourcePath, source.mime);
-  const targetPath = `${session.matched_student_id}/whatsapp-intake-${session.id}.${extension}`;
+  const ownerPath = session.intake_type === "renewal"
+    ? session.matched_student_id
+    : `admission-${session.id}`;
+  const targetPath = `${ownerPath}/whatsapp-intake-${session.id}.${extension}`;
   await uploadPaymentProof(targetPath, source.bytes, source.mime);
   payment.proof_bucket = "payment-proofs";
   payment.proof_path = targetPath;
@@ -773,6 +777,11 @@ async function processSession(sessionId: string, allowReprocess = false) {
     if (proof && (activePayment.amount > 0 || intakeType === "renewal")) {
       activePayment.proof_bucket = "admission-intake";
       activePayment.proof_path = proof.path;
+    } else if (intakeType === "admission" && Number(activePayment.amount || 0) <= 0) {
+      // A photographed admission form is source evidence, not a payment proof.
+      // Some vision responses echo its attachment path despite that distinction.
+      activePayment.proof_bucket = "";
+      activePayment.proof_path = "";
     }
     const match = intakeType === "renewal" ? await matchRenewalPlayer(activeDraft) : null;
     const planInference = intakeType === "renewal" ? applyDeterministicRenewalPlan(activeDraft, match) : null;
@@ -839,7 +848,7 @@ async function finalizeConfirmedSession(session: any, confirmationMessageId: str
     throw new Error(`Cannot confirm yet. Resolve: ${session.conflicts.join(" ")}`);
   }
   if (session.intake_type === "renewal") {
-    session = await promoteRenewalProof(session);
+    session = await promotePaymentProof(session);
     const result = await rpc("finalize_renewal_intake", {
       p_session_id: session.id,
       p_confirmation_message_id: confirmationMessageId,
@@ -860,6 +869,7 @@ async function finalizeConfirmedSession(session: any, confirmationMessageId: str
   if (session.intake_type !== "admission") {
     throw new Error("Clarify whether this is a new admission or renewal before confirming.");
   }
+  session = await promotePaymentProof(session);
   const result = await rpc("finalize_admission_intake", {
     p_session_id: session.id,
     p_confirmation_message_id: confirmationMessageId,
@@ -1027,7 +1037,7 @@ Deno.serve(async (request) => {
     if (action === "promote_session_proof") {
       const sessions = await rest(`admission_intake_sessions?select=*&id=eq.${encodeURIComponent(String(payload.session_id))}&limit=1`);
       if (!sessions?.[0]) throw new Error("Intake session not found.");
-      const promoted = await promoteRenewalProof(sessions[0]);
+      const promoted = await promotePaymentProof(sessions[0]);
       const proofPath = String(promoted.draft?.payment?.proof_path || "");
       if (!proofPath) throw new Error("This intake session has no payment proof to promote.");
       if (promoted.renewal_payment_id) {
