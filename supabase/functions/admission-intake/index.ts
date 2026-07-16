@@ -1,3 +1,5 @@
+import { shouldTargetWaitingReview } from "./routing.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-intake-secret",
@@ -11,8 +13,6 @@ const INTAKE_DEBOUNCE_SECONDS = Number.isFinite(configuredDebounceSeconds)
   : 20;
 const INTAKE_DEBOUNCE_MS = INTAKE_DEBOUNCE_SECONDS * 1_000;
 const AGENT_TRIGGER = /\b(?:agent\s*alpha|agen\s*alpha|agent\s*alfa)\b/i;
-const EXPLICIT_NEW_CASE = /\b(?:new admission|admission form|new player|renewal|payment|paid)\b/i;
-const CORRECTION_CONTEXT = /\b(?:change|correct|correction|instead|actually|should be|update|edit|remove|ignore|mark (?:it )?as|pending|not paid|unpaid|not do(?:ne)?|wrong)\b/i;
 const MEDIA_MESSAGE_TYPES = new Set(["image", "document", "audio", "video"]);
 type ReplyIntent = "confirm" | "reject" | "correction" | "unknown";
 
@@ -128,13 +128,6 @@ function statedRenewalPlan(text: string): string {
   return "";
 }
 
-function startsNewCaseText(text: string): boolean {
-  const normalized = text.trim().toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ");
-  if (!normalized || CORRECTION_CONTEXT.test(normalized)) return false;
-  if (/^(?:confirm|confirmed|approve|approved|cancel|discard|reject|save|proceed)\b/.test(normalized)) return false;
-  return EXPLICIT_NEW_CASE.test(normalized);
-}
-
 async function findReplySession(message: ReturnType<typeof normalizeMessage>) {
   if (message.reply_to_provider_message_id) {
     const rows = await rest(
@@ -150,12 +143,16 @@ async function findReplySession(message: ReturnType<typeof normalizeMessage>) {
   }
   // An unthreaded attachment is a new case. Staff must use WhatsApp Reply when
   // an image/document is evidence for a review that is already waiting.
-  if (message.message_type !== "text") return null;
-  if (startsNewCaseText(message.text_body)) return null;
+  if (!shouldTargetWaitingReview(
+    message.message_type,
+    message.text_body,
+    message.reply_to_provider_message_id,
+  )) return null;
   const rows = await rest(
     `admission_intake_sessions?select=*&source_chat_id=eq.${encodeURIComponent(message.source_chat_id)}` +
-      `&status=eq.waiting_for_confirmation&order=last_message_at.desc&limit=1`,
+      `&status=eq.waiting_for_confirmation&order=last_message_at.desc&limit=2`,
   );
+  if ((rows || []).length > 1) return { routing_ambiguous: true };
   return rows?.[0] || null;
 }
 
@@ -178,6 +175,18 @@ async function findRecentTextOnlyCollectingSession(message: ReturnType<typeof no
     String(item.message_type || "") === "text" && String(item.text_body || "").trim().length > 0
   );
   return hasMeaningfulText && !hasMedia ? session : null;
+}
+
+async function findActiveTextBundle(message: ReturnType<typeof normalizeMessage>) {
+  const since = new Date(Date.now() - 30 * 60_000).toISOString();
+  const sessions = await rest(
+    `admission_intake_sessions?select=*&channel=eq.whatsapp` +
+      `&source_chat_id=eq.${encodeURIComponent(message.source_chat_id)}` +
+      `&source_sender_id=eq.${encodeURIComponent(message.source_sender_id)}` +
+      `&status=eq.collecting&last_message_at=gte.${encodeURIComponent(since)}` +
+      `&order=last_message_at.desc&limit=1`,
+  );
+  return sessions?.[0] || null;
 }
 
 async function createStandaloneWhatsappSession(message: ReturnType<typeof normalizeMessage>) {
@@ -266,7 +275,24 @@ async function ingestMessage(input: any, channel = "whatsapp") {
   const explicitWebSession = explicitWebSessionId
     ? (await rest(`admission_intake_sessions?select=*&id=eq.${encodeURIComponent(explicitWebSessionId)}&limit=1`))?.[0] || null
     : null;
-  const replySession = explicitWebSession || await findReplySession(message);
+  const activeTextBundle = !explicitWebSession && channel === "whatsapp" &&
+      message.message_type === "text" && !message.reply_to_provider_message_id
+    ? await findActiveTextBundle(message)
+    : null;
+  const replyRouting = explicitWebSession || activeTextBundle || await findReplySession(message);
+  if (replyRouting?.routing_ambiguous) {
+    await sendWhatsappSummary({
+      channel,
+      source_chat_id: message.source_chat_id,
+      source_sender_id: message.source_sender_id,
+    }, [
+      "⚠️ *I found more than one open AgentAlpha review.*",
+      "Use WhatsApp Reply on the exact admission or renewal review you want to update.",
+      "I did not change or save any case.",
+    ].join("\n"));
+    return { ignored: true, reason: "Multiple open reviews require a threaded WhatsApp reply." };
+  }
+  const replySession = replyRouting;
   const normalizedGroupText = message.text_body.trim().toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ");
   const obviousGroupChatter = /^(?:wow|whoa|lol|haha|nice|super|interesting|what is this|what s this|what is that|how does this work)$/.test(normalizedGroupText);
   if (channel === "whatsapp_group" && obviousGroupChatter) {
@@ -282,8 +308,6 @@ async function ingestMessage(input: any, channel = "whatsapp") {
     session = await createGroupSession(message);
   } else if (!session && channel === "whatsapp" && MEDIA_MESSAGE_TYPES.has(message.message_type)) {
     session = await findRecentTextOnlyCollectingSession(message) || await createStandaloneWhatsappSession(message);
-  } else if (!session && channel === "whatsapp" && startsNewCaseText(message.text_body)) {
-    session = await createStandaloneWhatsappSession(message);
   } else if (!session) {
     session = await getOrCreateCollectingSession(message, channel);
   }
