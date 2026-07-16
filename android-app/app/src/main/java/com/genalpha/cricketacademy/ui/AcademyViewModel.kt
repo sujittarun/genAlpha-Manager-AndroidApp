@@ -5,6 +5,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.genalpha.cricketacademy.data.DashboardStats
 import com.genalpha.cricketacademy.data.AdmissionDraft
+import com.genalpha.cricketacademy.data.AgentAlphaAttachment
+import com.genalpha.cricketacademy.data.AgentAlphaConfirmation
+import com.genalpha.cricketacademy.data.AgentAlphaIntakeReview
 import com.genalpha.cricketacademy.data.ManagerSession
 import com.genalpha.cricketacademy.data.OperationResult
 import com.genalpha.cricketacademy.data.PaymentFollowUp
@@ -369,6 +372,35 @@ class AcademyViewModel(
                 )
             }
         }
+    }
+
+    suspend fun createAgentAlphaIntake(
+        notes: String,
+        attachments: List<AgentAlphaAttachment>,
+    ): AgentAlphaIntakeReview = withFreshSession { session ->
+        repository.createAgentAlphaIntake(session, notes, attachments)
+    }
+
+    suspend fun correctAgentAlphaIntake(
+        review: AgentAlphaIntakeReview,
+        correction: String,
+    ): AgentAlphaIntakeReview = withFreshSession { session ->
+        repository.correctAgentAlphaIntake(session, review, correction)
+    }
+
+    suspend fun confirmAgentAlphaIntake(
+        review: AgentAlphaIntakeReview,
+    ): AgentAlphaConfirmation {
+        val confirmation = withFreshSession { session ->
+            repository.confirmAgentAlphaIntake(session, review)
+        }
+        if (confirmation.intakeType == "renewal") {
+            loadKids()
+            loadFinance()
+        } else {
+            loadPendingAdmissions()
+        }
+        return confirmation
     }
 
     suspend fun addExpense(

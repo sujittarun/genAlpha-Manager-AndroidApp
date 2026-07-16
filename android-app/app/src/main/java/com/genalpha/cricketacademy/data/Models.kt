@@ -156,6 +156,24 @@ data class OperationResult(
     val message: String,
 )
 
+data class AgentAlphaAttachment(
+    val fileName: String,
+    val mimeType: String,
+    val bytes: ByteArray,
+)
+
+data class AgentAlphaIntakeReview(
+    val sessionId: String,
+    val chatId: String,
+    val intakeType: String,
+    val summary: String,
+)
+
+data class AgentAlphaConfirmation(
+    val intakeType: String,
+    val message: String,
+)
+
 data class ReminderSettings(
     val whatsappRemindersEnabled: Boolean = true,
     val paymentLinksEnabled: Boolean = true,

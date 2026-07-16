@@ -12,6 +12,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -20,7 +21,9 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.Instant
 import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
 class SupabaseRepository(
@@ -69,6 +72,203 @@ class SupabaseRepository(
     private var shouldReconnect = false
     private var realtimeListener: StudentRealtimeListener? = null
     private var realtimeSession: ManagerSession? = null
+
+    suspend fun createAgentAlphaIntake(
+        session: ManagerSession,
+        notes: String,
+        attachments: List<AgentAlphaAttachment>,
+    ): AgentAlphaIntakeReview = withContext(Dispatchers.IO) {
+        require(notes.isNotBlank() || attachments.isNotEmpty()) {
+            "Share a message, payment screenshot, admission form, or PDF first."
+        }
+
+        val chatId = "android-${UUID.randomUUID()}"
+        val initialText = notes.trim().ifBlank {
+            "Shared to AgentAlpha from the GenAlpha Android app. Determine whether this is a new admission or an existing-player renewal from the supplied attachment."
+        }
+        val first = callAgentAlpha(
+            session,
+            agentAlphaIngestPayload(
+                session = session,
+                chatId = chatId,
+                messageType = "text",
+                text = initialText,
+            ),
+        )
+        val sessionId = first.optString("sessionId")
+        if (sessionId.isBlank()) throw IllegalStateException("AgentAlpha did not create an intake session.")
+
+        attachments.forEachIndexed { index, attachment ->
+            val safeName = attachment.fileName
+                .replace(Regex("[^A-Za-z0-9._-]+"), "-")
+                .trim('-')
+                .ifBlank { "shared-file" }
+            val path = "$sessionId/${UUID.randomUUID()}-$safeName"
+            uploadAgentAlphaAttachment(session, path, attachment)
+            callAgentAlpha(
+                session,
+                agentAlphaIngestPayload(
+                    session = session,
+                    chatId = chatId,
+                    messageType = if (attachment.mimeType.equals("application/pdf", true)) "document" else "image",
+                    mediaMimeType = attachment.mimeType,
+                    mediaFileName = attachment.fileName,
+                    storagePath = path,
+                    timestamp = Instant.now().plusMillis(index.toLong() + 1).toString(),
+                ),
+            )
+        }
+
+        val processed = callAgentAlpha(
+            session,
+            JSONObject()
+                .put("action", "process_session")
+                .put("session_id", sessionId),
+        )
+        agentAlphaReview(processed.optJSONObject("reprocessed") ?: processed, sessionId, chatId)
+    }
+
+    suspend fun correctAgentAlphaIntake(
+        session: ManagerSession,
+        review: AgentAlphaIntakeReview,
+        correction: String,
+    ): AgentAlphaIntakeReview = withContext(Dispatchers.IO) {
+        require(correction.isNotBlank()) { "Enter the correction first." }
+        val ingested = callAgentAlpha(
+            session,
+            agentAlphaIngestPayload(
+                session = session,
+                chatId = review.chatId,
+                messageType = "text",
+                text = "Correction: ${correction.trim()}",
+            ),
+        )
+        val updated = ingested.optJSONObject("reprocessed") ?: callAgentAlpha(
+            session,
+            JSONObject()
+                .put("action", "process_session")
+                .put("session_id", review.sessionId)
+                .put("force", true),
+        )
+        agentAlphaReview(updated.optJSONObject("reprocessed") ?: updated, review.sessionId, review.chatId)
+    }
+
+    suspend fun confirmAgentAlphaIntake(
+        session: ManagerSession,
+        review: AgentAlphaIntakeReview,
+    ): AgentAlphaConfirmation = withContext(Dispatchers.IO) {
+        val response = callAgentAlpha(
+            session,
+            JSONObject()
+                .put("action", "confirm")
+                .put("session_id", review.sessionId)
+                .put("confirmation_message_id", "android-${review.sessionId}")
+                .put("confirmed_by", session.email.ifBlank { "Manager Android app" }),
+        )
+        val intakeType = response.optString("intakeType", review.intakeType)
+        val result = response.optJSONObject("result") ?: JSONObject()
+        val message = if (intakeType == "renewal") {
+            val player = result.optString("student_name").ifBlank { "Player" }
+            val from = result.optString("cycle_start_date")
+            val to = result.optString("renewal_to_date")
+            "$player renewed${if (from.isNotBlank() && to.isNotBlank()) " from $from to $to" else ""}. Payment and finance ledger updated."
+        } else {
+            val regNo = result.optString("reg_no")
+            val paymentNote = if (result.optString("payment_claim_id").isNotBlank()) {
+                " Payment is pending manager verification."
+            } else {
+                ""
+            }
+            "Admission${if (regNo.isNotBlank()) " $regNo" else ""} created in the manager review queue.$paymentNote"
+        }
+        AgentAlphaConfirmation(intakeType = intakeType, message = message)
+    }
+
+    private fun agentAlphaIngestPayload(
+        session: ManagerSession,
+        chatId: String,
+        messageType: String,
+        text: String = "",
+        mediaMimeType: String = "",
+        mediaFileName: String = "",
+        storagePath: String = "",
+        timestamp: String = Instant.now().toString(),
+    ): JSONObject {
+        val message = JSONObject()
+            .put("provider_message_id", UUID.randomUUID().toString())
+            .put("source_chat_id", chatId)
+            .put("source_sender_id", session.email.ifBlank { "manager-android" })
+            .put("source_sender_name", session.email.ifBlank { "Manager" })
+            .put("message_type", messageType)
+            .put("message_timestamp", timestamp)
+        if (text.isNotBlank()) message.put("text_body", text)
+        if (storagePath.isNotBlank()) {
+            message
+                .put("media_mime_type", mediaMimeType)
+                .put("media_filename", mediaFileName)
+                .put("storage_bucket", "admission-intake")
+                .put("storage_path", storagePath)
+        }
+        return JSONObject()
+            .put("action", "ingest")
+            .put("channel", "web")
+            .put("process_now", false)
+            .put("message", message)
+    }
+
+    private fun callAgentAlpha(session: ManagerSession, payload: JSONObject): JSONObject {
+        val request = baseRequest("$baseUrl/functions/v1/admission-intake")
+            .header("Authorization", "Bearer ${session.accessToken}")
+            .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+        client.newCall(request).execute().use { response ->
+            val raw = response.body?.string().orEmpty()
+            val body = runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
+            if (!response.isSuccessful || body.optBoolean("success", true) == false) {
+                throw SupabaseException(
+                    response.code,
+                    body.optString("error").ifBlank { parseError(raw) },
+                )
+            }
+            return body
+        }
+    }
+
+    private fun uploadAgentAlphaAttachment(
+        session: ManagerSession,
+        path: String,
+        attachment: AgentAlphaAttachment,
+    ) {
+        val urlBuilder = "$baseUrl/storage/v1/object/admission-intake".toHttpUrl().newBuilder()
+        path.split('/').filter { it.isNotBlank() }.forEach(urlBuilder::addPathSegment)
+        val contentType = attachment.mimeType.ifBlank { "application/octet-stream" }.toMediaType()
+        val request = Request.Builder()
+            .url(urlBuilder.build())
+            .header("apikey", anonKey)
+            .header("Authorization", "Bearer ${session.accessToken}")
+            .header("x-upsert", "false")
+            .post(attachment.bytes.toRequestBody(contentType))
+            .build()
+        client.newCall(request).execute().use { response ->
+            val raw = response.body?.string().orEmpty()
+            if (!response.isSuccessful) throw SupabaseException(response.code, parseError(raw))
+        }
+    }
+
+    private fun agentAlphaReview(
+        response: JSONObject,
+        sessionId: String,
+        chatId: String,
+    ): AgentAlphaIntakeReview {
+        val summary = response.optString("summary")
+        if (summary.isBlank()) throw IllegalStateException("AgentAlpha did not return a review. Please try again.")
+        return AgentAlphaIntakeReview(
+            sessionId = response.optString("sessionId", sessionId),
+            chatId = chatId,
+            intakeType = response.optString("intakeType", "unknown"),
+            summary = summary,
+        )
+    }
 
     suspend fun fetchStudents(): List<Student> = withContext(Dispatchers.IO) {
         val request = baseRequest("$baseUrl/rest/v1/students?select=*&order=join_date.desc")

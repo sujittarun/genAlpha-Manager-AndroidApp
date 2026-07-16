@@ -671,7 +671,11 @@ private fun themedBadgeTone(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AcademyApp(viewModel: AcademyViewModel) {
+fun AcademyApp(
+    viewModel: AcademyViewModel,
+    agentAlphaShare: AgentAlphaShareRequest? = null,
+    onAgentAlphaShareConsumed: () -> Unit = {},
+) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -787,6 +791,12 @@ fun AcademyApp(viewModel: AcademyViewModel) {
         uiState.errorMessage?.let {
             snackbarHostState.showSnackbar(it)
             viewModel.clearError()
+        }
+    }
+
+    LaunchedEffect(agentAlphaShare?.id, uiState.session?.accessToken) {
+        if (agentAlphaShare != null && uiState.session == null) {
+            showLoginSheet = true
         }
     }
 
@@ -1289,6 +1299,14 @@ fun AcademyApp(viewModel: AcademyViewModel) {
                                 }
                             }
                         },
+                    )
+                }
+
+                if (agentAlphaShare != null && uiState.session != null && !showLoginSheet) {
+                    AgentAlphaShareSheet(
+                        request = agentAlphaShare,
+                        viewModel = viewModel,
+                        onDismiss = onAgentAlphaShareConsumed,
                     )
                 }
 

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Gen Alpha Academy</string>
+    <string name="share_to_agent_alpha">Share to AgentAlpha</string>
     <!-- Set these before sharing the admission app with parents -->
     <string name="academy_upi_id">9059962499@ybl</string>
     <string name="academy_upi_name">Gen Alpha Cricket Academy</string>
