@@ -20,34 +20,10 @@ with manager_alerts as (
       when reminder.selected_plan = 'special' then greatest(round(reminder.amount / 10000.0), 1)::integer
       else null
     end as payment_months,
-    concat_ws(
-      E'\n',
-      'Payment update for manager verification',
-      concat('Player: ', student.name),
-      case reminder.selected_plan
-        when 'monthly' then 'Plan: 1 Month'
-        when 'quarterly' then 'Plan: 3 Months'
-        when 'halfyearly' then 'Plan: 6 Months'
-        when 'special' then 'Plan: Special Training'
-        else null
-      end,
-      case
-        when reminder.selected_plan = 'monthly' then 'Duration: 1 month'
-        when reminder.selected_plan = 'quarterly' then 'Duration: 3 months'
-        when reminder.selected_plan = 'halfyearly' then 'Duration: 6 months'
-        when reminder.selected_plan = 'special' and reminder.amount = 28500 then 'Duration: 3 months'
-        when reminder.selected_plan = 'special' and reminder.amount = 54000 then 'Duration: 6 months'
-        when reminder.selected_plan = 'special' then concat(
-          'Duration: ', greatest(round(reminder.amount / 10000.0), 1)::integer, ' month',
-          case when greatest(round(reminder.amount / 10000.0), 1)::integer = 1 then '' else 's' end
-        )
-        else null
-      end,
-      case when reminder.amount > 0 then concat('Amount: Rs ', trim(to_char(reminder.amount, 'FM999999990.00'))) end,
-      case
-        when flow.event_type = 'manager_payment_alert_with_proof_sent' then 'Payment proof attached.'
-        else 'Payment proof not received yet.'
-      end
+    concat(
+      'Vempati Sandeep - Proud owner of Gen Alpha Academy - Payment vochindi babu chusko.',
+      E'\n\nPlayer: ', student.name,
+      E'\nconfirm the payment in the app.'
     ) as readable_body
   from public.whatsapp_flow_events flow
   join public.students student on student.id = flow.student_id
@@ -70,7 +46,24 @@ where flow.id = manager_alerts.id
     flow.message_body is null
     or btrim(flow.message_body) = ''
     or flow.message_body like 'manager_payment_alert%'
+    or flow.message_body like 'Payment update for manager verification%'
   );
+
+update public.reminder_events reminder
+set manager_payment_alert_meta_response = jsonb_set(
+  coalesce(reminder.manager_payment_alert_meta_response, '{}'::jsonb),
+  '{message_body}',
+  to_jsonb(flow.message_body),
+  true
+)
+from public.whatsapp_flow_events flow
+where flow.reminder_event_id = reminder.id
+  and flow.event_type in (
+    'manager_payment_alert_with_proof_sent',
+    'manager_payment_alert_without_proof_sent'
+  )
+  and flow.message_body is not null
+  and btrim(flow.message_body) <> '';
 
 -- Meta delivery/read callbacks share the outbound message id. Copy the exact
 -- stored body and business fields so every timeline row remains self-contained.

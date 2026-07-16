@@ -2144,19 +2144,12 @@ async function managerAlertMessageBody(
     console.warn("Unable to load manager alert template body", error);
   }
 
-  const plan = String(reminderEvent?.selected_plan || "");
-  const amount = Number(reminderEvent?.amount || 0);
-  const months = plan === "special"
-    ? inferSpecialTrainingMonthsFromAmount(amount)
-    : PLAN_MONTHS[plan] || 0;
   return [
-    "Payment update for manager verification",
+    "Vempati Sandeep - Proud owner of Gen Alpha Academy - Payment vochindi babu chusko.",
+    "",
     `Player: ${playerName}`,
-    plan ? `Plan: ${PLAN_LABELS[plan] || plan}` : "",
-    months ? `Duration: ${months} month${months === 1 ? "" : "s"}` : "",
-    amount > 0 ? `Amount: Rs ${amount.toLocaleString("en-IN")}` : "",
-    proofWasSubmitted ? "Payment proof attached." : "Payment proof not received yet.",
-  ].filter(Boolean).join("\n");
+    "confirm the payment in the app.",
+  ].join("\n");
 }
 
 async function createUpiPaymentLink(
