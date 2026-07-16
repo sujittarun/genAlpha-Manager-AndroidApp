@@ -570,7 +570,7 @@ async function forwardToAdmissionIntake(value: any, message: any) {
     message?.text?.body || message?.[messageType]?.caption ||
       message?.interactive?.button_reply?.title || "",
   );
-  if (groupId && !message?.context?.id && !/\bagent\s*alpha\b/i.test(messageText)) {
+  if (groupId && !message?.context?.id && !/\b(?:agent\s*alpha|agen\s*alpha|agent\s*alfa)\b/i.test(messageText)) {
     return null;
   }
   const response = await fetch(

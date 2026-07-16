@@ -67,6 +67,7 @@ ADMISSION_INTAKE_ENABLED=true
 ADMISSION_INTAKE_SHARED_NUMBER=true
 ADMISSION_INTAKE_STAFF_PHONES=919876543210,919123456789
 ADMISSION_INTAKE_WEBHOOK_SECRET=<random-long-secret>
+ADMISSION_INTAKE_DEBOUNCE_SECONDS=20
 ```
 
 `META_ADMISSION_PHONE_NUMBER_ID` is Meta's phone-number asset ID, not the human-readable telephone number.
@@ -91,7 +92,7 @@ Messages from multiple allowlisted staff are combined by group ID when the offic
 
 ## Inactivity processing
 
-The receiver stores messages immediately. A scheduler calls `process_due` after the conversation has been idle for at least 60 seconds, allowing images and text to arrive out of order.
+The receiver stores messages immediately and uses a 20-second silence debounce, allowing images and text to arrive out of order. Every relevant new message restarts the window. The scheduler's `process_due` call remains as a recovery path if a background debounce task is interrupted.
 
 The scheduler is installed as the `admission-intake-process-due` pg_cron job and authenticates with the existing `whatsapp_cron_secret` in Supabase Vault. Collecting-session creation uses a database advisory lock so simultaneous Meta webhook deliveries cannot split one conversation into separate sessions.
 
@@ -108,9 +109,13 @@ A repeated confirmation within 30 minutes is attached to the recently confirmed 
 Direct staff chats keep their natural conversational behavior. In a WhatsApp group, intake is deliberately opt-in so unrelated academy conversation never reaches the model:
 
 - Put `AgentAlpha` in the caption of each new admission form or payment screenshot, for example `AgentAlpha renew Rohan`.
+- Common trigger spellings `AgentAlpha`, `AgenAlpha`, and `Agent Alfa` are accepted.
 - Each new AgentAlpha-tagged group item opens its own isolated session, so simultaneous screenshots cannot merge.
 - Reply to that item's AgentAlpha review when correcting or confirming it. Replies are routed by the WhatsApp message ID to the exact session.
 - Untagged group messages that are not replies inside an existing AgentAlpha thread are ignored.
+- Short reactions such as `wow`, `nice`, and `what is this` are ignored, including when they are replies.
+- AgentAlpha produces one combined review after 20 seconds without another relevant message. Each relevant reply restarts the timer.
+- Only allowlisted staff phone numbers can start, correct, confirm, or cancel a case.
 - A bare screenshot followed by an unrelated text message is intentionally not paired. Caption the screenshot or resend it with the AgentAlpha trigger.
 
 This routing protects application context only after Meta delivers group webhooks. WhatsApp Business Platform group availability and coexistence eligibility must still be verified with a live group test for the academy number.

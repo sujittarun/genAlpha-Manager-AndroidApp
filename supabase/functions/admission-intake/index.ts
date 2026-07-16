@@ -5,7 +5,12 @@ const corsHeaders = {
 };
 
 const PROMPT_VERSION = "gen-alpha-conversation-v2";
-const AGENT_TRIGGER = /\bagent\s*alpha\b/i;
+const configuredDebounceSeconds = Number(env("ADMISSION_INTAKE_DEBOUNCE_SECONDS") || "20");
+const INTAKE_DEBOUNCE_SECONDS = Number.isFinite(configuredDebounceSeconds)
+  ? Math.min(120, Math.max(5, configuredDebounceSeconds))
+  : 20;
+const INTAKE_DEBOUNCE_MS = INTAKE_DEBOUNCE_SECONDS * 1_000;
+const AGENT_TRIGGER = /\b(?:agent\s*alpha|agen\s*alpha|agent\s*alfa)\b/i;
 type ReplyIntent = "confirm" | "reject" | "correction" | "unknown";
 
 function env(name: string): string {
@@ -141,15 +146,16 @@ async function findReplySession(message: ReturnType<typeof normalizeMessage>) {
 }
 
 async function createGroupSession(message: ReturnType<typeof normalizeMessage>) {
-  const rows = await rest("admission_intake_sessions?select=*", {
+  const providerSessionKey = `agentalpha:${message.source_chat_id}:${message.provider_message_id}`;
+  const rows = await rest("admission_intake_sessions?select=*&on_conflict=provider_session_key", {
     method: "POST",
-    headers: { Prefer: "return=representation" },
+    headers: { Prefer: "resolution=ignore-duplicates,return=representation" },
     body: JSON.stringify({
       channel: "whatsapp_group",
       source_chat_id: message.source_chat_id,
       source_sender_id: message.source_sender_id,
       source_sender_name: message.source_sender_name,
-      provider_session_key: `agentalpha:${message.source_chat_id}:${message.provider_message_id}`,
+      provider_session_key: providerSessionKey,
       status: "collecting",
       opened_at: message.message_timestamp,
       last_message_at: message.message_timestamp,
@@ -157,7 +163,12 @@ async function createGroupSession(message: ReturnType<typeof normalizeMessage>) 
       created_by: "AgentAlpha group intake",
     }),
   });
-  return rows?.[0];
+  if (rows?.[0]) return rows[0];
+  const existing = await rest(
+    `admission_intake_sessions?select=*&provider_session_key=eq.${encodeURIComponent(providerSessionKey)}&limit=1`,
+  );
+  if (!existing?.[0]) throw new Error("Unable to create or retrieve the AgentAlpha group session.");
+  return existing[0];
 }
 
 async function findRecentlyConfirmedSession(message: ReturnType<typeof normalizeMessage>) {
@@ -191,6 +202,11 @@ async function ingestMessage(input: any, channel = "whatsapp") {
   if (existing?.[0]) return { duplicate: true, message: existing[0], session: existing[0].admission_intake_sessions };
 
   const replySession = await findReplySession(message);
+  const normalizedGroupText = message.text_body.trim().toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ");
+  const obviousGroupChatter = /^(?:wow|whoa|lol|haha|nice|super|interesting|what is this|what s this|what is that|how does this work)$/.test(normalizedGroupText);
+  if (channel === "whatsapp_group" && obviousGroupChatter) {
+    return { ignored: true, reason: "Non-actionable group chatter." };
+  }
   if (channel === "whatsapp_group" && !replySession && !AGENT_TRIGGER.test(message.text_body)) {
     return { ignored: true, reason: "Group messages require AgentAlpha or a reply inside an AgentAlpha thread." };
   }
@@ -199,16 +215,34 @@ async function ingestMessage(input: any, channel = "whatsapp") {
   const session = responseSession || (channel === "whatsapp_group"
     ? await createGroupSession(message)
     : await getOrCreateCollectingSession(message, channel));
-  const rows = await rest("admission_intake_messages?select=*", {
+  const rows = await rest("admission_intake_messages?select=*&on_conflict=provider_message_id", {
     method: "POST",
-    headers: { Prefer: "return=representation" },
+    headers: { Prefer: "resolution=ignore-duplicates,return=representation" },
     body: JSON.stringify({ ...message, session_id: session.id, processing_status: "assigned" }),
   });
-  await rest(`admission_intake_sessions?id=eq.${encodeURIComponent(session.id)}`, {
+  if (!rows?.[0]) {
+    const duplicate = await rest(
+      `admission_intake_messages?select=*,admission_intake_sessions(*)&provider_message_id=eq.${encodeURIComponent(message.provider_message_id)}&limit=1`,
+    );
+    if (!duplicate?.[0]) throw new Error("Unable to create or retrieve the intake message.");
+    return { duplicate: true, message: duplicate[0], session: duplicate[0].admission_intake_sessions };
+  }
+  const touched = await rest(`admission_intake_sessions?id=eq.${encodeURIComponent(session.id)}&select=*`, {
     method: "PATCH",
-    body: JSON.stringify({ last_message_at: message.message_timestamp, expires_at: new Date(Date.now() + 24 * 3600_000).toISOString() }),
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      last_message_at: message.message_timestamp,
+      expires_at: new Date(Date.now() + 24 * 3600_000).toISOString(),
+    }),
   });
-  return { duplicate: false, message: rows[0], session, isReply: Boolean(responseSession) };
+  const touchedSession = touched?.[0] || session;
+  return {
+    duplicate: false,
+    message: rows[0],
+    session: touchedSession,
+    isReply: Boolean(responseSession),
+    debounceToken: touchedSession.updated_at,
+  };
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -1191,6 +1225,9 @@ async function handleReply(ingested: any) {
     return { intent, rejected: true };
   }
   if (intent === "unknown") {
+    if (session.channel === "whatsapp_group") {
+      return { intent, ignored: true, reason: "Non-actionable group reply." };
+    }
     await sendWhatsappSummary(session, [
       "I’m not fully sure what you want me to do.",
       "Reply *CONFIRM* to save, *CANCEL* to discard, or send the corrected detail.",
@@ -1198,7 +1235,11 @@ async function handleReply(ingested: any) {
     return { intent, needsClarification: true };
   }
   const beforeDraft = session.draft || {};
-  const reprocessed = await processSession(session.id, true);
+  const reset = await rest(`admission_intake_sessions?id=eq.${encodeURIComponent(session.id)}&select=*`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({ status: "collecting", error_code: "", error_message: "" }),
+  });
   await rest("admission_intake_corrections", {
     method: "POST",
     body: JSON.stringify({
@@ -1206,19 +1247,37 @@ async function handleReply(ingested: any) {
       provider_message_id: ingested.message.provider_message_id,
       correction_text: ingested.message.text_body,
       before_draft: beforeDraft,
-      patch: reprocessed.draft || {},
-      after_draft: reprocessed.draft || {},
+      patch: {},
+      after_draft: beforeDraft,
       interpreted_by: env("OPENAI_ADMISSION_MODEL") || "gpt-5.4-mini",
       created_by: ingested.message.source_sender_name || ingested.message.source_sender_id || "WhatsApp staff",
     }),
   });
-  return { intent: "correction", reprocessed };
+  scheduleSessionProcessing(session.id, reset?.[0]?.updated_at || ingested.debounceToken || session.updated_at);
+  return { intent: "correction", queued: true, debounce_seconds: INTAKE_DEBOUNCE_SECONDS };
+}
+
+function scheduleSessionProcessing(sessionId: string, debounceToken: string) {
+  const task = new Promise((resolve) => setTimeout(resolve, INTAKE_DEBOUNCE_MS)).then(async () => {
+    try {
+      const rows = await rest(`admission_intake_sessions?select=*&id=eq.${encodeURIComponent(sessionId)}&limit=1`);
+      const session = rows?.[0];
+      if (!session || session.status !== "collecting") return;
+      if (!debounceToken || session.updated_at !== debounceToken) return;
+      await processSession(sessionId);
+    } catch (error) {
+      console.error("AgentAlpha debounce processing failed", sessionId, error);
+    }
+  });
+  const edgeRuntime = (globalThis as any).EdgeRuntime;
+  if (edgeRuntime?.waitUntil) edgeRuntime.waitUntil(task);
+  else task.catch((error) => console.error("AgentAlpha debounce task failed", error));
 }
 
 async function processDueSessions() {
-  const before = new Date(Date.now() - 60_000).toISOString();
+  const before = new Date(Date.now() - INTAKE_DEBOUNCE_MS).toISOString();
   const rows = await rest(
-    `admission_intake_sessions?select=id&status=eq.collecting&last_message_at=lte.${encodeURIComponent(before)}&order=last_message_at.asc&limit=10`,
+    `admission_intake_sessions?select=id&status=eq.collecting&updated_at=lte.${encodeURIComponent(before)}&order=updated_at.asc&limit=10`,
   );
   const results = [];
   for (const row of rows || []) {
@@ -1238,10 +1297,17 @@ Deno.serve(async (request) => {
     if (action === "ingest") {
       const ingested = await ingestMessage(payload.message || payload, payload.channel || "whatsapp");
       if (ingested.ignored) return jsonResponse({ success: true, ignored: true, reason: ingested.reason });
+      if (ingested.duplicate) {
+        return jsonResponse({ success: true, sessionId: ingested.session?.id, duplicate: true });
+      }
+      if (payload.process_now) return jsonResponse({ success: true, ...(await processSession(ingested.session.id)) });
+      if (ingested.session?.status === "collecting") {
+        scheduleSessionProcessing(ingested.session.id, ingested.debounceToken || ingested.session.updated_at);
+        return jsonResponse({ success: true, sessionId: ingested.session.id, queued: true, debounce_seconds: INTAKE_DEBOUNCE_SECONDS });
+      }
       if (ingested.isReply || ingested.session?.status === "waiting_for_confirmation") {
         return jsonResponse({ success: true, ...await handleReply(ingested) });
       }
-      if (payload.process_now) return jsonResponse({ success: true, ...(await processSession(ingested.session.id)) });
       return jsonResponse({ success: true, sessionId: ingested.session.id, duplicate: ingested.duplicate });
     }
     if (action === "process_session") {
