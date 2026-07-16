@@ -1,4 +1,8 @@
-import { selectWaitingReviewCandidate, shouldTargetWaitingReview } from "./routing.ts";
+import {
+  selectRecentExpiredReviewCandidate,
+  selectWaitingReviewCandidate,
+  shouldTargetWaitingReview,
+} from "./routing.ts";
 
 function assertRoute(
   expected: boolean,
@@ -70,4 +74,58 @@ Deno.test("similar open reviews remain ambiguous", () => {
     { ...base, updated_at: "2026-07-16T10:15:10.000Z" },
   ]);
   if (close !== "ambiguous") throw new Error("Close reviews must require a threaded reply.");
+});
+
+Deno.test("an explicit correction can resume a just-expired review", () => {
+  const now = Date.parse("2026-07-16T13:56:00.000Z");
+  const selected = selectRecentExpiredReviewCandidate([{
+    id: "expired-review",
+    intake_type: "admission",
+    confirmation_message_id: "wamid.review",
+    status: "expired",
+    error_code: "session_idle_timeout",
+    updated_at: "2026-07-16T13:54:00.000Z",
+  }], now);
+  if (selected === null || selected === "ambiguous" || selected.id !== "expired-review") {
+    throw new Error("Expected the just-expired review to resume.");
+  }
+});
+
+Deno.test("an old or manually ended review cannot resume", () => {
+  const now = Date.parse("2026-07-16T14:10:00.000Z");
+  const selected = selectRecentExpiredReviewCandidate([{
+    id: "stale-review",
+    intake_type: "admission",
+    confirmation_message_id: "wamid.review",
+    status: "expired",
+    error_code: "session_idle_timeout",
+    updated_at: "2026-07-16T13:54:00.000Z",
+  }], now);
+  if (selected !== null) throw new Error("A stale review must remain ended.");
+});
+
+Deno.test("a tiny split correction resumes the more complete expired review", () => {
+  const now = Date.parse("2026-07-16T13:56:00.000Z");
+  const shared = { intake_type: "admission", status: "expired", error_code: "session_idle_timeout" };
+  const selected = selectRecentExpiredReviewCandidate([
+    {
+      ...shared,
+      id: "complete-form-review",
+      confirmation_message_id: "wamid.form-review",
+      missing_fields: ["payment.proof_or_cash_confirmation", "fee_plan"],
+      extraction_version: 1,
+      updated_at: "2026-07-16T13:52:00.000Z",
+    },
+    {
+      ...shared,
+      id: "split-correction-review",
+      confirmation_message_id: "wamid.correction-review",
+      missing_fields: ["applicant_name", "date_of_birth", "gender", "parent_contact_no", "address", "join_date", "time_slot"],
+      extraction_version: 1,
+      updated_at: "2026-07-16T13:54:00.000Z",
+    },
+  ], now);
+  if (selected === null || selected === "ambiguous" || selected.id !== "complete-form-review") {
+    throw new Error("Expected the more complete form review to absorb the split correction.");
+  }
 });

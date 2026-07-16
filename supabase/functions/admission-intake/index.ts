@@ -1,5 +1,10 @@
-import { selectWaitingReviewCandidate, shouldTargetWaitingReview } from "./routing.ts";
 import {
+  selectRecentExpiredReviewCandidate,
+  selectWaitingReviewCandidate,
+  shouldTargetWaitingReview,
+} from "./routing.ts";
+import {
+  feePlanMentionFromMessages,
   normalizeAdmissionPlan,
   removeResolvedBlankFormPaymentConflicts,
   shouldUseMediaAsPaymentProof,
@@ -11,7 +16,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const PROMPT_VERSION = "gen-alpha-conversation-v3";
+const PROMPT_VERSION = "gen-alpha-conversation-v4";
 const configuredDebounceSeconds = Number(env("ADMISSION_INTAKE_DEBOUNCE_SECONDS") || "20");
 const INTAKE_DEBOUNCE_SECONDS = Number.isFinite(configuredDebounceSeconds)
   ? Math.min(120, Math.max(5, configuredDebounceSeconds))
@@ -174,7 +179,19 @@ async function findReplySession(message: ReturnType<typeof normalizeMessage>) {
   );
   const selected = selectWaitingReviewCandidate(rows || []);
   if (selected === "ambiguous") return { routing_ambiguous: true };
-  return selected;
+  if (selected) return selected;
+
+  const since = new Date(Date.now() - 10 * 60_000).toISOString();
+  const expiredRows = await rest(
+    `admission_intake_sessions?select=*&source_chat_id=eq.${encodeURIComponent(message.source_chat_id)}` +
+      `&source_sender_id=eq.${encodeURIComponent(message.source_sender_id)}` +
+      `&status=eq.expired&error_code=eq.session_idle_timeout` +
+      `&intake_type=in.(admission,renewal)&updated_at=gte.${encodeURIComponent(since)}` +
+      `&order=updated_at.desc&limit=10`,
+  );
+  const expired = selectRecentExpiredReviewCandidate(expiredRows || []);
+  if (expired === "ambiguous") return { routing_ambiguous: true };
+  return expired;
 }
 
 async function findRecentTextOnlyCollectingSession(message: ReturnType<typeof normalizeMessage>) {
@@ -347,6 +364,19 @@ async function ingestMessage(input: any, channel = "whatsapp") {
     session = await findRecentTextOnlyCollectingSession(message) || await createStandaloneWhatsappSession(message);
   } else if (!session) {
     session = await getOrCreateCollectingSession(message, channel);
+  }
+  if (session?.status === "expired" && session?.error_code === "session_idle_timeout") {
+    const reopened = await rest(`admission_intake_sessions?id=eq.${encodeURIComponent(session.id)}&select=*`, {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({
+        status: "waiting_for_confirmation",
+        error_code: "",
+        error_message: "",
+        expires_at: sessionExpiry(channel),
+      }),
+    });
+    session = reopened?.[0] || session;
   }
   const rows = await rest("admission_intake_messages?select=*&on_conflict=provider_message_id", {
     method: "POST",
@@ -1022,7 +1052,7 @@ function summary(session: any, result: any, match: any = null) {
     paymentLine,
     ...(warnings.length ? ["", "⚠️ *Need before saving*", ...reviewProblems.map((x: string, index: number) => `${index + 1}. ${x}`)] : []),
     paymentClaimed && missingLabels.some((label: string) => /payment screenshot|amount paid/i.test(label))
-      ? "Send the payment screenshot; if it was cash, send e.g. *Cash ₹4,000*."
+      ? "Use WhatsApp Reply on this review to send the payment screenshot; if it was cash, reply e.g. *Cash ₹4,000*."
       : "",
     warnings.length ? "Send all missing details in one reply. I’ll return one final review." : "Reply *CONFIRM* to create, or send one correction message.",
   ].filter(Boolean).join("\n");
@@ -1096,6 +1126,25 @@ async function processSession(sessionId: string, allowReprocess = false) {
     const activeDraft = intakeType === "renewal"
       ? normalizeRenewalDraft(extraction.result.renewal)
       : normalizeAdmissionPlan(extraction.result.draft);
+    const mentionedFeePlan = feePlanMentionFromMessages(messages);
+    if (mentionedFeePlan && intakeType === "admission") {
+      activeDraft.fee_plan = mentionedFeePlan.plan;
+      activeDraft.months_covered = mentionedFeePlan.months;
+    } else if (mentionedFeePlan && intakeType === "renewal") {
+      activeDraft.plan_type = mentionedFeePlan.plan;
+      activeDraft.months_covered = mentionedFeePlan.months;
+    }
+    if (mentionedFeePlan) {
+      extraction.result.field_evidence = [
+        ...(extraction.result.field_evidence || []),
+        {
+          field: intakeType === "renewal" ? "renewal.plan_type" : "draft.fee_plan",
+          confidence: 1,
+          source: "deterministic_staff_plan_wording",
+          notes: `Mapped staff message "${mentionedFeePlan.source}" to ${mentionedFeePlan.plan} (${mentionedFeePlan.months} months).`,
+        },
+      ];
+    }
     if (intakeType === "admission" && correctImplausibleJoiningYear(activeDraft, messages)) {
       extraction.result.field_evidence = [
         ...(extraction.result.field_evidence || []),

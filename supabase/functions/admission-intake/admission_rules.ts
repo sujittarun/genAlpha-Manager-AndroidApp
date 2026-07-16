@@ -28,6 +28,45 @@ export function normalizeAdmissionPlan<T extends Record<string, any>>(draft: T):
   return normalized as T;
 }
 
+export type ConversationFeePlan = {
+  plan: "monthly" | "quarterly" | "halfyearly" | "special";
+  months: number;
+  source: string;
+};
+
+export function feePlanMentionFromMessages(
+  messages: Array<{ text_body?: unknown }>,
+): ConversationFeePlan | null {
+  let selected: ConversationFeePlan | null = null;
+  for (const message of messages || []) {
+    const source = String(message?.text_body || "").trim();
+    if (!source) continue;
+    const text = source.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ");
+    const hasPlanContext = /\b(?:fee|fees|plan|paid|pay|payment|register|renew|renewal|training)\b/.test(text);
+    if (!hasPlanContext) continue;
+
+    const special = text.match(/\bspecial(?: training| coaching)?(?:\s+(?:for|plan|paid))?\s*(\d{1,2})?\s*months?\b/) ||
+      text.match(/\b(\d{1,2})\s*months?\s+special(?: training| coaching)?\b/);
+    if (special) {
+      const months = Math.min(36, Math.max(1, Number(special[1] || 1)));
+      selected = { plan: "special", months, source };
+      continue;
+    }
+    if (/\b(?:6|six)\s*months?\b|\bhalf\s*yearly\b/.test(text)) {
+      selected = { plan: "halfyearly", months: 6, source };
+      continue;
+    }
+    if (/\b(?:3|three)\s*months?\b|\bquarterly\b/.test(text)) {
+      selected = { plan: "quarterly", months: 3, source };
+      continue;
+    }
+    if (/\b(?:1|one)\s*months?\b|\bmonthly\b/.test(text)) {
+      selected = { plan: "monthly", months: 1, source };
+    }
+  }
+  return selected;
+}
+
 export function removeResolvedBlankFormPaymentConflicts(
   conflicts: unknown[],
   paymentDate: unknown,

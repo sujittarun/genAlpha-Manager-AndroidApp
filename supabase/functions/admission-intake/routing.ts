@@ -21,6 +21,13 @@ type WaitingReview = {
   updated_at?: string;
 };
 
+type ExpiredReview = WaitingReview & {
+  status?: string;
+  error_code?: string;
+  missing_fields?: unknown[];
+  extraction_version?: number;
+};
+
 /**
  * Natural, unthreaded replies such as "yes" belong to the latest bot review
  * when that review is clearly newer than every other open review.
@@ -44,4 +51,33 @@ export function selectWaitingReviewCandidate<T extends WaitingReview>(
   const previousAt = Date.parse(String(candidates[1].updated_at));
   const isClearlyLatest = latestAt - previousAt >= 90_000;
   return isClearlyLatest ? candidates[0] : "ambiguous";
+}
+
+export function selectRecentExpiredReviewCandidate<T extends ExpiredReview>(
+  rows: T[],
+  now = Date.now(),
+  graceMs = 10 * 60_000,
+): T | "ambiguous" | null {
+  const recent = rows.filter((row) => {
+    const updatedAt = Date.parse(String(row.updated_at || ""));
+    return row.status === "expired" && row.error_code === "session_idle_timeout" &&
+      Number.isFinite(updatedAt) && now - updatedAt >= 0 && now - updatedAt <= graceMs;
+  });
+  const viable = recent.filter((row) =>
+    (row.intake_type === "admission" || row.intake_type === "renewal") &&
+    Boolean(row.confirmation_message_id?.trim())
+  );
+  if (viable.length > 1) {
+    const ranked = [...viable].sort((left, right) => {
+      const missingDifference = (left.missing_fields?.length || 0) - (right.missing_fields?.length || 0);
+      if (missingDifference !== 0) return missingDifference;
+      const versionDifference = Number(right.extraction_version || 0) - Number(left.extraction_version || 0);
+      if (versionDifference !== 0) return versionDifference;
+      return Date.parse(String(right.updated_at)) - Date.parse(String(left.updated_at));
+    });
+    const bestMissing = ranked[0].missing_fields?.length || 0;
+    const nextMissing = ranked[1].missing_fields?.length || 0;
+    if (nextMissing - bestMissing >= 3) return ranked[0];
+  }
+  return selectWaitingReviewCandidate(recent);
 }
