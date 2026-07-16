@@ -58,6 +58,7 @@ import com.genalpha.cricketacademy.data.AgentAlphaConfirmation
 import com.genalpha.cricketacademy.data.AgentAlphaIntakeReview
 import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -99,6 +100,12 @@ fun AgentAlphaShareSheet(
             isWorking = true
             error = ""
             status = "Uploading securely and reading with AgentAlpha…"
+            val slowNotice = launch {
+                delay(15_000)
+                if (isWorking) {
+                    status = "AgentAlpha is reading the complete form. Detailed handwriting can take up to two minutes—keep this screen open."
+                }
+            }
             try {
                 val attachments = context.readAgentAlphaAttachments(request.items)
                 review = viewModel.createAgentAlphaIntake(notes, attachments)
@@ -107,6 +114,7 @@ fun AgentAlphaShareSheet(
                 error = throwable.message ?: "AgentAlpha could not read this share."
                 status = "Nothing was saved."
             } finally {
+                slowNotice.cancel()
                 isWorking = false
             }
         }

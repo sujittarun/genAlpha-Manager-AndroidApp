@@ -21,9 +21,11 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.SocketTimeoutException
 import java.time.Instant
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class SupabaseRepository(
@@ -31,6 +33,12 @@ class SupabaseRepository(
     private val anonKey: String = SupabaseConfig.ANON_KEY,
 ) {
     private val client = OkHttpClient.Builder().build()
+    private val agentAlphaClient = client.newBuilder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(120, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .callTimeout(150, TimeUnit.SECONDS)
+        .build()
     private val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
     private val authAdapter = moshi.adapter(AuthResponse::class.java)
     private val errorAdapter = moshi.adapter(ErrorResponse::class.java)
@@ -221,16 +229,23 @@ class SupabaseRepository(
             .header("Authorization", "Bearer ${session.accessToken}")
             .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
             .build()
-        client.newCall(request).execute().use { response ->
-            val raw = response.body?.string().orEmpty()
-            val body = runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
-            if (!response.isSuccessful || body.optBoolean("success", true) == false) {
-                throw SupabaseException(
-                    response.code,
-                    body.optString("error").ifBlank { parseError(raw) },
-                )
+        try {
+            agentAlphaClient.newCall(request).execute().use { response ->
+                val raw = response.body?.string().orEmpty()
+                val body = runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
+                if (!response.isSuccessful || body.optBoolean("success", true) == false) {
+                    throw SupabaseException(
+                        response.code,
+                        body.optString("error").ifBlank { parseError(raw) },
+                    )
+                }
+                return body
             }
-            return body
+        } catch (_: SocketTimeoutException) {
+            throw SupabaseException(
+                408,
+                "AgentAlpha could not finish within 2½ minutes. Nothing was saved; please share the form again.",
+            )
         }
     }
 
@@ -249,7 +264,7 @@ class SupabaseRepository(
             .header("x-upsert", "false")
             .post(attachment.bytes.toRequestBody(contentType))
             .build()
-        client.newCall(request).execute().use { response ->
+        agentAlphaClient.newCall(request).execute().use { response ->
             val raw = response.body?.string().orEmpty()
             if (!response.isSuccessful) throw SupabaseException(response.code, parseError(raw))
         }
