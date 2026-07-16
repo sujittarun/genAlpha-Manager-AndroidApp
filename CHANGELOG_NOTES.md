@@ -32,6 +32,8 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 - Added the missing one-minute idle-session processor and conservative near-name matching for unique player spellings such as Adil/Aadil.
 - Added protected Meta token health diagnostics, detailed media-auth errors, and service-JWT compatibility for rotated Supabase project keys.
 - Added deterministic renewal-plan inference when an exact academy price matches the uniquely matched player's existing standard plan.
+- Accepted natural confirmation phrases such as `confirm 1 month renewal` when they agree with the reviewed draft, blocked confirmation while conflicts remain, and replaced dense intake summaries with compact WhatsApp-formatted review cards.
+- Reused recently confirmed sessions for repeated confirmations so delayed or duplicate staff replies cannot open a new intake conversation.
 
 ### Conversational AI Admission Intake Foundation
 

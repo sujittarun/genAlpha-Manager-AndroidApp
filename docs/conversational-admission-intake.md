@@ -99,6 +99,10 @@ Use a non-expiring Meta system-user token with `whatsapp_business_management` an
 
 For renewals, the extractor never invents a plan. After a unique player match, deterministic app logic may fill monthly, quarterly, or half-yearly only when the screenshot amount exactly matches the academy price and is consistent with that player's existing standard plan. The confirmation message labels this inference before staff approves it.
 
+Confirmation accepts concise natural phrases such as `confirm`, `confirm renewal`, and `confirm 1 month renewal`. If a stated plan differs from the current draft, the message is treated as a correction instead of approval. Missing fields or unresolved conflicts always block finalization. WhatsApp reviews use short bold sections and blank lines for phone readability.
+
+A repeated confirmation within 30 minutes is attached to the recently confirmed session and returns the same idempotent success result instead of opening a new intake conversation.
+
 n8n workflow:
 
 ```text

@@ -97,9 +97,18 @@ function normalizeMessage(input: any) {
 function confirmationIntent(text: string): "confirm" | "reject" | "correction" | "unknown" {
   const normalized = text.trim().toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ");
   if (/^(confirm|confirmed|approve|approved|ok|okay|yes|correct|all correct|looks good|save|save it)$/.test(normalized)) return "confirm";
+  if (/^(?:yes )?(?:confirm|confirmed|approve|approved)(?: (?:this|it|the|for|a|one|1|three|3|six|6|month|months|monthly|quarterly|half|yearly|halfyearly|renewal|admission|payment))*$/.test(normalized)) return "confirm";
   if (/^(reject|cancel|discard|wrong admission|wrong renewal|wrong payment)$/.test(normalized)) return "reject";
   if (normalized.length >= 3) return "correction";
   return "unknown";
+}
+
+function statedRenewalPlan(text: string): string {
+  const normalized = text.trim().toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ");
+  if (/\b(?:1|one) months?\b|\bmonthly\b/.test(normalized)) return "monthly";
+  if (/\b(?:3|three) months?\b|\bquarterly\b/.test(normalized)) return "quarterly";
+  if (/\b(?:6|six) months?\b|\bhalf ?yearly\b/.test(normalized)) return "halfyearly";
+  return "";
 }
 
 async function findReplySession(message: ReturnType<typeof normalizeMessage>) {
@@ -112,6 +121,18 @@ async function findReplySession(message: ReturnType<typeof normalizeMessage>) {
   const rows = await rest(
     `admission_intake_sessions?select=*&source_chat_id=eq.${encodeURIComponent(message.source_chat_id)}` +
       `&status=eq.waiting_for_confirmation&order=last_message_at.desc&limit=1`,
+  );
+  return rows?.[0] || null;
+}
+
+async function findRecentlyConfirmedSession(message: ReturnType<typeof normalizeMessage>) {
+  if (confirmationIntent(message.text_body) !== "confirm") return null;
+  const since = new Date(Date.now() - 30 * 60_000).toISOString();
+  const rows = await rest(
+    `admission_intake_sessions?select=*&source_chat_id=eq.${encodeURIComponent(message.source_chat_id)}` +
+      `&source_sender_id=eq.${encodeURIComponent(message.source_sender_id)}` +
+      `&status=eq.confirmed&confirmed_at=gte.${encodeURIComponent(since)}` +
+      `&order=confirmed_at.desc&limit=1`,
   );
   return rows?.[0] || null;
 }
@@ -135,7 +156,9 @@ async function ingestMessage(input: any, channel = "whatsapp") {
   if (existing?.[0]) return { duplicate: true, message: existing[0], session: existing[0].admission_intake_sessions };
 
   const replySession = await findReplySession(message);
-  const session = replySession || await getOrCreateCollectingSession(message, channel);
+  const recentConfirmedSession = replySession ? null : await findRecentlyConfirmedSession(message);
+  const responseSession = replySession || recentConfirmedSession;
+  const session = responseSession || await getOrCreateCollectingSession(message, channel);
   const rows = await rest("admission_intake_messages?select=*", {
     method: "POST",
     headers: { Prefer: "return=representation" },
@@ -145,7 +168,7 @@ async function ingestMessage(input: any, channel = "whatsapp") {
     method: "PATCH",
     body: JSON.stringify({ last_message_at: message.message_timestamp, expires_at: new Date(Date.now() + 24 * 3600_000).toISOString() }),
   });
-  return { duplicate: false, message: rows[0], session, isReply: Boolean(replySession) };
+  return { duplicate: false, message: rows[0], session, isReply: Boolean(responseSession) };
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -495,58 +518,81 @@ function requiredMissingFields(intakeType: string, draft: any, match: any): stri
   return ["intent"];
 }
 
+function renewalPlanAmountConflict(draft: any): string {
+  const plan = String(draft?.plan_type || "").toLowerCase();
+  const amount = Number(draft?.payment?.amount || 0);
+  const expected: Record<string, number> = { monthly: 3500, quarterly: 9975, halfyearly: 18900 };
+  if (!expected[plan] || amount <= 0 || Math.abs(amount - expected[plan]) < 0.01) return "";
+  return `Payment amount Rs ${amount.toLocaleString("en-IN")} does not match the ${plan} academy price of Rs ${expected[plan].toLocaleString("en-IN")}.`;
+}
+
+function displayDate(value: unknown): string {
+  const raw = String(value || "");
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (!match) return raw || "Not found";
+  const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(match[2]) - 1];
+  return `${Number(match[3])} ${month} ${match[1]}`;
+}
+
+function planLabel(value: unknown): string {
+  const plan = String(value || "").toLowerCase();
+  return ({ monthly: "Monthly", quarterly: "Quarterly", halfyearly: "Half-yearly", special: "Special", custom: "Custom" } as Record<string, string>)[plan] || "Not found";
+}
+
 function summary(session: any, result: any, match: any = null) {
   if (result.intent === "unknown") {
     return [
-      `⚠️ INTAKE NEEDS CONTEXT — ${session.display_id}`,
+      "⚠️ *MORE DETAILS NEEDED*",
+      `ID: ${session.display_id}`,
       "",
-      "I could not determine whether this is a new admission or an existing-player renewal.",
-      "Send the player name plus either NEW ADMISSION or RENEWAL in normal conversation, then I will re-check all messages and screenshots.",
+      "Send the player name and say either:",
+      "• New admission",
+      "• Renewal",
     ].join("\n");
   }
   if (result.intent === "renewal") {
     const d = result.renewal || {};
     const p = d.payment || {};
     const student = match?.student;
-    const warnings = [...(result.conflicts || []).map((x: string) => `⚠️ ${x}`), ...(result.missing_fields || []).map((x: string) => `⚠️ Missing: ${x}`)];
+    const warnings = [...(result.conflicts || []), ...(result.missing_fields || []).map((x: string) => `Missing: ${x}`)];
+    const reference = p.utr || p.transaction_id || "Not found";
     return [
-      `💳 RENEWAL DRAFT — ${session.display_id}`,
+      "💳 *RENEWAL REVIEW*",
+      `ID: ${session.display_id}`,
       "",
-      `Player: ${student?.name || d.player_name || "Not matched"}${student?.reg_no ? ` • Reg ${student.reg_no}` : ""}`,
-      `Matched by: ${match?.evidence?.join(", ") || "No unique match"}`,
-      `Currently paid through: ${match?.paidThrough || "Not available"}`,
-      `Plan / Months: ${d.plan_type || "Not found"} / ${d.months_covered || 0}${result.deterministic_plan_inference ? " (matched from academy fee rules)" : ""}`,
-      `Amount / Paid on: ${p.amount ? `Rs ${Number(p.amount).toLocaleString("en-IN")}` : "Not found"} / ${p.payment_date || "Not found"}`,
-      `Reference: ${p.transaction_id || p.utr || "Not found"}`,
-      `Screenshot status: ${p.screenshot_status || "unknown"}`,
+      `👤 *${student?.name || d.player_name || "Player not matched"}*${student?.reg_no ? ` • Reg ${student.reg_no}` : ""}`,
+      `Paid through: ${displayDate(match?.paidThrough)}`,
       "",
-      ...warnings,
-      warnings.length ? "" : "Staff confirmation will record the payment and advance this player's renewal. Duplicate references and cycles are blocked.",
+      `💰 *₹${p.amount ? Number(p.amount).toLocaleString("en-IN") : "Not found"}* • ${displayDate(p.payment_date)}`,
+      `Plan: ${planLabel(d.plan_type)} • ${d.months_covered || 0} month${Number(d.months_covered || 0) === 1 ? "" : "s"}${result.deterministic_plan_inference ? " (matched from fee rules)" : ""}`,
+      `UTR/Ref: ${reference}`,
+      `Screenshot: ${String(p.screenshot_status || "unknown").toLowerCase() === "successful" ? "✅ Successful" : p.screenshot_status || "Unknown"}`,
       "",
-      "Reply CONFIRM to record this renewal, or send corrections in normal language.",
-    ].filter((line) => line !== "").join("\n");
+      ...(warnings.length ? ["⚠️ *Please check*", ...warnings.map((x: string) => `• ${x}`), ""] : []),
+      warnings.length ? "Send the missing detail or correction." : "Reply *CONFIRM* to save this renewal.",
+      "Or send a correction in normal language.",
+    ].join("\n");
   }
   const d = result.draft;
   const p = d.payment || {};
-  const warnings = [...(result.conflicts || []).map((x: string) => `⚠️ ${x}`), ...(result.missing_fields || []).map((x: string) => `⚠️ Missing: ${x}`)];
+  const warnings = [...(result.conflicts || []), ...(result.missing_fields || []).map((x: string) => `Missing: ${x}`)];
   return [
-    `🏏 ADMISSION DRAFT — ${session.display_id}`,
+    "🏏 *ADMISSION REVIEW*",
+    `ID: ${session.display_id}`,
     "",
-    `Student: ${d.applicant_name || "Not found"}`,
-    `DOB / Age: ${d.date_of_birth || "Not found"}${d.age ? ` / ${d.age}` : ""}`,
+    `👤 *${d.applicant_name || "Student not found"}*`,
+    `DOB: ${displayDate(d.date_of_birth)}${d.age ? ` • Age ${d.age}` : ""}`,
     `Guardian: ${d.father_guardian_name || "Not found"}`,
-    `Contact: ${d.parent_contact_no || "Not found"}`,
-    `School / Grade: ${d.school_college || "Not found"}${d.grade ? ` / ${d.grade}` : ""}`,
-    `Joining / Batch: ${d.join_date || "Not found"} / ${d.time_slot || "Not found"}`,
-    `Plan / Jersey: ${d.fee_plan || "Not found"} / ${d.jersey_size || "Not set"} × ${d.jersey_pairs || 0}`,
-    `Payment claim: ${p.amount ? `Rs ${Number(p.amount).toLocaleString("en-IN")}` : "None"}`,
-    p.amount || p.transaction_id || p.utr ? `Payment status: ${p.screenshot_status || "unknown"} • Ref: ${p.transaction_id || p.utr || "Not found"}` : "",
+    `Phone: ${d.parent_contact_no || "Not found"}`,
     "",
-    ...warnings,
-    warnings.length ? "" : "Confidence checks passed; payment still requires manager verification.",
+    `📅 Joining: ${displayDate(d.join_date)} • ${d.time_slot || "Batch not found"}`,
+    `Plan: ${planLabel(d.fee_plan)}`,
+    ...(p.amount ? ["", `💰 Payment claim: ₹${Number(p.amount).toLocaleString("en-IN")} • ${p.screenshot_status || "Unknown"}`, `UTR/Ref: ${p.utr || p.transaction_id || "Not found"}`] : []),
     "",
-    "Reply CONFIRM to create the pending admission, or send corrections in normal language.",
-  ].filter((line) => line !== "").join("\n");
+    ...(warnings.length ? ["⚠️ *Please check*", ...warnings.map((x: string) => `• ${x}`,), ""] : []),
+    warnings.length ? "Send the missing detail or correction." : "Reply *CONFIRM* to create the pending admission.",
+    "Or send a correction in normal language.",
+  ].join("\n");
 }
 
 async function sendWhatsappSummary(session: any, text: string) {
@@ -622,7 +668,12 @@ async function processSession(sessionId: string) {
         },
       ];
     }
-    extraction.result.conflicts = [...new Set([...(extraction.result.conflicts || []), ...(match?.conflicts || [])])];
+    const planAmountConflict = intakeType === "renewal" ? renewalPlanAmountConflict(activeDraft) : "";
+    extraction.result.conflicts = [...new Set([
+      ...(extraction.result.conflicts || []),
+      ...(match?.conflicts || []),
+      ...(planAmountConflict ? [planAmountConflict] : []),
+    ])];
     extraction.result.missing_fields = requiredMissingFields(intakeType, activeDraft, match);
     const version = Number(session.extraction_version || 0) + 1;
     await rest("admission_ai_extractions", {
@@ -663,6 +714,9 @@ async function finalizeConfirmedSession(session: any, confirmationMessageId: str
   if ((session.missing_fields || []).length) {
     throw new Error(`Cannot confirm yet. Missing: ${session.missing_fields.join(", ")}.`);
   }
+  if ((session.conflicts || []).length) {
+    throw new Error(`Cannot confirm yet. Resolve: ${session.conflicts.join(" ")}`);
+  }
   if (session.intake_type === "renewal") {
     const result = await rpc("finalize_renewal_intake", {
       p_session_id: session.id,
@@ -673,7 +727,12 @@ async function finalizeConfirmedSession(session: any, confirmationMessageId: str
     return {
       intakeType: "renewal",
       row,
-      message: `✅ Renewal recorded for ${row?.student_name || "player"} from ${row?.cycle_start_date || ""} to ${row?.renewal_to_date || ""}. Payment and finance ledger updated.`,
+      message: [
+        "✅ *RENEWAL SAVED*",
+        `Player: ${row?.student_name || "Player"}`,
+        `Coverage: ${displayDate(row?.cycle_start_date)} → ${displayDate(row?.renewal_to_date)}`,
+        "Payment and finance ledger updated.",
+      ].join("\n"),
     };
   }
   if (session.intake_type !== "admission") {
@@ -688,13 +747,27 @@ async function finalizeConfirmedSession(session: any, confirmationMessageId: str
   return {
     intakeType: "admission",
     row,
-    message: `✅ Admission ${row?.reg_no || ""} created in the manager review queue. ${row?.payment_claim_id ? "The payment claim is pending manager verification." : "No payment was recorded."}`,
+    message: [
+      "✅ *ADMISSION CREATED*",
+      `Registration: ${row?.reg_no || "Pending"}`,
+      "Added to the manager review queue.",
+      row?.payment_claim_id ? "Payment claim is pending manager verification." : "No payment was recorded.",
+    ].join("\n"),
   };
 }
 
 async function handleReply(ingested: any) {
-  const intent = confirmationIntent(ingested.message.text_body);
   const session = ingested.session;
+  let intent = confirmationIntent(ingested.message.text_body);
+  const statedPlan = statedRenewalPlan(ingested.message.text_body);
+  if (
+    intent === "confirm" &&
+    session.intake_type === "renewal" &&
+    statedPlan &&
+    statedPlan !== String(session.draft?.plan_type || "").toLowerCase()
+  ) {
+    intent = "correction";
+  }
   if (intent === "confirm") {
     const finalized = await finalizeConfirmedSession(
       session,
