@@ -493,7 +493,7 @@ class SupabaseRepository(
             .put("dry_run", dryRun)
             .put("due_date", dueDate)
             .put("overdue_days", overdueDays)
-            .put("plan_options", JSONArray(listOf("monthly", "quarterly", "halfyearly", "need_help")))
+            .put("plan_options", JSONArray(listOf("monthly", "quarterly", "halfyearly", "special", "need_help")))
             .put("parent_phone", student.parentContactNo)
             .put("manager_phone", settings.managerPhone)
             .put("message_preview", messagePreview)
@@ -1178,7 +1178,28 @@ class SupabaseRepository(
                 row.optSafeString("message_body")
             }
         }
-        if (eventType in setOf("payment_link_sent", "manager_payment_alert_with_proof_sent", "manager_payment_alert_without_proof_sent", "payment_verification_reply_sent")) {
+        if (eventType == "manager_payment_alert_with_proof_sent" || eventType == "manager_payment_alert_without_proof_sent") {
+            val storedBody = row.optSafeString("message_body").trim()
+            if (storedBody.isNotBlank() && !storedBody.startsWith("manager_payment_alert")) return storedBody
+            val plan = row.optSafeString("payment_plan")
+            val planLabel = when (plan) {
+                "monthly" -> "1 Month"
+                "quarterly" -> "3 Months"
+                "halfyearly" -> "6 Months"
+                "special" -> "Special Training"
+                else -> plan
+            }
+            val months = row.optIntValue("payment_months")
+            val amount = row.optDoubleValue("payment_amount")
+            return listOfNotNull(
+                "Payment update sent to manager for verification.",
+                planLabel.takeIf { it.isNotBlank() }?.let { "Plan: $it" },
+                months.takeIf { it > 0 }?.let { "Duration: $it month${if (it == 1) "" else "s"}" },
+                amount.takeIf { it > 0 }?.let { "Amount: Rs ${String.format(Locale.US, "%,.0f", it)}" },
+                if (eventType == "manager_payment_alert_with_proof_sent") "Payment proof attached." else "Payment proof was not attached.",
+            ).joinToString("\n")
+        }
+        if (eventType in setOf("payment_link_sent", "payment_verification_reply_sent")) {
             return row.optSafeString("message_body")
         }
         return listOf(

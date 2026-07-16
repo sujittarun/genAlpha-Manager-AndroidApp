@@ -1,3 +1,16 @@
+import {
+  getSpecialTrainingAmountForMonths,
+  inferSpecialTrainingMonthsFromAmount,
+  monthsForPlan,
+  normalizeChoiceText,
+  normalizeSelectedPlan,
+  PAID_PLAN_OPTIONS,
+  paymentAmountForReminderType,
+  PLAN_LABELS,
+  PLAN_MONTHS,
+  PLAN_OPTIONS,
+} from "./payment_plans.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -27,24 +40,6 @@ const PAYMENT_PAGE_URL = "https://genalphaacademy.in/pay.html";
 const MANAGER_PAYMENT_ALERT_PHONE = "9985822772";
 const MANAGER_PAYMENT_ALERT_DELAY_MINUTES = 5;
 
-const PLAN_OPTIONS = ["monthly", "quarterly", "halfyearly", "need_help"];
-const PLAN_LABELS: Record<string, string> = {
-  monthly: "1 Month",
-  quarterly: "3 Months",
-  halfyearly: "6 Months",
-  need_help: "Need Help",
-};
-const PLAN_AMOUNTS: Record<string, number> = {
-  monthly: 3500,
-  quarterly: 9975,
-  halfyearly: 18900,
-};
-const PLAN_MONTHS: Record<string, number> = {
-  monthly: 1,
-  quarterly: 3,
-  halfyearly: 6,
-};
-const PAID_PLAN_OPTIONS = PLAN_OPTIONS.filter((plan) => plan !== "need_help");
 const DEFAULT_DIRECT_PAY_TEMPLATE_NAME = "gen_alpha_fee_direct_pay";
 const HEALTHY_ECOSYSTEM_ERROR_CODE = "131049";
 const HEALTHY_ECOSYSTEM_RETRY_MINUTES = [5, 30, 60];
@@ -159,43 +154,6 @@ function maxIsoDate(d1: string, d2: string): string {
 }
 
 const ADMISSION_ONE_TIME_FEE = 2500;
-const SPECIAL_TRAINING_MONTHLY_FEE = 10000;
-
-function getSpecialTrainingDiscountRate(months: number): number {
-  const safeMonths = Math.max(Math.floor(Number(months || 1)), 1);
-  if (safeMonths >= 6) return 0.1;
-  if (safeMonths >= 3) return 0.05;
-  return 0;
-}
-
-function getSpecialTrainingAmountForMonths(months: number): number {
-  const safeMonths = Math.max(Math.floor(Number(months || 1)), 1);
-  return Math.round(
-    SPECIAL_TRAINING_MONTHLY_FEE * safeMonths *
-      (1 - getSpecialTrainingDiscountRate(safeMonths)),
-  );
-}
-
-function inferSpecialTrainingMonthsFromAmount(amount: number): number {
-  const roundedAmount = Math.round(Number(amount || 0));
-  if (roundedAmount <= 0) return 1;
-  for (let months = 1; months <= 36; months += 1) {
-    if (getSpecialTrainingAmountForMonths(months) === roundedAmount) return months;
-  }
-  if (roundedAmount >= getSpecialTrainingAmountForMonths(6)) {
-    return Math.max(
-      Math.round(roundedAmount / (SPECIAL_TRAINING_MONTHLY_FEE * 0.9)),
-      1,
-    );
-  }
-  if (roundedAmount >= getSpecialTrainingAmountForMonths(3)) {
-    return Math.max(
-      Math.round(roundedAmount / (SPECIAL_TRAINING_MONTHLY_FEE * 0.95)),
-      1,
-    );
-  }
-  return Math.max(Math.round(roundedAmount / SPECIAL_TRAINING_MONTHLY_FEE), 1);
-}
 
 function getPaymentMonthsCovered(payment: any): number {
   const plan = payment.plan_type || payment.planType;
@@ -402,16 +360,12 @@ function buildUpiLink(student: any, plan: string, amount: number): string {
   return `upi://pay?${query}`;
 }
 
-function paymentAmountForReminderType(reminderType: string, plan: string): number {
-  const baseAmount = PLAN_AMOUNTS[plan] || 0;
-  return reminderType === "joining_fee" ? (baseAmount + 500) : baseAmount;
-}
-
 function buildPaymentPageUrl(
   student: any,
   plan: string,
   amount: number,
   eventId = "",
+  months = 0,
 ): string {
   const params = new URLSearchParams({
     a: amount.toFixed(2),
@@ -421,6 +375,7 @@ function buildPaymentPageUrl(
   if (eventId) {
     params.set("e", eventId);
   }
+  if (plan === "special") params.set("m", String(monthsForPlan(plan, months)));
   return `${PAYMENT_PAGE_URL}?${params.toString()}`;
 }
 
@@ -431,12 +386,21 @@ function buildDirectPaymentPageUrl(eventId: string): string {
 
 function buildPaymentOptions(reminderEvent: any) {
   const reminderType = String(reminderEvent?.reminder_type || "renewal");
-  return PAID_PLAN_OPTIONS.map((plan) => ({
-    id: plan,
-    label: PLAN_LABELS[plan],
-    months: PLAN_MONTHS[plan],
-    amount: paymentAmountForReminderType(reminderType, plan),
-  }));
+  const selectedSpecialMonths = String(reminderEvent?.selected_plan || "") === "special"
+    ? inferSpecialTrainingMonthsFromAmount(Number(reminderEvent?.amount || 0))
+    : 1;
+  return PAID_PLAN_OPTIONS.map((plan) => {
+    const months = monthsForPlan(plan, plan === "special" ? selectedSpecialMonths : 0);
+    return {
+      id: plan,
+      label: PLAN_LABELS[plan],
+      months,
+      amount: paymentAmountForReminderType(reminderType, plan, months),
+      customMonths: plan === "special",
+      minMonths: plan === "special" ? 1 : months,
+      maxMonths: plan === "special" ? 36 : months,
+    };
+  });
 }
 
 function paymentContactDetails(): string {
@@ -453,35 +417,6 @@ const AFTER_PAY_NOW_FOLLOWUP =
 
 const PAYMENT_CONFIRMATION_REPLY =
   "Once the academy confirms the payment, we’ll update your renewal. Thank You!";
-
-function normalizeChoiceText(value: unknown): string {
-  return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-function normalizeSelectedPlan(value: unknown): string {
-  const normalized = normalizeChoiceText(value);
-  if (
-    ["monthly", "month", "1month", "one1month", "onemonth", "1"].includes(
-      normalized,
-    )
-  ) {
-    return "monthly";
-  }
-  if (
-    ["quarterly", "3month", "3months", "threemonths", "3"].includes(normalized)
-  ) {
-    return "quarterly";
-  }
-  if (
-    ["halfyearly", "6month", "6months", "sixmonths", "6"].includes(normalized)
-  ) {
-    return "halfyearly";
-  }
-  if (["needhelp", "help", "support"].includes(normalized)) {
-    return "need_help";
-  }
-  return "";
-}
 
 function normalizeSampleReminderFlow(value: unknown, action: unknown): string {
   const requested = normalizeChoiceText(value);
@@ -2164,6 +2099,56 @@ async function createPaymentProofSignedUrl(bucket: string, path: string) {
   }
 }
 
+function renderWhatsappTemplateBody(templateText: string, values: string[]): string {
+  return values.reduce(
+    (rendered, value, index) => rendered.replaceAll(`{{${index + 1}}}`, value),
+    templateText,
+  ).trim();
+}
+
+async function managerAlertMessageBody(
+  templateName: string,
+  playerName: string,
+  reminderEvent: any,
+  proofWasSubmitted: boolean,
+): Promise<string> {
+  try {
+    const wabaId = await resolveWhatsappBusinessAccountId();
+    const response = await graphRequest(
+      `${encodeURIComponent(wabaId)}/message_templates?name=${encodeURIComponent(templateName)}` +
+        `&fields=name,language,status,components&limit=20`,
+    );
+    const preferredLanguage = env("META_WHATSAPP_TEMPLATE_LANGUAGE") || "en";
+    const templates = graphDataList(response).filter((item: any) =>
+      String(item?.name || "") === templateName
+    );
+    const template = templates.find((item: any) =>
+      String(item?.language || "").toLowerCase().startsWith(preferredLanguage.toLowerCase())
+    ) || templates[0];
+    const body = (template?.components || []).find((component: any) =>
+      String(component?.type || "").toUpperCase() === "BODY"
+    );
+    const text = String(body?.text || "");
+    if (text) return renderWhatsappTemplateBody(text, [playerName]);
+  } catch (error) {
+    console.warn("Unable to load manager alert template body", error);
+  }
+
+  const plan = String(reminderEvent?.selected_plan || "");
+  const amount = Number(reminderEvent?.amount || 0);
+  const months = plan === "special"
+    ? inferSpecialTrainingMonthsFromAmount(amount)
+    : PLAN_MONTHS[plan] || 0;
+  return [
+    "Payment update for manager verification",
+    `Player: ${playerName}`,
+    plan ? `Plan: ${PLAN_LABELS[plan] || plan}` : "",
+    months ? `Duration: ${months} month${months === 1 ? "" : "s"}` : "",
+    amount > 0 ? `Amount: Rs ${amount.toLocaleString("en-IN")}` : "",
+    proofWasSubmitted ? "Payment proof attached." : "Payment proof not received yet.",
+  ].filter(Boolean).join("\n");
+}
+
 async function createUpiPaymentLink(
   student: any,
   plan: string,
@@ -2282,6 +2267,12 @@ async function sendManagerPaymentAlert(
     : [bodyComponent];
 
   const templateResponse = await sendTemplatePayload(to, templateName, components);
+  const renderedMessageBody = await managerAlertMessageBody(
+    templateName,
+    playerName,
+    reminderEvent,
+    proofWasSubmitted,
+  );
 
   await updateReminderEvent(reminderEvent.id, {
     manager_payment_alert_status: proofWasSubmitted ? "sent_with_proof" : "sent_without_proof",
@@ -2293,6 +2284,7 @@ async function sendManagerPaymentAlert(
       proof_path: proofPath,
       template_response: templateResponse,
       proof_signed_url_created: Boolean(proofSignedUrl),
+      message_body: renderedMessageBody,
       sent_at: sentAt,
     },
   });
@@ -2305,7 +2297,7 @@ async function sendManagerPaymentAlert(
     direction: "outbound",
     parent_phone: MANAGER_PAYMENT_ALERT_PHONE,
     message_kind: proofWasSubmitted ? "manager_alert_with_proof_template" : "manager_alert_template",
-    message_body: `${templateName}: ${playerName}`,
+    message_body: renderedMessageBody,
     message_id: String(templateResponse?.messages?.[0]?.id || ""),
     status: String(templateResponse?.messages?.[0]?.id || "")
       ? "accepted"
@@ -2318,6 +2310,7 @@ async function sendManagerPaymentAlert(
       template_name: templateName,
       template_response: templateResponse,
       proof_signed_url_created: Boolean(proofSignedUrl),
+      message_body: renderedMessageBody,
     },
     created_by: options.source || "system",
   });
@@ -2371,6 +2364,9 @@ async function handlePaymentOptions(payload: any) {
     return jsonResponse({ error: "Reminder event not found." }, 404);
   }
   const student = await fetchStudent(String(reminderEvent.student_id || ""));
+  const selectedMonths = String(reminderEvent.selected_plan || "") === "special"
+    ? inferSpecialTrainingMonthsFromAmount(Number(reminderEvent.amount || 0))
+    : PLAN_MONTHS[String(reminderEvent.selected_plan || "")] || 0;
   return jsonResponse({
     success: true,
     eventId: reminderEvent.id,
@@ -2379,6 +2375,7 @@ async function handlePaymentOptions(payload: any) {
     reminderType: reminderEvent.reminder_type || "renewal",
     defaultPlan: String(reminderEvent.selected_plan || "") || "monthly",
     selectedPlan: String(reminderEvent.selected_plan || ""),
+    selectedMonths,
     selectedAmount: Number(reminderEvent.amount || 0) || null,
     options: buildPaymentOptions(reminderEvent),
   });
@@ -2397,20 +2394,23 @@ async function savePaymentPlanSelection(
   reminderEvent: any,
   plan: string,
   source: string,
+  requestedMonths: unknown = 0,
 ) {
   if (!PAID_PLAN_OPTIONS.includes(plan)) return reminderEvent;
 
   const student = await fetchStudent(String(reminderEvent.student_id || ""));
+  const months = monthsForPlan(plan, requestedMonths);
   const amount = paymentAmountForReminderType(
     String(reminderEvent.reminder_type || "renewal"),
     plan,
+    months,
   );
-  const months = PLAN_MONTHS[plan] || 0;
   const paymentPageUrl = buildPaymentPageUrl(
     student,
     plan,
     amount,
     reminderEvent.id,
+    months,
   );
   const upiLink = buildUpiLink(student, plan, amount);
   const selectedAt = new Date().toISOString();
@@ -2486,6 +2486,7 @@ async function savePaymentPlanSelection(
   return {
     ...reminderEvent,
     selected_plan: plan,
+    selected_months: months,
     amount,
     payment_link_url: paymentPageUrl,
     payment_link_id: upiLink,
@@ -2507,11 +2508,13 @@ async function handlePaymentAttempted(payload: any) {
   const selectedPlan = normalizeSelectedPlan(
     payload.selectedPlan || payload.plan || payload.planType,
   );
+  const selectedMonths = payload.selectedMonths || payload.months || payload.monthsCovered || 0;
   if (selectedPlan && selectedPlan !== "need_help") {
     reminderEvent = await savePaymentPlanSelection(
       reminderEvent,
       selectedPlan,
       "pay.html",
+      selectedMonths,
     );
   }
 
@@ -2556,6 +2559,10 @@ async function handlePaymentAttempted(payload: any) {
     status_at: new Date().toISOString(),
     payment_plan: String(reminderEvent.selected_plan || ""),
     payment_amount: Number(reminderEvent.amount || 0) || null,
+    payment_months: Number(reminderEvent.selected_months || 0) ||
+      (String(reminderEvent.selected_plan || "") === "special"
+        ? inferSpecialTrainingMonthsFromAmount(Number(reminderEvent.amount || 0))
+        : PLAN_MONTHS[String(reminderEvent.selected_plan || "")] || null),
     payment_from_date: reminderEvent.due_date || null,
     created_by: "pay.html",
   });

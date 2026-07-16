@@ -1519,5 +1519,5 @@ private fun buildReminderPreview(
     isJoiningFee: Boolean,
 ): String {
     val dueText = if (isJoiningFee) "joining fee from $dueDate" else "renewal due $dueDate"
-    return "Gen Alpha Cricket Academy reminder for ${student.name}: $dueText. Parent can choose 1 Month / 3 Months / 6 Months / Need Help. Help: $managerPhone."
+    return "Gen Alpha Cricket Academy reminder for ${student.name}: $dueText. Parent can choose 1 Month / 3 Months / 6 Months / Special Training / Need Help. Help: $managerPhone."
 }
