@@ -2593,8 +2593,13 @@ private data class PlayerPaymentLine(
     val amount: Double,
 )
 
-private fun initialCoverageMonthsForAmount(amount: Double, feesPaid: Boolean, jerseyPairs: Int = 0): Int {
+private fun initialCoverageMonthsForAmount(amount: Double, feesPaid: Boolean, jerseyPairs: Int = 0, feePlan: String = ""): Int {
     if (!feesPaid || amount <= 0.0) return 0
+    when (feePlan.lowercase(Locale.US)) {
+        "monthly" -> return 1
+        "quarterly" -> return 3
+        "halfyearly" -> return 6
+    }
     val feeOnlyAmount = (amount - (jerseyPairs.coerceAtLeast(0) * JerseyExtraPairFee)).coerceAtLeast(0.0)
     val withoutAdmissionFee = (feeOnlyAmount - 500.0).coerceAtLeast(0.0)
     val roundedAmount = kotlin.math.round(feeOnlyAmount).toInt()
@@ -2647,11 +2652,15 @@ private fun buildPlayerPaymentRows(student: Student, payments: List<StudentPayme
     val hasJoiningPayment = studentPayments.any { it.paymentType == "joining" }
 
     if (student.feesPaid && student.amountPaid > 0.0 && !hasJoiningPayment) {
-        val months = initialCoverageMonthsForAmount(student.amountPaid, student.feesPaid, student.jerseyPairs)
+        val months = initialCoverageMonthsForAmount(student.amountPaid, student.feesPaid, student.jerseyPairs, student.feePlan)
         rows += PlayerPaymentLine(
             date = student.joinDate,
             title = "Joining payment",
-            plan = if (months > 1) "$months months + admission" else "Monthly + admission",
+            plan = when {
+                student.feePlan.equals("special", ignoreCase = true) -> "Special training"
+                months > 1 -> "$months months + admission"
+                else -> "Monthly + admission"
+            },
             months = months,
             amount = student.amountPaid,
         )

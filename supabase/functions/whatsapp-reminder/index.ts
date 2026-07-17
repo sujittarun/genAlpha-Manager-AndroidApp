@@ -3652,8 +3652,8 @@ async function handleAutoSchedule() {
       }
       console.log(`Skipping ${student.name}: overdue ${overdueDays} days, manual follow-up required.`);
       continue;
-    } else if (overdueDays === 5) {
-      // 5-day overdue nudge
+    } else if (overdueDays === 3 || overdueDays === 5) {
+      // 3-day and 5-day overdue nudges
       shouldSend = true;
     } else if (overdueDays >= 7) {
       // Daily nudge from Day 7 until the manual follow-up cutoff.

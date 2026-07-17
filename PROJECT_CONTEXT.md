@@ -197,7 +197,7 @@ Current utility reminder templates:
 - `gen_alpha_fee_direct_pay`: direct Pay Now utility template for fee reminders. It opens `pay.html?e={{1}}` and keeps plan selection on the payment page. Use the older plan-button templates as fallback while this template is missing, disabled, or awaiting Meta approval.
 - `utlity_fee_headsup`: 2 days before a renewal date. Keep this exact spelling because it matches the Meta template name.
 - `utility_renewal_day`: renewal due day.
-- `utility_for_fee_reminder`: joining-fee due day, overdue day 5, and daily overdue day 7 through day 14.
+- `utility_for_fee_reminder`: joining-fee due day, overdue day 3, overdue day 5, and daily overdue day 7 through day 14.
 - `manager_payment_alert`: manager payment alert without proof.
 - `manager_payment_alert_with_proof`: manager payment alert with proof image header.
 - Language: `en`.
@@ -216,6 +216,7 @@ Current utility reminder templates:
 - Reminder policy:
   - heads-up 2 days before renewal.
   - renewal/joining due day.
+  - overdue day 3.
   - overdue day 5.
   - daily from overdue day 7 through overdue day 14.
   - overdue day 15+ stops automatic reminders and shows `Manual follow-up` in web/Android.

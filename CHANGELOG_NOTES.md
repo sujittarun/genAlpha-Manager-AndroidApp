@@ -1,6 +1,23 @@
 # Gen Alpha Manager Changelog Notes
 
-Last updated: 2026-07-16
+Last updated: 2026-07-17
+
+## 2026-07-17
+
+### Overdue Day-3 Fee Reminder
+
+- WhatsApp reminder scheduler now also sends an automatic fee reminder on overdue day 3, in addition to the existing due-day, day-5, and daily day 7-14 nudges; day 15+ remains manual follow-up.
+- `supabase/functions/whatsapp-reminder/index.ts` must be redeployed for the new day-3 reminder to go live.
+
+### Finance Send-Sample Removal
+
+- Removed the "Send V2 reminder sample" test panel from the web Finance tab (index.html, script.js, styles.css) and bumped cache versions. The Android app never had this panel.
+- The `send_sample_*` actions remain available in the WhatsApp reminder function for manual/API testing.
+
+### Android Plan Display Without Manager Login
+
+- Fixed Android player profile showing a Rs 10,000 quarterly joining payment as "Monthly / 1 month" when `student_payments` is not readable (PIN-only, no manager login). The synthetic joining row now respects `students.fee_plan` (monthly/quarterly/halfyearly, special label) before falling back to amount inference, matching web `fee-plan-rules.js`.
+- Verified on emulator: Sarvin Kanuru shows no SPECIAL badge, 3 months paid, next fee due 16 Oct 2026. The roster SPECIAL badge fix itself shipped in commit 39c87e4; phones running an older APK must install the rebuilt `genAlpha-manager.apk`.
 
 This file records meaningful project changes and decisions so future Codex sessions can understand recent work without rereading the full chat. It is not a release changelog for users; it is a developer/manager memory log.
 
