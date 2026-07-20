@@ -356,7 +356,7 @@ private val AcademyLightScheme = lightColorScheme(
     primary = BrandBlue,
     secondary = BrandGold,
     tertiary = BrandGreen,
-    background = Color(0xFFEDF3FB),
+    background = Color(0xFFF5F8FE),
     surface = Color.White,
     onSurface = Color(0xFF102547),
     onBackground = Color(0xFF102547),
@@ -398,9 +398,10 @@ private fun appBackgroundBrush(): Brush {
     } else {
         Brush.verticalGradient(
             listOf(
-                Color(0xFFEAF2FB),
-                Color(0xFFFFF7DD),
-                Color(0xFFF7FAFF),
+                Color(0xFFEAF3FF),
+                Color(0xFFF1FBF7),
+                Color(0xFFFFF7E8),
+                Color(0xFFF7F3FF),
             )
         )
     }
@@ -2297,7 +2298,7 @@ private fun FinanceRecentLedgerSection(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.70f), RoundedCornerShape(18.dp))
+                    .background(MaterialTheme.colorScheme.background, RoundedCornerShape(18.dp))
                     .padding(4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -2398,13 +2399,14 @@ private fun FinanceLedgerTab(
         onClick = onClick,
         modifier = modifier,
         shape = RoundedCornerShape(15.dp),
-        color = if (selected) accent.copy(alpha = 0.14f) else Color.Transparent,
+        color = if (selected) accent else Color.Transparent,
+        tonalElevation = if (selected) 2.dp else 0.dp,
     ) {
         Text(
             label,
             modifier = Modifier.padding(vertical = 10.dp),
             textAlign = TextAlign.Center,
-            color = if (selected) accent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+            color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
             fontSize = 13.sp,
             fontWeight = FontWeight.ExtraBold,
             maxLines = 1,
@@ -3216,6 +3218,8 @@ private fun FinanceMonthDetailDialog(
         }.getOrElse { monthKey }
     }
     val dialogDensity = LocalDensity.current
+    var selectedLedgerTab by rememberSaveable(monthKey) { mutableStateOf("revenue") }
+    val isRevenueSelected = selectedLedgerTab == "revenue"
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -3246,28 +3250,58 @@ private fun FinanceMonthDetailDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Column {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(title, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
-                            FinanceMonthSummaryStrip(
-                                revenue = formatCurrency(revenueTotal),
-                                joining = formatCurrency(joiningTotal),
-                                joiningCount = joiningCount,
-                                renewal = formatCurrency(renewalTotal),
-                                renewalCount = renewalCount,
-                                jersey = formatCurrency(jerseyTotal),
-                                jerseyCount = jerseyCount,
-                                expense = formatCurrency(expenseTotal),
-                                expenseCount = expenseRows.size,
-                                net = formatCurrency(net),
-                                totalRecordCount = totalRecordCount,
-                                isNetPositive = net >= 0,
+                            Text(
+                                "$totalRecordCount ledger record${if (totalRecordCount == 1) "" else "s"}",
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.56f),
+                                fontSize = 12.sp,
                             )
                         }
                         IconButton(onClick = onDismiss) {
                             Icon(Icons.Outlined.Close, contentDescription = "Close")
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+
+                    FinanceMonthSummaryStrip(
+                        revenue = formatCurrency(revenueTotal),
+                        joining = formatCurrency(joiningTotal),
+                        joiningCount = joiningCount,
+                        renewal = formatCurrency(renewalTotal),
+                        renewalCount = renewalCount,
+                        jersey = formatCurrency(jerseyTotal),
+                        jerseyCount = jerseyCount,
+                        expense = formatCurrency(expenseTotal),
+                        expenseCount = expenseRows.size,
+                        net = formatCurrency(net),
+                        totalRecordCount = totalRecordCount,
+                        isNetPositive = net >= 0,
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.background, RoundedCornerShape(18.dp))
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        FinanceLedgerTab(
+                            label = "Revenue (${revenueRows.size})",
+                            selected = isRevenueSelected,
+                            accent = BrandGreen,
+                            modifier = Modifier.weight(1f),
+                            onClick = { selectedLedgerTab = "revenue" },
+                        )
+                        FinanceLedgerTab(
+                            label = "Expenses (${expenseRows.size})",
+                            selected = !isRevenueSelected,
+                            accent = BrandRed,
+                            modifier = Modifier.weight(1f),
+                            onClick = { selectedLedgerTab = "expenses" },
+                        )
+                    }
+
+                    if (isRevenueSelected) {
                         FinanceMonthDetailList(
                             title = "Revenue",
                             count = revenueRows.size,
@@ -3275,8 +3309,9 @@ private fun FinanceMonthDetailDialog(
                             rows = revenueRows.map {
                                 Triple(it.studentName, "${it.type} • ${displayDate(it.date)}", formatCurrency(it.amount))
                             },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.fillMaxWidth(),
                         )
+                    } else {
                         FinanceMonthDetailList(
                             title = "Expenses",
                             count = expenseRows.size,
@@ -3284,7 +3319,7 @@ private fun FinanceMonthDetailDialog(
                             rows = expenseRows.map {
                                 Triple(it.expenseType, "${it.paidBy} • ${displayDate(it.expenseDate)}", formatCurrency(it.amount))
                             },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
                 }
@@ -5324,6 +5359,26 @@ private fun RosterRow(
                 }
             }
         } else {
+            val cardAccent = when {
+                student.discontinued -> Color(0xFF73829A)
+                needsAttention -> Color(0xFFE69A17)
+                student.isSpecialTraining(payments) -> Color(0xFF8B5CF6)
+                else -> BrandBlue
+            }
+            val feeTone = when {
+                feeLabel == "Manual follow-up" -> feeManualTone
+                feeLabel == "Reminder failed" -> feeFailedTone
+                feeLabel == "Retry scheduled" || feeLabel == "Reminder sent" -> feeReminderTone
+                student.feesPaid -> feePaidTone
+                feeLabel == "Pending verification" -> feeVerificationTone
+                else -> feePendingTone
+            }
+            val renewalTone = when {
+                student.discontinued -> discontinuedTone
+                student.isFeesPending() -> feePendingTone
+                student.isRenewalPending(payments) -> renewalPendingTone
+                else -> renewalOkTone
+            }
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -5332,7 +5387,7 @@ private fun RosterRow(
                         cameraDistance = 18f * density.density
                     }
                     .clickable(onClick = onOpen),
-                shape = RoundedCornerShape(26.dp),
+                shape = RoundedCornerShape(28.dp),
                 colors = CardDefaults.cardColors(containerColor = baseContainer),
                 border = baseBorder,
             ) {
@@ -5344,126 +5399,117 @@ private fun RosterRow(
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        PlayerMonogram(
+                            name = student.name,
+                            accent = cardAccent,
+                            size = 48,
+                        )
                         Column(
                             modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = student.name,
-                                    fontSize = 18.sp,
-                                    lineHeight = 21.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f, fill = false),
-                                )
-                                if (student.isSpecialTraining(payments)) {
-                                    Surface(
-                                        color = Color(0xFFFFF9E6),
-                                        shape = RoundedCornerShape(999.dp),
-                                        border = BorderStroke(1.dp, Color(0xFFF4BE2E))
-                                    ) {
-                                        Text(
-                                            text = "SPECIAL",
-                                            color = Color(0xFF8F6500),
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Black,
-                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
-                                        )
-                                    }
-                                }
-                            }
                             Text(
-                                text = "${student.tenureBadgeLabel()} training  •  Joined ${displayDate(student.joinDate)}",
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
-                                fontSize = 12.sp,
+                                text = student.name,
+                                fontSize = 19.sp,
+                                lineHeight = 22.sp,
+                                fontWeight = FontWeight.Black,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = "${student.tenureBadgeLabel()} training • Joined ${displayDate(student.joinDate)}",
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                                fontSize = 11.5.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
-                        Badge(
+                        CompactStatusPill(
                             label = if (student.discontinued) "Discontinued" else "Active",
-                            container = if (student.discontinued) discontinuedTone.container else activeTone.container,
-                            color = if (student.discontinued) discontinuedTone.text else activeTone.text,
+                            tone = if (student.discontinued) discontinuedTone else activeTone,
                         )
                     }
 
-                    FlowRow(
+                    if (student.isSpecialTraining(payments)) {
+                        Surface(
+                            color = Color(0xFF8B5CF6).copy(alpha = if (isDarkTheme) 0.22f else 0.11f),
+                            shape = RoundedCornerShape(999.dp),
+                            border = BorderStroke(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.24f)),
+                        ) {
+                            Text(
+                                text = "SPECIAL TRAINING",
+                                color = if (isDarkTheme) Color(0xFFDCCBFF) else Color(0xFF6842C2),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 0.6.sp,
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                            )
+                        }
+                    }
+
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Badge(
-                            label = student.timeSlot.ifBlank { "Not set" },
-                            container = slotTone.container,
-                            color = slotTone.text,
+                        RosterStatusTile(
+                            label = "SLOT",
+                            value = student.timeSlot.ifBlank { "Not set" },
+                            tone = slotTone,
+                            modifier = Modifier.weight(0.82f),
                         )
-                        Badge(
-                            label = feeLabel,
-                            container = when {
-                                feeLabel == "Manual follow-up" -> feeManualTone.container
-                                feeLabel == "Reminder failed" -> feeFailedTone.container
-                                feeLabel == "Retry scheduled" -> feeReminderTone.container
-                                feeLabel == "Reminder sent" -> feeReminderTone.container
-                                student.feesPaid -> feePaidTone.container
-                                feeLabel == "Pending verification" -> feeVerificationTone.container
-                                else -> feePendingTone.container
-                            },
-                            color = when {
-                                feeLabel == "Manual follow-up" -> feeManualTone.text
-                                feeLabel == "Reminder failed" -> feeFailedTone.text
-                                feeLabel == "Retry scheduled" -> feeReminderTone.text
-                                feeLabel == "Reminder sent" -> feeReminderTone.text
-                                student.feesPaid -> feePaidTone.text
-                                feeLabel == "Pending verification" -> feeVerificationTone.text
-                                else -> feePendingTone.text
-                            },
+                        RosterStatusTile(
+                            label = "PAYMENT",
+                            value = feeLabel,
+                            tone = feeTone,
+                            modifier = Modifier.weight(1.1f),
                         )
-                        Badge(
-                            label = renewalStatusLabel,
-                            container = when {
-                                student.discontinued -> discontinuedTone.container
-                                student.isFeesPending() -> feePendingTone.container
-                                student.isRenewalPending(payments) -> renewalPendingTone.container
-                                else -> renewalOkTone.container
-                            },
-                            color = when {
-                                student.discontinued -> discontinuedTone.text
-                                student.isFeesPending() -> feePendingTone.text
-                                student.isRenewalPending(payments) -> renewalPendingTone.text
-                                else -> renewalOkTone.text
-                            },
+                        RosterStatusTile(
+                            label = "RENEWAL",
+                            value = renewalStatusLabel,
+                            tone = renewalTone,
+                            modifier = Modifier.weight(1.08f),
                         )
                     }
                     if (feeLabel == "Manual follow-up" && !manualFollowUpReason.isNullOrBlank()) {
-                        Text(
-                            text = manualFollowUpReason,
-                            color = feeManualTone.text,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
+                        Surface(
+                            color = feeManualTone.container,
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, feeManualTone.text.copy(alpha = 0.12f)),
+                        ) {
+                            Text(
+                                text = manualFollowUpReason,
+                                color = feeManualTone.text,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 11.dp, vertical = 9.dp),
+                            )
+                        }
                     }
 
                     student.cardTimelineLabel(payments)?.let { timeline ->
-                        Text(
-                            text = timeline,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
-                            fontSize = 12.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        Surface(
+                            color = cardAccent.copy(alpha = if (isDarkTheme) 0.15f else 0.065f),
+                            shape = RoundedCornerShape(14.dp),
+                        ) {
+                            Text(
+                                text = timeline,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                                fontSize = 11.5.sp,
+                                lineHeight = 15.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
+                            )
+                        }
                     }
 
                     if (onRenew != null && isManager) {
-                        OutlinedButton(
+                        Button(
                             onClick = {
                                 showingActions = false
                                 onRenew()
@@ -5471,11 +5517,10 @@ private fun RosterRow(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 44.dp),
-                            shape = RoundedCornerShape(999.dp),
-                            border = BorderStroke(1.dp, BrandGreen.copy(alpha = 0.35f)),
-                            colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-                                containerColor = BrandGreen.copy(alpha = if (isDarkTheme) 0.14f else 0.08f),
-                                contentColor = BrandGreen,
+                            shape = RoundedCornerShape(15.dp),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = BrandGreen,
+                                contentColor = Color.White,
                             ),
                         ) {
                             Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -5486,6 +5531,8 @@ private fun RosterRow(
                             )
                         }
                     }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -5527,14 +5574,14 @@ private fun RosterRow(
                                 Surface(
                                     onClick = { showingActions = true },
                                     shape = RoundedCornerShape(999.dp),
-                                    color = BrandBlue.copy(alpha = if (isDarkTheme) 0.22f else 0.10f),
-                                    border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.20f)),
+                                    color = cardAccent.copy(alpha = if (isDarkTheme) 0.22f else 0.10f),
+                                    border = BorderStroke(1.dp, cardAccent.copy(alpha = 0.20f)),
                                 ) {
                                     Icon(
                                         Icons.Outlined.Edit,
                                         contentDescription = "Manage player",
                                         modifier = Modifier.padding(9.dp).size(15.dp),
-                                        tint = BrandBlue,
+                                        tint = cardAccent,
                                     )
                                 }
                             }
@@ -5552,6 +5599,112 @@ private fun RosterRow(
         }
     }
 
+}
+
+private fun playerInitials(name: String): String {
+    val initials = name
+        .trim()
+        .split(Regex("\\s+"))
+        .filter { it.isNotBlank() }
+        .take(2)
+        .mapNotNull { part -> part.firstOrNull()?.uppercaseChar()?.toString() }
+        .joinToString("")
+    return initials.ifBlank { "GA" }
+}
+
+@Composable
+private fun PlayerMonogram(
+    name: String,
+    accent: Color,
+    size: Int,
+) {
+    Box(
+        modifier = Modifier
+            .size(size.dp)
+            .background(
+                brush = Brush.linearGradient(
+                    listOf(accent, accent.copy(alpha = 0.72f)),
+                ),
+                shape = RoundedCornerShape((size * 0.35f).dp),
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = playerInitials(name),
+            color = Color.White,
+            fontWeight = FontWeight.Black,
+            fontSize = (size * 0.34f).sp,
+            letterSpacing = 0.3.sp,
+        )
+    }
+}
+
+@Composable
+private fun CompactStatusPill(
+    label: String,
+    tone: BadgeTone,
+) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = tone.container,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .background(tone.text, CircleShape),
+            )
+            Text(
+                text = label,
+                color = tone.text,
+                fontSize = 9.5.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RosterStatusTile(
+    label: String,
+    value: String,
+    tone: BadgeTone,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.heightIn(min = 58.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = tone.container,
+        border = BorderStroke(1.dp, tone.text.copy(alpha = 0.10f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Text(
+                text = label,
+                color = tone.text.copy(alpha = 0.72f),
+                fontSize = 8.5.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = 0.55.sp,
+                maxLines = 1,
+            )
+            Text(
+                text = value,
+                color = tone.text,
+                fontSize = 10.5.sp,
+                lineHeight = 13.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
 }
 
 @Composable
@@ -5664,17 +5817,8 @@ private fun PlayerDetailSheet(
     val context = LocalContext.current
     val fontScale = LocalDensity.current.fontScale
     val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val slotTone = themedBadgeTone(Color(0xFFEAF2FF), BrandBlueDeep, DarkInfoContainer, DarkInfoText)
-    val newTone = themedBadgeTone(Color(0xFFEAF2FF), BrandBlueDeep, DarkInfoContainer, DarkInfoText)
-    val returningTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
-    val activeTone = themedBadgeTone(Color(0xFFEAF8F2), BrandGreen, DarkSuccessContainer, DarkSuccessText)
     val discontinuedTone = themedBadgeTone(Color(0xFFEAEFF6), Color(0xFF5D7399), DarkMutedContainer, DarkMutedText)
-    val renewalOkTone = themedBadgeTone(Color(0xFFEAF8F2), BrandGreen, DarkSuccessContainer, DarkSuccessText)
-    val renewalPendingTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
-    val feeReminderTone = themedBadgeTone(Color(0xFFEAF2FF), BrandBlueDeep, DarkInfoContainer, DarkInfoText)
-    val feeFailedTone = themedBadgeTone(Color(0xFFEAEFF6), BrandRed, DarkMutedContainer, BrandRed)
     val feeManualTone = themedBadgeTone(Color(0xFFEAEFF6), Color(0xFF9A5B00), DarkMutedContainer, DarkWarningText)
-    val feeVerificationTone = themedBadgeTone(Color(0xFFFFF2D8), Color(0xFF8F6500), DarkWarningContainer, DarkWarningText)
     val paymentRows = remember(student, payments) { buildPlayerPaymentRows(student, payments) }
     val totalPaid = paymentRows.sumOf { it.amount }
     val totalMonthsPaid = paymentRows.sumOf { it.months }
@@ -5758,7 +5902,7 @@ private fun PlayerDetailSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = MaterialTheme.colorScheme.background,
         dragHandle = null,
     ) {
         Column(
@@ -5770,74 +5914,81 @@ private fun PlayerDetailSheet(
                 .padding(horizontal = 18.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // ── Header ──
-            Row(
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top,
+                shape = RoundedCornerShape(28.dp),
+                color = Color.Transparent,
             ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        "Player Profile",
-                        fontSize = adaptiveSp(11f, fontScale, minRatio = 0.78f),
-                        fontWeight = FontWeight.Bold,
-                        color = BrandBlue,
-                    )
-                    Text(
-                        text = student.name,
-                        fontSize = adaptiveSp(26f, fontScale, minRatio = 0.70f),
-                        lineHeight = adaptiveSp(29f, fontScale, minRatio = 0.70f),
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    student.regNo?.let {
-                        Text(
-                            "Reg #$it",
-                            fontSize = adaptiveSp(12f, fontScale, minRatio = 0.76f),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                Column(
+                    modifier = Modifier
+                        .background(
+                            brush = Brush.linearGradient(
+                                listOf(BrandBlueDeep, BrandBlue, Color(0xFF7657D6)),
+                            ),
+                            shape = RoundedCornerShape(28.dp),
                         )
+                        .padding(17.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(13.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        PlayerMonogram(
+                            name = student.name,
+                            accent = Color(0xFFFFB93F),
+                            size = 58,
+                        )
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(3.dp),
+                        ) {
+                            Text(
+                                "PLAYER PROFILE",
+                                fontSize = adaptiveSp(10f, fontScale, minRatio = 0.78f),
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 0.8.sp,
+                                color = Color.White.copy(alpha = 0.72f),
+                            )
+                            Text(
+                                text = student.name,
+                                fontSize = adaptiveSp(24f, fontScale, minRatio = 0.70f),
+                                lineHeight = adaptiveSp(27f, fontScale, minRatio = 0.70f),
+                                fontWeight = FontWeight.Black,
+                                color = Color.White,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = student.regNo?.let { "Reg #$it" } ?: student.tenureBadgeLabel(),
+                                fontSize = adaptiveSp(11.5f, fontScale, minRatio = 0.76f),
+                                color = Color.White.copy(alpha = 0.74f),
+                            )
+                        }
+                        Surface(
+                            onClick = onDismiss,
+                            shape = CircleShape,
+                            color = Color.White.copy(alpha = 0.14f),
+                        ) {
+                            Icon(
+                                Icons.Outlined.Close,
+                                contentDescription = "Close",
+                                tint = Color.White,
+                                modifier = Modifier.padding(9.dp).size(18.dp),
+                            )
+                        }
+                    }
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(7.dp),
+                        verticalArrangement = Arrangement.spacedBy(7.dp),
+                    ) {
+                        ProfileHeroPill(student.timeSlot.ifBlank { "No slot" })
+                        ProfileHeroPill(student.studentType())
+                        ProfileHeroPill(if (student.discontinued) "Discontinued" else "Active")
+                        ProfileHeroPill(feeLabel)
                     }
                 }
-                IconButton(onClick = onDismiss, modifier = Modifier.size(34.dp)) {
-                    Icon(Icons.Outlined.Close, contentDescription = "Close")
-                }
-            }
-
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                Badge(student.timeSlot.ifBlank { "No slot" }, slotTone.container, slotTone.text)
-                Badge(
-                    student.studentType(),
-                    if (student.studentType() == "Returning") returningTone.container else newTone.container,
-                    if (student.studentType() == "Returning") returningTone.text else newTone.text,
-                )
-                Badge(
-                    if (student.discontinued) "Discontinued" else "Active",
-                    if (student.discontinued) discontinuedTone.container else activeTone.container,
-                    if (student.discontinued) discontinuedTone.text else activeTone.text,
-                )
-                Badge(
-                    feeLabel,
-                    when (feeLabel) {
-                        "Manual follow-up" -> feeManualTone.container
-                        "Reminder failed" -> feeFailedTone.container
-                        "Retry scheduled" -> feeReminderTone.container
-                        "Reminder sent" -> feeReminderTone.container
-                        "Pending verification" -> feeVerificationTone.container
-                        "Fees paid" -> renewalOkTone.container
-                        else -> renewalPendingTone.container
-                    },
-                    when (feeLabel) {
-                        "Manual follow-up" -> feeManualTone.text
-                        "Reminder failed" -> feeFailedTone.text
-                        "Retry scheduled" -> feeReminderTone.text
-                        "Reminder sent" -> feeReminderTone.text
-                        "Pending verification" -> feeVerificationTone.text
-                        "Fees paid" -> renewalOkTone.text
-                        else -> renewalPendingTone.text
-                    },
-                )
             }
             if (feeLabel == "Manual follow-up" && !manualFollowUpReason.isNullOrBlank()) {
                 Text(
@@ -6344,27 +6495,63 @@ private fun PaymentProofThumbnail(url: String) {
 }
 
 @Composable
+private fun ProfileHeroPill(label: String) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = Color.White.copy(alpha = 0.14f),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            color = Color.White,
+            fontSize = 10.5.sp,
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
 private fun ProfileSectionCard(
     title: String,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val fontScale = LocalDensity.current.fontScale
+    val sectionAccent = when (title) {
+        "Fee & Renewal", "Payment History" -> BrandGreen
+        "Parent & Contact" -> Color(0xFF7657D6)
+        "Timeline" -> Color(0xFFE58A16)
+        else -> BrandBlue
+    }
 
     Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.background.copy(alpha = 0.84f),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, sectionAccent.copy(alpha = 0.12f)),
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(15.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(
-                text = title,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
-                fontSize = adaptiveSp(12f, fontScale, minRatio = 0.78f),
-                letterSpacing = 0.04.em,
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(width = 5.dp, height = 17.dp)
+                        .background(sectionAccent, RoundedCornerShape(999.dp)),
+                )
+                Text(
+                    text = title,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.86f),
+                    fontSize = adaptiveSp(12.5f, fontScale, minRatio = 0.78f),
+                    letterSpacing = 0.03.em,
+                )
+            }
             content()
         }
     }
@@ -6416,13 +6603,16 @@ private fun DataTileContent(
     onClick: (() -> Unit)? = null,
 ) {
     val fontScale = LocalDensity.current.fontScale
+    val tileAccent = if (accent == MaterialTheme.colorScheme.onSurface) BrandBlue else accent
+    val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
     Surface(
         modifier = modifier.then(
             if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
         ),
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.background.copy(alpha = 0.84f),
+        shape = RoundedCornerShape(17.dp),
+        color = tileAccent.copy(alpha = if (isDarkTheme) 0.13f else 0.055f),
+        border = BorderStroke(1.dp, tileAccent.copy(alpha = if (isDarkTheme) 0.22f else 0.10f)),
     ) {
         Column(
             modifier = Modifier
@@ -6432,7 +6622,7 @@ private fun DataTileContent(
         ) {
             Text(
                 text = if (onClick != null) "${label.uppercase(Locale.getDefault())} >" else label.uppercase(Locale.getDefault()),
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                color = tileAccent.copy(alpha = if (isDarkTheme) 0.88f else 0.74f),
                 fontSize = adaptiveSp(10.5f, fontScale, minRatio = 0.76f),
                 lineHeight = adaptiveSp(12.5f, fontScale, minRatio = 0.76f),
                 fontWeight = FontWeight.Bold,
@@ -6442,7 +6632,7 @@ private fun DataTileContent(
             )
             Text(
                 text = value,
-                color = accent,
+                color = if (accent == MaterialTheme.colorScheme.onSurface) MaterialTheme.colorScheme.onSurface else accent,
                 fontSize = adaptiveSp(15f, fontScale, minRatio = 0.72f),
                 lineHeight = adaptiveSp(18f, fontScale, minRatio = 0.72f),
                 fontWeight = FontWeight.Bold,
