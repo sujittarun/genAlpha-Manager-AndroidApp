@@ -2019,18 +2019,20 @@ private fun FinancePanel(
         buildFinanceRangeSelection(selectedFinanceRange, customRangeStart, customRangeEnd)
     }
 
-    val initialFees = uiState.kids
-        .filter { it.feesPaid }
-        .map { StudentPayment(id = "", studentId = it.id, amount = it.amountPaid, paidOn = it.joinDate) }
+    // One canonical revenue ledger for every finance surface. This excludes a
+    // student's legacy joining amount when an explicit joining payment exists
+    // and keeps refunds negative, preventing the overview from double-counting
+    // payments that are already present in student_payments.
+    val financeRevenueRows = remember(uiState.kids, uiState.payments) {
+        buildFinanceRevenueLines(uiState.kids, uiState.payments)
+    }
 
-    val allFees = initialFees + uiState.payments
-
-    fun sumFees(dateKey: String = ""): Double = allFees
-        .filter { dateKey.isEmpty() || it.paidOn.startsWith(dateKey) }
+    fun sumFees(dateKey: String = ""): Double = financeRevenueRows
+        .filter { dateKey.isEmpty() || it.date.startsWith(dateKey) }
         .sumOf { it.amount }
 
-    val selectedFees = allFees
-        .filter { isDateInFinanceRange(it.paidOn, selectedRange) }
+    val selectedFees = financeRevenueRows
+        .filter { isDateInFinanceRange(it.date, selectedRange) }
         .sumOf { it.amount }
     fun sumExpenses(dateKey: String = ""): Double = uiState.expenses
         .filter { dateKey.isEmpty() || it.expenseDate.startsWith(dateKey) }
@@ -2096,7 +2098,7 @@ private fun FinancePanel(
         )
 
         FinanceRecentLedgerSection(
-            revenueRows = buildFinanceRevenueLines(uiState.kids, uiState.payments),
+            revenueRows = financeRevenueRows,
             expenses = uiState.expenses,
             searchQuery = searchQuery,
             sortKey = sortKey,
