@@ -11,6 +11,7 @@ import {
   removeResolvedBlankFormPaymentConflicts,
   shouldUseMediaAsPaymentProof,
 } from "./admission_rules.ts";
+import { renewalNameMatchScore } from "./renewal_matching.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -736,39 +737,6 @@ function normalizedIdentity(value: unknown): string {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "").trim();
 }
 
-function identityTokens(value: unknown): string[] {
-  return String(value || "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-}
-
-function levenshteinDistance(left: string, right: string): number {
-  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
-  for (let i = 1; i <= left.length; i += 1) {
-    let diagonal = previous[0];
-    previous[0] = i;
-    for (let j = 1; j <= right.length; j += 1) {
-      const above = previous[j];
-      previous[j] = Math.min(
-        previous[j] + 1,
-        previous[j - 1] + 1,
-        diagonal + (left[i - 1] === right[j - 1] ? 0 : 1),
-      );
-      diagonal = above;
-    }
-  }
-  return previous[right.length];
-}
-
-function isNearPlayerName(requested: unknown, candidate: unknown): boolean {
-  const requestedTokens = identityTokens(requested);
-  const candidateTokens = identityTokens(candidate);
-  if (!requestedTokens.length || !candidateTokens.length) return false;
-  return requestedTokens.some((requestedToken) =>
-    requestedToken.length >= 4 && candidateTokens.some((candidateToken) =>
-      candidateToken.length >= 4 && levenshteinDistance(requestedToken, candidateToken) <= 1
-    )
-  );
-}
-
 function normalizedIndianPhone(value: unknown): string {
   return String(value || "").replace(/\D/g, "").slice(-10);
 }
@@ -824,8 +792,11 @@ async function matchRenewalPlayer(renewal: any) {
     const evidence: string[] = [];
     if (requestedRegNo && Number(student.reg_no || 0) === requestedRegNo) { score += 120; evidence.push("registration number"); }
     if (requestedPhone && normalizedIndianPhone(student.parent_contact_no) === requestedPhone) { score += 100; evidence.push("parent phone"); }
-    if (requestedName && normalizedIdentity(student.name) === requestedName) { score += 60; evidence.push("exact player name"); }
-    else if (requestedName && isNearPlayerName(requestedNameRaw, student.name)) { score += 50; evidence.push("near player name"); }
+    const nameScore = renewalNameMatchScore(requestedNameRaw, student.name);
+    if (requestedName && nameScore > 0) {
+      score += nameScore;
+      evidence.push(nameScore === 60 ? "exact player name" : "complete supplied player name");
+    }
     if (requestedGuardian && normalizedIdentity(student.father_guardian_name) === requestedGuardian) { score += 30; evidence.push("guardian name"); }
     return { student, score, evidence };
   }).filter((item: any) => item.score > 0).sort((a: any, b: any) => b.score - a.score);
