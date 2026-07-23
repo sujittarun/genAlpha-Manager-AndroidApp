@@ -320,7 +320,7 @@
 
         await Promise.race([
           request.catch(() => {}),
-          new Promise((resolve) => window.setTimeout(resolve, 700)),
+          new Promise((resolve) => window.setTimeout(resolve, 4000)),
         ]);
       };
 
@@ -329,8 +329,9 @@
           messageText.textContent = "UPI payment is not configured. Please contact academy staff.";
           return;
         }
-        messageText.textContent = "Opening your UPI app...";
+        messageText.textContent = "Preparing payment and WhatsApp instructions...";
         await notifyPaymentAttempt();
+        messageText.textContent = "Opening your UPI app...";
         window.location.href = `upi://pay?${upiUri}`;
         window.setTimeout(() => {
           messageText.textContent = 'After payment, reply "Paid" on WhatsApp or send the payment screenshot.';

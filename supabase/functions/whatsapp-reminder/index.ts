@@ -415,7 +415,7 @@ function paymentContactDetails(): string {
 }
 
 const AFTER_PAY_NOW_FOLLOWUP =
-  "✅ Once payment is complete, please *send the screenshot* here. This helps our manager verify and update your kid's status immediately.";
+  "✅ After payment, please reply *Paid* here or send the payment screenshot. This helps our manager verify and update your kid's status immediately.";
 
 const PAYMENT_CONFIRMATION_REPLY =
   "Once the academy confirms the payment, we’ll update your renewal. Thank You!";
@@ -2389,6 +2389,29 @@ async function handlePaymentOptions(payload: any) {
   const eventId = String(payload.eventId || payload.event_id || payload.reminderEventId || "");
   if (!eventId) return jsonResponse({ error: "eventId is required." }, 400);
 
+  if (eventId.startsWith(SAMPLE_REMINDER_EVENT_PREFIX)) {
+    const sampleReminder = await findSampleFlowEvent(
+      eventId,
+      "sample_reminder_sent",
+    );
+    if (!sampleReminder) {
+      return jsonResponse({ error: "Sample reminder session not found." }, 404);
+    }
+    return jsonResponse({
+      success: true,
+      sample: true,
+      eventId,
+      playerName: "Sample Player",
+      dueDate: "",
+      reminderType: "renewal",
+      defaultPlan: "monthly",
+      selectedPlan: "",
+      selectedMonths: 1,
+      selectedAmount: null,
+      options: buildPaymentOptions({ reminder_type: "renewal" }),
+    });
+  }
+
   const reminderEvent = await findReminderEvent(eventId);
   if (!reminderEvent) {
     return jsonResponse({ error: "Reminder event not found." }, 404);
@@ -2532,7 +2555,11 @@ async function handleSamplePaymentAttempted(
     sampleEventId,
     "sample_parent_plan_selected",
   );
-  if (!sampleSelection) {
+  const sampleReminder = sampleSelection || await findSampleFlowEvent(
+    sampleEventId,
+    "sample_reminder_sent",
+  );
+  if (!sampleReminder) {
     return jsonResponse({ error: "Sample reminder session not found." }, 404);
   }
 
@@ -2548,17 +2575,17 @@ async function handleSamplePaymentAttempted(
     });
   }
 
-  const to = normalizePhone(String(sampleSelection.parent_phone || ""));
+  const to = normalizePhone(String(sampleReminder.parent_phone || ""));
   if (!to) {
     return jsonResponse({ error: "Sample recipient phone is missing." }, 400);
   }
 
   const selectedPlan = normalizeSelectedPlan(
     payload.selectedPlan || payload.plan || payload.planType,
-  ) || String(sampleSelection.payment_plan || "monthly");
+  ) || String(sampleReminder.payment_plan || "monthly");
   const selectedMonths = Number(
     payload.selectedMonths || payload.months || payload.monthsCovered ||
-      sampleSelection.payment_months || PLAN_MONTHS[selectedPlan] || 0,
+      sampleReminder.payment_months || PLAN_MONTHS[selectedPlan] || 0,
   );
   const selectedAmount = paymentAmountForReminderType(
     "renewal",
@@ -3020,11 +3047,12 @@ async function handleSendSampleReminder(request: Request, payload: any) {
   const sampleToken = env("SAMPLE_REMINDER_TOKEN");
   const requestSampleToken = request.headers.get("x-sample-reminder-token") ||
     "";
+  let createdBy = "sample-token";
   if (sampleToken && requestSampleToken === sampleToken) {
     // One-off operational sample sends can use this private token because the
     // WhatsApp webhook itself must remain publicly reachable by Meta.
   } else {
-    await assertAuthenticated(request);
+    createdBy = await assertAuthenticated(request);
   }
 
   const to = normalizePhone(String(payload.phone || payload.to || ""));
@@ -3044,9 +3072,8 @@ async function handleSendSampleReminder(request: Request, payload: any) {
     payload.flow || payload.version || payload.mode,
     payload.action,
   );
-  const sampleEventId = sampleFlow === "legacy"
-    ? `${SAMPLE_REMINDER_EVENT_PREFIX}${crypto.randomUUID()}`
-    : crypto.randomUUID();
+  const sampleEventId =
+    `${SAMPLE_REMINDER_EVENT_PREFIX}${crypto.randomUUID()}`;
   let metaResponse;
   let paymentPageUrl = "";
   let templateName = "";
@@ -3082,6 +3109,30 @@ async function handleSendSampleReminder(request: Request, payload: any) {
       error: `Meta WhatsApp send failed: ${message}`,
     }, 502);
   }
+
+  const sentAt = new Date().toISOString();
+  await insertWhatsappFlowEvent({
+    event_type: "sample_reminder_sent",
+    direction: "outbound",
+    parent_phone: to.slice(-10),
+    message_kind: sampleFlow === "direct_pay"
+      ? "sample_direct_payment_template"
+      : "sample_legacy_template",
+    message_body: paymentPageUrl || templateName,
+    message_id: String(metaResponse?.messages?.[0]?.id || ""),
+    status: String(metaResponse?.messages?.[0]?.id || "")
+      ? "accepted"
+      : "sent",
+    status_at: sentAt,
+    sent_at: sentAt,
+    provider_payload: {
+      sample_event_id: sampleEventId,
+      sample_flow: sampleFlow,
+      payment_page_url: paymentPageUrl,
+      meta_response: metaResponse,
+    },
+    created_by: createdBy,
+  });
 
   return jsonResponse({
     success: true,
@@ -3199,7 +3250,7 @@ async function handleSamplePaymentProofMessage(
     message_id: String(message?.id || ""),
     reminder_event_id: null,
     processed: false,
-    processing_note: "V1 sample proof received.",
+    processing_note: "Sample payment proof received.",
     payload: message,
   });
 
@@ -3224,7 +3275,7 @@ async function handleSamplePaymentProofMessage(
   });
 
   const replyBody = [
-    "✅ *End-to-end V1 sample complete*",
+    "✅ *End-to-end sample complete*",
     `${messageType === "text" ? "Payment confirmation" : "Payment proof"} received.`,
     "",
     "In the real flow, the proof would now be saved to the player timeline and the manager would receive the payment alert for approval.",
@@ -3262,7 +3313,7 @@ async function handleSamplePaymentProofMessage(
         body: JSON.stringify({
           processed: true,
           processing_note:
-            "V1 sample proof processed without changing live records.",
+            "Sample proof processed without changing live records.",
         }),
       },
     );
