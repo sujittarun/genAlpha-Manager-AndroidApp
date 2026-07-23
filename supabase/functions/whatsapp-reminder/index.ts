@@ -417,10 +417,6 @@ function paymentContactDetails(): string {
 const AFTER_PAY_NOW_FOLLOWUP =
   "✅ Once payment is complete, please *send the screenshot* here. This helps our manager verify and update your kid's status immediately.";
 
-const SAMPLE_AFTER_PAY_NOW_FOLLOWUP = `${AFTER_PAY_NOW_FOLLOWUP}
-
-🧪 *End-to-end sample:* Reply directly to this message with *Paid* or a screenshot to test the proof-received step. Do not make a real payment; no player or finance record will be changed.`;
-
 const PAYMENT_CONFIRMATION_REPLY =
   "Once the academy confirms the payment, we’ll update your renewal. Thank You!";
 
@@ -2571,14 +2567,14 @@ async function handleSamplePaymentAttempted(
   );
   const metaResponse = await sendTextMessage(
     to,
-    SAMPLE_AFTER_PAY_NOW_FOLLOWUP,
+    AFTER_PAY_NOW_FOLLOWUP,
   );
   await insertWhatsappFlowEvent({
     event_type: "sample_payment_followup_sent",
     direction: "outbound",
     parent_phone: to.slice(-10),
     message_kind: "sample_payment_followup",
-    message_body: SAMPLE_AFTER_PAY_NOW_FOLLOWUP,
+    message_body: AFTER_PAY_NOW_FOLLOWUP,
     message_id: String(metaResponse?.messages?.[0]?.id || ""),
     status: String(metaResponse?.messages?.[0]?.id || "")
       ? "accepted"
