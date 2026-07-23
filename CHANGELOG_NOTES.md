@@ -9,6 +9,7 @@ Last updated: 2026-07-23
 - Legacy V1 sample reminder button payloads now use a `sample-` event prefix and never enter the admission, renewal, player-payment, or finance workflows.
 - Reminder quick-reply callbacks are classified before shared-number AgentAlpha routing, so allowlisted staff testing a 1/3/6-month button no longer opens an admission-intake session.
 - A V1 sample selection now returns the selected plan, amount, and safe sample payment-page preview while explicitly confirming that no live record changed.
+- Opening a UPI app from the sample page now sends the normal WhatsApp proof-request step; replying directly to that sample prompt with `Paid` or a screenshot completes an isolated proof-received simulation instead of entering AgentAlpha.
 
 ## 2026-07-17
 

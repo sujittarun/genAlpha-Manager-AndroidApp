@@ -417,6 +417,10 @@ function paymentContactDetails(): string {
 const AFTER_PAY_NOW_FOLLOWUP =
   "✅ Once payment is complete, please *send the screenshot* here. This helps our manager verify and update your kid's status immediately.";
 
+const SAMPLE_AFTER_PAY_NOW_FOLLOWUP = `${AFTER_PAY_NOW_FOLLOWUP}
+
+🧪 *End-to-end sample:* Reply directly to this message with *Paid* or a screenshot to test the proof-received step. Do not make a real payment; no player or finance record will be changed.`;
+
 const PAYMENT_CONFIRMATION_REPLY =
   "Once the academy confirms the payment, we’ll update your renewal. Thank You!";
 
@@ -713,6 +717,25 @@ async function findWhatsappFlowEventByMessageId(messageId: string) {
       `whatsapp_flow_events?select=*&message_id=eq.${
         encodeURIComponent(messageId)
       }&order=created_at.asc&limit=1`,
+    );
+    return rows?.[0] || null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+async function findSampleFlowEvent(
+  sampleEventId: string,
+  eventType: string,
+) {
+  if (!sampleEventId.startsWith(SAMPLE_REMINDER_EVENT_PREFIX)) return null;
+  try {
+    const rows = await rest(
+      `whatsapp_flow_events?select=*&event_type=eq.${
+        encodeURIComponent(eventType)
+      }&provider_payload-%3E%3Esample_event_id=eq.${
+        encodeURIComponent(sampleEventId)
+      }&order=created_at.desc&limit=1`,
     );
     return rows?.[0] || null;
   } catch (_error) {
@@ -2505,11 +2528,89 @@ async function savePaymentPlanSelection(
   };
 }
 
+async function handleSamplePaymentAttempted(
+  sampleEventId: string,
+  payload: any,
+) {
+  const sampleSelection = await findSampleFlowEvent(
+    sampleEventId,
+    "sample_parent_plan_selected",
+  );
+  if (!sampleSelection) {
+    return jsonResponse({ error: "Sample reminder session not found." }, 404);
+  }
+
+  const existingFollowup = await findSampleFlowEvent(
+    sampleEventId,
+    "sample_payment_followup_sent",
+  );
+  if (existingFollowup) {
+    return jsonResponse({
+      success: true,
+      sample: true,
+      message: "Sample payment follow-up already sent.",
+    });
+  }
+
+  const to = normalizePhone(String(sampleSelection.parent_phone || ""));
+  if (!to) {
+    return jsonResponse({ error: "Sample recipient phone is missing." }, 400);
+  }
+
+  const selectedPlan = normalizeSelectedPlan(
+    payload.selectedPlan || payload.plan || payload.planType,
+  ) || String(sampleSelection.payment_plan || "monthly");
+  const selectedMonths = Number(
+    payload.selectedMonths || payload.months || payload.monthsCovered ||
+      sampleSelection.payment_months || PLAN_MONTHS[selectedPlan] || 0,
+  );
+  const selectedAmount = paymentAmountForReminderType(
+    "renewal",
+    selectedPlan,
+    selectedMonths,
+  );
+  const metaResponse = await sendTextMessage(
+    to,
+    SAMPLE_AFTER_PAY_NOW_FOLLOWUP,
+  );
+  await insertWhatsappFlowEvent({
+    event_type: "sample_payment_followup_sent",
+    direction: "outbound",
+    parent_phone: to.slice(-10),
+    message_kind: "sample_payment_followup",
+    message_body: SAMPLE_AFTER_PAY_NOW_FOLLOWUP,
+    message_id: String(metaResponse?.messages?.[0]?.id || ""),
+    status: String(metaResponse?.messages?.[0]?.id || "")
+      ? "accepted"
+      : "sent",
+    status_at: new Date().toISOString(),
+    sent_at: new Date().toISOString(),
+    payment_plan: selectedPlan,
+    payment_amount: selectedAmount || null,
+    payment_months: selectedMonths || PLAN_MONTHS[selectedPlan] || null,
+    provider_payload: {
+      sample_event_id: sampleEventId,
+      meta_response: metaResponse,
+    },
+    created_by: "pay.html sample",
+  });
+
+  return jsonResponse({
+    success: true,
+    sample: true,
+    message: "Sample payment proof request sent.",
+    metaResponse,
+  });
+}
+
 async function handlePaymentAttempted(payload: any) {
   const eventId = String(
     payload.eventId || payload.event_id || payload.reminderEventId || "",
   );
   if (!eventId) return jsonResponse({ error: "eventId is required." }, 400);
+  if (eventId.startsWith(SAMPLE_REMINDER_EVENT_PREFIX)) {
+    return await handleSamplePaymentAttempted(eventId, payload);
+  }
 
   let reminderEvent = await findReminderEvent(eventId);
   if (!reminderEvent) {
@@ -3000,6 +3101,7 @@ async function handleSendSampleReminder(request: Request, payload: any) {
 async function handleSampleReminderPlanSelection(
   from: string,
   message: any,
+  sampleEventId: string,
   plan: string,
   labelText: string,
   webhookLog: any,
@@ -3007,6 +3109,7 @@ async function handleSampleReminderPlanSelection(
   const selectedLabel = PLAN_LABELS[plan] || labelText || "Payment option";
   let responseBody = "";
   let samplePaymentPageUrl = "";
+  let selectedAmount = 0;
 
   if (plan === "need_help") {
     responseBody = [
@@ -3018,16 +3121,17 @@ async function handleSampleReminderPlanSelection(
       "_Test only — no admission, renewal, player, payment, or finance record was changed._",
     ].join("\n");
   } else {
-    const amount = paymentAmountForReminderType("renewal", plan);
+    selectedAmount = paymentAmountForReminderType("renewal", plan);
     samplePaymentPageUrl = buildPaymentPageUrl(
       { name: "Sample Player" },
       plan,
-      amount,
+      selectedAmount,
+      sampleEventId,
     );
     responseBody = [
       "✅ *V1 sample worked*",
       `Selected: *${selectedLabel}*`,
-      `Amount: *Rs ${amount.toLocaleString("en-IN")}*`,
+      `Amount: *Rs ${selectedAmount.toLocaleString("en-IN")}*`,
       "",
       `Sample payment page: ${samplePaymentPageUrl}`,
       "",
@@ -3036,6 +3140,25 @@ async function handleSampleReminderPlanSelection(
       "_Test only — no admission, renewal, player, payment, or finance record was changed._",
     ].join("\n");
   }
+
+  await insertWhatsappFlowEvent({
+    event_type: "sample_parent_plan_selected",
+    direction: "staff",
+    parent_phone: from.slice(-10),
+    message_kind: String(message?.type || "button"),
+    message_body: labelText || selectedLabel,
+    message_id: String(message?.id || ""),
+    status: "sample_plan_selected",
+    status_at: new Date().toISOString(),
+    payment_plan: plan,
+    payment_amount: selectedAmount || null,
+    payment_months: PLAN_MONTHS[plan] || null,
+    provider_payload: {
+      sample_event_id: sampleEventId,
+      source_message_id: String(message?.id || ""),
+    },
+    created_by: "WhatsApp sample",
+  });
 
   const metaResponse = await sendTextMessage(from, responseBody);
   if (webhookLog?.id) {
@@ -3059,6 +3182,95 @@ async function handleSampleReminderPlanSelection(
     metaResponse,
     sourceMessageId: String(message?.id || ""),
   };
+}
+
+async function handleSamplePaymentProofMessage(
+  from: string,
+  message: any,
+  sampleFollowup: any,
+) {
+  const sampleEventId = String(
+    sampleFollowup?.provider_payload?.sample_event_id || "",
+  );
+  const messageType = String(message?.type || "text");
+  const proofText = String(
+    message?.text?.body || message?.image?.caption ||
+      message?.document?.caption || "",
+  );
+  const webhookLog = await insertWebhookEvent({
+    event_type: "incoming_sample_payment_proof",
+    from_phone: from.slice(-10),
+    message_id: String(message?.id || ""),
+    reminder_event_id: null,
+    processed: false,
+    processing_note: "V1 sample proof received.",
+    payload: message,
+  });
+
+  await insertWhatsappFlowEvent({
+    event_type: "sample_payment_proof_received",
+    direction: "staff",
+    parent_phone: from.slice(-10),
+    message_kind: messageType,
+    message_body: proofText,
+    message_id: String(message?.id || ""),
+    status: "sample_proof_received",
+    status_at: new Date().toISOString(),
+    payment_plan: String(sampleFollowup?.payment_plan || ""),
+    payment_amount: Number(sampleFollowup?.payment_amount || 0) || null,
+    payment_months: Number(sampleFollowup?.payment_months || 0) || null,
+    provider_payload: {
+      sample_event_id: sampleEventId,
+      reply_to_message_id: String(message?.context?.id || ""),
+      proof_type: messageType,
+    },
+    created_by: "WhatsApp sample",
+  });
+
+  const replyBody = [
+    "✅ *End-to-end V1 sample complete*",
+    `${messageType === "text" ? "Payment confirmation" : "Payment proof"} received.`,
+    "",
+    "In the real flow, the proof would now be saved to the player timeline and the manager would receive the payment alert for approval.",
+    "",
+    "_Sample only — no admission, renewal, player, payment, or finance record was changed._",
+  ].join("\n");
+  const metaResponse = await sendTextMessage(from, replyBody);
+  await insertWhatsappFlowEvent({
+    event_type: "sample_payment_proof_reply_sent",
+    direction: "outbound",
+    parent_phone: from.slice(-10),
+    message_kind: "text",
+    message_body: replyBody,
+    message_id: String(metaResponse?.messages?.[0]?.id || ""),
+    status: String(metaResponse?.messages?.[0]?.id || "")
+      ? "accepted"
+      : "sent",
+    status_at: new Date().toISOString(),
+    sent_at: new Date().toISOString(),
+    payment_plan: String(sampleFollowup?.payment_plan || ""),
+    payment_amount: Number(sampleFollowup?.payment_amount || 0) || null,
+    payment_months: Number(sampleFollowup?.payment_months || 0) || null,
+    provider_payload: {
+      sample_event_id: sampleEventId,
+      meta_response: metaResponse,
+    },
+    created_by: "WhatsApp sample",
+  });
+
+  if (webhookLog?.id) {
+    await rest(
+      `whatsapp_webhook_events?id=eq.${encodeURIComponent(webhookLog.id)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          processed: true,
+          processing_note:
+            "V1 sample proof processed without changing live records.",
+        }),
+      },
+    );
+  }
 }
 
 async function handleRenewalVerified(request: Request, payload: any) {
@@ -3408,6 +3620,24 @@ async function handleWebhook(payload: any) {
           reply?.id || reply?.payload || reply?.title || reply?.text || "",
         );
         const parsedReminderReply = parseReminderReplyPayload(replyPayload);
+        const replyToMessageId = String(message?.context?.id || "");
+        if (
+          !parsedReminderReply.isReminderReply &&
+          replyToMessageId &&
+          isPaymentConfirmationMessage(message)
+        ) {
+          const repliedFlow = await findWhatsappFlowEventByMessageId(
+            replyToMessageId,
+          );
+          if (repliedFlow?.event_type === "sample_payment_followup_sent") {
+            await handleSamplePaymentProofMessage(
+              from,
+              message,
+              repliedFlow,
+            );
+            continue;
+          }
+        }
         if (!parsedReminderReply.isReminderReply) {
           try {
             const intakeResult = await forwardToAdmissionIntake(
@@ -3445,6 +3675,7 @@ async function handleWebhook(payload: any) {
           await handleSampleReminderPlanSelection(
             from,
             message,
+            eventId,
             plan,
             labelText,
             webhookLog,
