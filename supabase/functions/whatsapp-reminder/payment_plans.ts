@@ -24,6 +24,32 @@ export const PLAN_MONTHS: Record<string, number> = {
 
 export const PAID_PLAN_OPTIONS = PLAN_OPTIONS.filter((plan) => plan !== "need_help");
 export const SPECIAL_TRAINING_MONTHLY_FEE = 10000;
+export const SAMPLE_REMINDER_EVENT_PREFIX = "sample-";
+
+export function parseReminderReplyPayload(value: unknown): {
+  isReminderReply: boolean;
+  isSample: boolean;
+  eventId: string;
+  plan: string;
+} {
+  const payload = String(value || "");
+  if (!payload.startsWith("renewal:")) {
+    return {
+      isReminderReply: false,
+      isSample: false,
+      eventId: "",
+      plan: "",
+    };
+  }
+
+  const [, eventId = "", plan = ""] = payload.split(":");
+  return {
+    isReminderReply: Boolean(eventId),
+    isSample: eventId.startsWith(SAMPLE_REMINDER_EVENT_PREFIX),
+    eventId,
+    plan,
+  };
+}
 
 export function getSpecialTrainingDiscountRate(months: number): number {
   const safeMonths = Math.max(Math.floor(Number(months || 1)), 1);

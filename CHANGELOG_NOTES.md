@@ -1,6 +1,14 @@
 # Gen Alpha Manager Changelog Notes
 
-Last updated: 2026-07-17
+Last updated: 2026-07-23
+
+## 2026-07-23
+
+### Isolated WhatsApp V1 Sample Callbacks
+
+- Legacy V1 sample reminder button payloads now use a `sample-` event prefix and never enter the admission, renewal, player-payment, or finance workflows.
+- Reminder quick-reply callbacks are classified before shared-number AgentAlpha routing, so allowlisted staff testing a 1/3/6-month button no longer opens an admission-intake session.
+- A V1 sample selection now returns the selected plan, amount, and safe sample payment-page preview while explicitly confirming that no live record changed.
 
 ## 2026-07-17
 

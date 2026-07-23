@@ -5,10 +5,12 @@ import {
   normalizeChoiceText,
   normalizeSelectedPlan,
   PAID_PLAN_OPTIONS,
+  parseReminderReplyPayload,
   paymentAmountForReminderType,
   PLAN_LABELS,
   PLAN_MONTHS,
   PLAN_OPTIONS,
+  SAMPLE_REMINDER_EVENT_PREFIX,
 } from "./payment_plans.ts";
 
 const corsHeaders = {
@@ -2945,7 +2947,9 @@ async function handleSendSampleReminder(request: Request, payload: any) {
     payload.flow || payload.version || payload.mode,
     payload.action,
   );
-  const sampleEventId = crypto.randomUUID();
+  const sampleEventId = sampleFlow === "legacy"
+    ? `${SAMPLE_REMINDER_EVENT_PREFIX}${crypto.randomUUID()}`
+    : crypto.randomUUID();
   let metaResponse;
   let paymentPageUrl = "";
   let templateName = "";
@@ -2970,12 +2974,6 @@ async function handleSendSampleReminder(request: Request, payload: any) {
         dueDate,
         reminderType,
       );
-      const amount = paymentAmountForReminderType(reminderType, "monthly");
-      paymentPageUrl = buildPaymentPageUrl(sampleStudent, "monthly", amount);
-      await sendTextMessage(
-        to,
-        `Sample Gen Alpha fee link: ${paymentPageUrl}\n\n${paymentContactDetails()}`,
-      );
     }
   } catch (error) {
     const message = error instanceof Error
@@ -2997,6 +2995,70 @@ async function handleSendSampleReminder(request: Request, payload: any) {
     metaResponse,
     paymentPageUrl,
   });
+}
+
+async function handleSampleReminderPlanSelection(
+  from: string,
+  message: any,
+  plan: string,
+  labelText: string,
+  webhookLog: any,
+) {
+  const selectedLabel = PLAN_LABELS[plan] || labelText || "Payment option";
+  let responseBody = "";
+  let samplePaymentPageUrl = "";
+
+  if (plan === "need_help") {
+    responseBody = [
+      "✅ *V1 sample worked*",
+      `Selected: *${selectedLabel}*`,
+      "",
+      "In a real reminder, the academy contact details would be sent here.",
+      "",
+      "_Test only — no admission, renewal, player, payment, or finance record was changed._",
+    ].join("\n");
+  } else {
+    const amount = paymentAmountForReminderType("renewal", plan);
+    samplePaymentPageUrl = buildPaymentPageUrl(
+      { name: "Sample Player" },
+      plan,
+      amount,
+    );
+    responseBody = [
+      "✅ *V1 sample worked*",
+      `Selected: *${selectedLabel}*`,
+      `Amount: *Rs ${amount.toLocaleString("en-IN")}*`,
+      "",
+      `Sample payment page: ${samplePaymentPageUrl}`,
+      "",
+      paymentContactDetails(),
+      "",
+      "_Test only — no admission, renewal, player, payment, or finance record was changed._",
+    ].join("\n");
+  }
+
+  const metaResponse = await sendTextMessage(from, responseBody);
+  if (webhookLog?.id) {
+    await rest(
+      `whatsapp_webhook_events?id=eq.${encodeURIComponent(webhookLog.id)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          processed: true,
+          processing_note:
+            `V1 sample selection processed: ${plan}. No live record changed.`,
+        }),
+      },
+    );
+  }
+
+  return {
+    success: true,
+    plan,
+    samplePaymentPageUrl,
+    metaResponse,
+    sourceMessageId: String(message?.id || ""),
+  };
 }
 
 async function handleRenewalVerified(request: Request, payload: any) {
@@ -3341,25 +3403,28 @@ async function handleWebhook(payload: any) {
 
       for (const message of change?.value?.messages || []) {
         const from = String(message.from || "");
-        try {
-          const intakeResult = await forwardToAdmissionIntake(change?.value, message);
-          if (intakeResult) continue;
-        } catch (error) {
-          // A message addressed to the dedicated admission number must never
-          // fall through into the renewal-payment conversation handler.
-          console.error("Admission intake forwarding failed", error);
-          continue;
-        }
         const reply = message?.interactive?.button_reply || message?.button;
         const replyPayload = String(
           reply?.id || reply?.payload || reply?.title || reply?.text || "",
         );
-        const parts = replyPayload.startsWith("renewal:")
-          ? replyPayload.split(":")
-          : [];
-        const eventId = parts[1] || "";
+        const parsedReminderReply = parseReminderReplyPayload(replyPayload);
+        if (!parsedReminderReply.isReminderReply) {
+          try {
+            const intakeResult = await forwardToAdmissionIntake(
+              change?.value,
+              message,
+            );
+            if (intakeResult) continue;
+          } catch (error) {
+            // A message addressed to the dedicated admission number must never
+            // fall through into the renewal-payment conversation handler.
+            console.error("Admission intake forwarding failed", error);
+            continue;
+          }
+        }
+        const eventId = parsedReminderReply.eventId;
         const labelText = String(reply?.title || reply?.text || "");
-        const plan = parts[2] ||
+        const plan = normalizeSelectedPlan(parsedReminderReply.plan) ||
           normalizeSelectedPlan(replyPayload) ||
           normalizeSelectedPlan(labelText) ||
           normalizeSelectedPlan(message?.text?.body);
@@ -3367,13 +3432,25 @@ async function handleWebhook(payload: any) {
           event_type: "incoming_message",
           from_phone: from.slice(-10),
           message_id: String(message.id || ""),
-          reminder_event_id: eventId || null,
+          reminder_event_id: parsedReminderReply.isSample
+            ? null
+            : eventId || null,
           processed: false,
           processing_note: plan
             ? `Plan detected: ${plan}`
             : "No matching plan detected.",
           payload: message,
         });
+        if (parsedReminderReply.isSample && plan) {
+          await handleSampleReminderPlanSelection(
+            from,
+            message,
+            plan,
+            labelText,
+            webhookLog,
+          );
+          continue;
+        }
         if (!plan && isPaymentConfirmationMessage(message)) {
           await handlePaymentConfirmationMessage(from, message, webhookLog);
           continue;
