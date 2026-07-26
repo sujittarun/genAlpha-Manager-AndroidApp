@@ -757,6 +757,7 @@ class AcademyViewModel(
                         fatherGuardianName = if (profileFieldsSaved) draft.fatherGuardianName.trim() else editingStudent.fatherGuardianName,
                         parentContactNo = if (profileFieldsSaved) draft.parentContactNo.filter(Char::isDigit).take(10) else editingStudent.parentContactNo,
                         whatsappContactStatus = if (profileFieldsSaved) draft.whatsappContactStatus else editingStudent.whatsappContactStatus,
+                        whatsappRemindersPaused = if (profileFieldsSaved) draft.whatsappRemindersPaused else editingStudent.whatsappRemindersPaused,
                         alternateContactNo = if (profileFieldsSaved) draft.alternateContactNo.filter(Char::isDigit).take(10) else editingStudent.alternateContactNo,
                         schoolCollege = if (profileFieldsSaved) draft.schoolCollege.trim() else editingStudent.schoolCollege,
                         grade = if (profileFieldsSaved) draft.grade.trim() else editingStudent.grade,

@@ -7316,6 +7316,9 @@ private fun PlayerEditorSheet(
     var jerseyPairs by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.jerseyPairs?.toString() ?: "0") }
     var fatherGuardianName by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.fatherGuardianName.orEmpty()) }
     var parentContactNo by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.parentContactNo.orEmpty()) }
+    var whatsappRemindersPaused by rememberSaveable(editingStudent?.id) {
+        mutableStateOf(editingStudent?.whatsappRemindersPaused ?: false)
+    }
     var alternateContactNo by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.alternateContactNo.orEmpty()) }
     var schoolCollege by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.schoolCollege.orEmpty()) }
     var grade by rememberSaveable(editingStudent?.id) { mutableStateOf(editingStudent?.grade.orEmpty()) }
@@ -7520,6 +7523,34 @@ private fun PlayerEditorSheet(
                     label = { Text("Mobile number") },
                     singleLine = true,
                 )
+                if (editingStudent != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(3.dp),
+                        ) {
+                            Text(
+                                "Pause automatic reminders",
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                "Stops scheduled WhatsApp reminders and retries. Manual sends stay available.",
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                            )
+                        }
+                        Switch(
+                            checked = whatsappRemindersPaused,
+                            onCheckedChange = { whatsappRemindersPaused = it },
+                        )
+                    }
+                }
                 if (editingStudent?.whatsappContactStatus == "wrong_number") {
                     Surface(
                         color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.42f),
@@ -7623,6 +7654,7 @@ private fun PlayerEditorSheet(
                                                 parentContactNo.length == 10 && parentContactNo != editingStudent.parentContactNo.filter(Char::isDigit).take(10) -> "active"
                                                 else -> "wrong_number"
                                             },
+                                            whatsappRemindersPaused = whatsappRemindersPaused,
                                             alternateContactNo = alternateContactNo,
                                             schoolCollege = schoolCollege,
                                             grade = grade,

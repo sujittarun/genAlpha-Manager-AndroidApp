@@ -94,6 +94,10 @@ function isWhatsappContactBlocked(student: any): boolean {
   );
 }
 
+function isWhatsappAutoReminderPaused(student: any): boolean {
+  return student?.whatsapp_reminders_paused === true;
+}
+
 function whatsappContactBlockedMessage(student: any): string {
   return String(student?.whatsapp_contact_status || "") === "opted_out"
     ? "Parent has opted out of WhatsApp reminders."
@@ -1861,6 +1865,20 @@ async function processDueReminderRetries(
     const retryCount = Number(event.retry_count || 0) + 1;
     try {
       const student = await fetchStudent(String(event.student_id || ""));
+      if (isWhatsappAutoReminderPaused(student)) {
+        await updateReminderEvent(event.id, {
+          status: "manual_followup",
+          manual_followup_required: true,
+          manual_followup_reason: "staff_paused",
+          next_retry_at: null,
+          retry_reason: "Automatic WhatsApp reminders paused by staff.",
+        });
+        results.push({
+          student: student.name,
+          status: "paused_by_staff",
+        });
+        continue;
+      }
       if (isWhatsappContactBlocked(student)) {
         await markReminderContactBlocked(event, student);
         results.push({
@@ -3959,6 +3977,13 @@ async function handleAutoSchedule() {
     const lastFollowUp = followUps.find((f: any) => f.student_id === student.id);
     let isHeadsUp = false;
     let isRenewalDay = false;
+
+    if (isWhatsappAutoReminderPaused(student)) {
+      console.log(
+        `Skipping ${student.name}: automatic WhatsApp reminders paused by staff.`,
+      );
+      continue;
+    }
 
     if (isWhatsappContactBlocked(student)) {
       if (lastFollowUp?.id) {

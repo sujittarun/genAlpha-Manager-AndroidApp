@@ -1753,6 +1753,7 @@ class SupabaseRepository(
                 .put("father_guardian_name", draft.fatherGuardianName.trim())
                 .put("parent_contact_no", draft.parentContactNo.filter(Char::isDigit).take(10))
                 .put("whatsapp_contact_status", draft.whatsappContactStatus)
+                .put("whatsapp_reminders_paused", draft.whatsappRemindersPaused)
                 .put("alternate_contact_no", draft.alternateContactNo.filter(Char::isDigit).take(10))
                 .put("school_college", draft.schoolCollege.trim())
                 .put("grade", draft.grade.trim())
@@ -2070,6 +2071,7 @@ class SupabaseRepository(
             fatherGuardianName = optSafeString("father_guardian_name"),
             parentContactNo = optSafeString("parent_contact_no"),
             whatsappContactStatus = optSafeString("whatsapp_contact_status").ifBlank { "active" },
+            whatsappRemindersPaused = optBoolean("whatsapp_reminders_paused", false),
             alternateContactNo = optSafeString("alternate_contact_no"),
             schoolCollege = optSafeString("school_college"),
             grade = optSafeString("grade"),
@@ -2229,6 +2231,7 @@ private fun SupabaseException.isMissingStudentProfileColumnError(): Boolean {
             "school_college",
             "grade",
             "address",
+            "whatsapp_reminders_paused",
         ).any { lowerMessage.contains(it) }
 }
 

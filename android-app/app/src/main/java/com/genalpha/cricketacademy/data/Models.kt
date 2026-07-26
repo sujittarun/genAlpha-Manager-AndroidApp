@@ -66,6 +66,7 @@ data class Student(
     val fatherGuardianName: String,
     val parentContactNo: String,
     val whatsappContactStatus: String,
+    val whatsappRemindersPaused: Boolean,
     val alternateContactNo: String,
     val schoolCollege: String,
     val grade: String,
@@ -102,6 +103,7 @@ data class StudentDraft(
     val fatherGuardianName: String = "",
     val parentContactNo: String = "",
     val whatsappContactStatus: String = "active",
+    val whatsappRemindersPaused: Boolean = false,
     val alternateContactNo: String = "",
     val schoolCollege: String = "",
     val grade: String = "",
@@ -390,6 +392,7 @@ data class StudentDto(
     @Json(name = "father_guardian_name") val fatherGuardianName: String? = "",
     @Json(name = "parent_contact_no") val parentContactNo: String? = "",
     @Json(name = "whatsapp_contact_status") val whatsappContactStatus: String? = "active",
+    @Json(name = "whatsapp_reminders_paused") val whatsappRemindersPaused: Boolean? = false,
     @Json(name = "alternate_contact_no") val alternateContactNo: String? = "",
     @Json(name = "school_college") val schoolCollege: String? = "",
     val grade: String? = "",
@@ -430,6 +433,7 @@ fun StudentDto.toDomain(): Student = Student(
     fatherGuardianName = fatherGuardianName.orEmpty(),
     parentContactNo = parentContactNo.orEmpty(),
     whatsappContactStatus = whatsappContactStatus.orEmpty().ifBlank { "active" },
+    whatsappRemindersPaused = whatsappRemindersPaused == true,
     alternateContactNo = alternateContactNo.orEmpty(),
     schoolCollege = schoolCollege.orEmpty(),
     grade = grade.orEmpty(),
@@ -466,6 +470,7 @@ fun Student.toDraft(): StudentDraft = StudentDraft(
     fatherGuardianName = fatherGuardianName,
     parentContactNo = parentContactNo,
     whatsappContactStatus = whatsappContactStatus,
+    whatsappRemindersPaused = whatsappRemindersPaused,
     alternateContactNo = alternateContactNo,
     schoolCollege = schoolCollege,
     grade = grade,
@@ -495,6 +500,7 @@ fun Student.feeStatusLabel(): String = when {
 
 fun Student.feeStatusLabel(followUp: PaymentFollowUp?, payments: List<StudentPayment>): String = when {
     followUp?.isPendingVerification() == true || isPaymentPendingVerification() -> "Pending verification"
+    whatsappRemindersPaused -> "Reminders paused"
     isManualFollowUpDue(followUp, payments) -> "Manual follow-up"
     followUp?.isRetryScheduled() == true && (isFeesPending() || isRenewalPending(payments)) -> "Retry scheduled"
     followUp?.isReminderFailed() == true && (isFeesPending() || isRenewalPending(payments)) -> "Reminder failed"
@@ -511,6 +517,7 @@ fun Student.manualFollowUpReasonLabel(
     payments: List<StudentPayment>,
 ): String? {
     if (!isFeesPending() && !isRenewalPending(payments)) return null
+    if (whatsappRemindersPaused) return "Paused by staff"
     if (whatsappContactStatus == "wrong_number") return "Wrong phone number"
     if (whatsappContactStatus == "opted_out") return "WhatsApp opted out"
     val dueDate = if (isFeesPending()) joinDate else nextRenewalCycleDate(payments)
