@@ -5368,9 +5368,10 @@ private fun RosterRow(
                 else -> BrandBlue
             }
             val feeTone = when {
-                feeLabel == "Manual follow-up" -> feeManualTone
+                feeLabel == "Manual follow-up" || feeLabel == "Reminders paused" -> feeManualTone
                 feeLabel == "Reminder failed" -> feeFailedTone
                 feeLabel == "Retry scheduled" || feeLabel == "Reminder sent" -> feeReminderTone
+                feeLabel == "Renewal due" || feeLabel == "Renewal overdue" -> renewalPendingTone
                 student.feesPaid -> feePaidTone
                 feeLabel == "Pending verification" -> feeVerificationTone
                 else -> feePendingTone

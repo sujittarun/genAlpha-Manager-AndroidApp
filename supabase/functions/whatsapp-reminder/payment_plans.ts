@@ -26,6 +26,13 @@ export const PAID_PLAN_OPTIONS = PLAN_OPTIONS.filter((plan) => plan !== "need_he
 export const SPECIAL_TRAINING_MONTHLY_FEE = 10000;
 export const SAMPLE_REMINDER_EVENT_PREFIX = "sample-";
 
+export function isCoachingFeePayment(payment: Record<string, unknown>): boolean {
+  const paymentType = String(
+    payment?.payment_type || payment?.paymentType || "",
+  ).trim().toLowerCase();
+  return paymentType === "joining" || paymentType === "renewal";
+}
+
 export function parseReminderReplyPayload(value: unknown): {
   isReminderReply: boolean;
   isSample: boolean;

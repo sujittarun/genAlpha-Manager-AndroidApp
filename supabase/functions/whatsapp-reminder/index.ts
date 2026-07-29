@@ -1,6 +1,7 @@
 import {
   getSpecialTrainingAmountForMonths,
   inferSpecialTrainingMonthsFromAmount,
+  isCoachingFeePayment,
   monthsForPlan,
   normalizeChoiceText,
   normalizeSelectedPlan,
@@ -314,7 +315,9 @@ function getPaidThroughDate(student: any, payments: any[]): string {
 
   if (!paidThrough) return localIsoDate();
 
-  const studentPayments = payments.filter((p) => p.student_id === student.id);
+  const studentPayments = payments.filter((payment) =>
+    payment.student_id === student.id && isCoachingFeePayment(payment)
+  );
 
   studentPayments.forEach((payment) => {
     const cycleStart = payment.cycle_start_date ||

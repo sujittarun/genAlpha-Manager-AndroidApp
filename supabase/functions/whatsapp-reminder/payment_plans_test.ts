@@ -1,9 +1,24 @@
 import {
+  isCoachingFeePayment,
   monthsForPlan,
   normalizeSelectedPlan,
   parseReminderReplyPayload,
   paymentAmountForReminderType,
 } from "./payment_plans.ts";
+
+Deno.test("only joining and renewal payments extend coaching coverage", () => {
+  for (const paymentType of ["joining", "renewal", " Renewal "]) {
+    if (!isCoachingFeePayment({ payment_type: paymentType })) {
+      throw new Error(`${paymentType} should extend coaching coverage.`);
+    }
+  }
+
+  for (const paymentType of ["jersey", "jersey_refund", "expense", "", null]) {
+    if (isCoachingFeePayment({ payment_type: paymentType })) {
+      throw new Error(`${paymentType} must not extend coaching coverage.`);
+    }
+  }
+});
 
 Deno.test("special training uses the admission discount schedule", () => {
   const expected = new Map([[1, 10000], [2, 20000], [3, 28500], [6, 54000]]);

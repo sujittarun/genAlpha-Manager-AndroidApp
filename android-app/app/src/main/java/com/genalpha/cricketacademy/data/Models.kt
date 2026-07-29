@@ -505,6 +505,8 @@ fun Student.feeStatusLabel(followUp: PaymentFollowUp?, payments: List<StudentPay
     followUp?.isRetryScheduled() == true && (isFeesPending() || isRenewalPending(payments)) -> "Retry scheduled"
     followUp?.isReminderFailed() == true && (isFeesPending() || isRenewalPending(payments)) -> "Reminder failed"
     followUp?.isReminderSent() == true && (isFeesPending() || isRenewalPending(payments)) -> "Reminder sent"
+    isRenewalPending(payments) ->
+        if (daysSince(paidThroughDate(payments)) > 0) "Renewal overdue" else "Renewal due"
     feesPaid -> "Fees paid"
     else -> "Fees pending"
 }
