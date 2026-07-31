@@ -1,5 +1,6 @@
 import {
   buildManagerAttemptNoProofMessage,
+  buildManagerPaymentClaimMessage,
   selectPaymentConversationReminder,
 } from "./conversation_routing.ts";
 
@@ -21,6 +22,18 @@ Deno.test("proof follows the active Pay Now attempt instead of a newer daily rem
   if (selected?.id !== "active-pay-now") {
     throw new Error(
       `Expected active-pay-now, got ${String(selected?.id || "none")}`,
+    );
+  }
+});
+
+Deno.test("a Paid reply without an image remains an unverified parent claim", () => {
+  const message = buildManagerPaymentClaimMessage("Karthikeya");
+  if (!message.includes("Parent reported") || !message.includes("verify")) {
+    throw new Error("The payment-claim alert is missing verification context.");
+  }
+  if (/payment vochindi/i.test(message)) {
+    throw new Error(
+      "The payment-claim alert uses the old confirmed-payment wording.",
     );
   }
 });

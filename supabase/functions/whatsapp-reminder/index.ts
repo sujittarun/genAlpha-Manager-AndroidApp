@@ -15,6 +15,7 @@ import {
 } from "./payment_plans.ts";
 import {
   buildManagerAttemptNoProofMessage,
+  buildManagerPaymentClaimMessage,
   selectPaymentConversationReminder,
 } from "./conversation_routing.ts";
 
@@ -48,6 +49,7 @@ const MANAGER_PAYMENT_ALERT_PHONE = "9985822772";
 const MANAGER_PAYMENT_ALERT_DELAY_MINUTES = 5;
 const PAYMENT_CONFIRMATION_TEMPLATE_NAME = "gen_alpha_payment_confirmation";
 const MANAGER_PAYMENT_ATTEMPT_TEMPLATE_NAME = "manager_payment_attempt_no_proof";
+const MANAGER_PAYMENT_CLAIM_TEMPLATE_NAME = "manager_payment_claim_no_proof";
 
 const DEFAULT_DIRECT_PAY_TEMPLATE_NAME = "gen_alpha_fee_direct_pay";
 const HEALTHY_ECOSYSTEM_ERROR_CODE = "131049";
@@ -1548,6 +1550,62 @@ async function handleSetupManagerPaymentAttemptTemplate(request: Request) {
   }
 }
 
+async function handleSetupManagerPaymentClaimTemplate(request: Request) {
+  await assertAuthenticatedOrServiceRole(request);
+
+  const wabaId = await resolveWhatsappBusinessAccountId();
+  const languageCode = env("META_WHATSAPP_TEMPLATE_LANGUAGE") || "en";
+  const templatePayload = {
+    name: MANAGER_PAYMENT_CLAIM_TEMPLATE_NAME,
+    language: languageCode,
+    category: "UTILITY",
+    components: [
+      {
+        type: "BODY",
+        text:
+          "Parent reported that payment was completed - screenshot not submitted.\n\nPlayer: {{1}}\nPlease verify the payment before confirming it in the app.",
+        example: { body_text: [["Aarav"]] },
+      },
+    ],
+  };
+
+  try {
+    const metaResponse = await graphRequest(
+      `${encodeURIComponent(wabaId)}/message_templates`,
+      { method: "POST", body: JSON.stringify(templatePayload) },
+    );
+    return jsonResponse({
+      success: true,
+      templateName: MANAGER_PAYMENT_CLAIM_TEMPLATE_NAME,
+      languageCode,
+      metaResponse,
+    });
+  } catch (error) {
+    const errorPayload = parseProviderError(error);
+    if (/already exists|duplicate/i.test(JSON.stringify(errorPayload))) {
+      const existing = await tryGraphRequest(
+        `${encodeURIComponent(wabaId)}/message_templates?name=${
+          encodeURIComponent(MANAGER_PAYMENT_CLAIM_TEMPLATE_NAME)
+        }&fields=name,status,language,category,rejected_reason`,
+      );
+      return jsonResponse({
+        success: true,
+        alreadyExists: true,
+        templateName: MANAGER_PAYMENT_CLAIM_TEMPLATE_NAME,
+        languageCode,
+        metaResponse: existing.body || errorPayload,
+      });
+    }
+    return jsonResponse({
+      success: false,
+      templateName: MANAGER_PAYMENT_CLAIM_TEMPLATE_NAME,
+      languageCode,
+      error: providerErrorMessage(errorPayload),
+      metaResponse: errorPayload,
+    }, 502);
+  }
+}
+
 async function paymentConfirmationTemplateStatus() {
   const wabaId = await resolveWhatsappBusinessAccountId();
   const result = await graphRequest(
@@ -2335,12 +2393,7 @@ async function managerAlertMessageBody(
     return buildManagerAttemptNoProofMessage(playerName);
   }
   if (paymentClaimed) {
-    return [
-      "Parent reported that payment was completed — screenshot not submitted.",
-      "",
-      `Player: ${playerName}`,
-      "Please verify the payment before confirming it in the app.",
-    ].join("\n");
+    return buildManagerPaymentClaimMessage(playerName);
   }
   return [
     "Vempati Sandeep - Proud owner of Gen Alpha Academy - Payment vochindi babu chusko.",
@@ -2426,7 +2479,9 @@ async function sendManagerPaymentAlert(
   const proofBucket = String(proofMedia?.storage_bucket || "payment-proofs");
   const hasProof = Boolean(proofPath);
   const proofWasSubmitted = hasProof || options.forceWithProof === true;
-  const paymentClaimed = options.paymentClaimed === true;
+  const paymentClaimed = options.paymentClaimed === true || Boolean(
+    reminderEvent?.meta_response?.payment_confirmation?.message_id && !hasProof,
+  );
 
   if (proofWasSubmitted && currentAlertStatus === "sent_with_proof") {
     return { sent: false, reason: "manager already alerted with proof" };
@@ -2459,7 +2514,7 @@ async function sendManagerPaymentAlert(
   const templateName = shouldUseProofTemplate
     ? (env("META_MANAGER_PAYMENT_ALERT_WITH_PROOF_TEMPLATE_NAME") || "manager_payment_alert_with_proof")
     : paymentClaimed
-    ? (env("META_MANAGER_PAYMENT_ALERT_TEMPLATE_NAME") || "manager_payment_alert")
+    ? (env("META_MANAGER_PAYMENT_CLAIM_TEMPLATE_NAME") || MANAGER_PAYMENT_CLAIM_TEMPLATE_NAME)
     : (env("META_MANAGER_PAYMENT_ATTEMPT_TEMPLATE_NAME") || MANAGER_PAYMENT_ATTEMPT_TEMPLATE_NAME);
   const components = shouldUseProofTemplate
     ? [
@@ -2480,20 +2535,24 @@ async function sendManagerPaymentAlert(
   try {
     templateResponse = await sendTemplatePayload(to, templateName, components);
   } catch (error) {
-    if (!proofWasSubmitted && !paymentClaimed) {
+    if (!proofWasSubmitted) {
       const retryAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
       await updateReminderEvent(reminderEvent.id, {
         manager_payment_alert_status: "scheduled",
         manager_payment_alert_due_at: retryAt,
         manager_payment_alert_error: {
-          reason: "soft_attempt_template_unavailable",
+          reason: paymentClaimed
+            ? "payment_claim_template_unavailable"
+            : "soft_attempt_template_unavailable",
           provider_error: parseProviderError(error),
           retry_at: retryAt,
         },
       });
       return {
         sent: false,
-        reason: "soft payment-attempt template is not approved yet",
+        reason: paymentClaimed
+          ? "payment-claim template is not approved yet"
+          : "soft payment-attempt template is not approved yet",
       };
     }
     throw error;
@@ -4581,6 +4640,9 @@ Deno.serve(async (request) => {
     }
     if (payload?.action === "setup_manager_payment_attempt_template") {
       return await handleSetupManagerPaymentAttemptTemplate(request);
+    }
+    if (payload?.action === "setup_manager_payment_claim_template") {
+      return await handleSetupManagerPaymentClaimTemplate(request);
     }
     if (payload?.action === "payment_options") {
       return await handlePaymentOptions(payload);

@@ -46,3 +46,12 @@ export function buildManagerAttemptNoProofMessage(playerName: string): string {
     "Please wait for proof before confirming payment.",
   ].join("\n");
 }
+
+export function buildManagerPaymentClaimMessage(playerName: string): string {
+  return [
+    "Parent reported that payment was completed — screenshot not submitted.",
+    "",
+    `Player: ${playerName || "Unknown player"}`,
+    "Please verify the payment before confirming it in the app.",
+  ].join("\n");
+}
