@@ -1,4 +1,7 @@
-import { selectPaymentConversationReminder } from "./conversation_routing.ts";
+import {
+  buildManagerAttemptNoProofMessage,
+  selectPaymentConversationReminder,
+} from "./conversation_routing.ts";
 
 Deno.test("proof follows the active Pay Now attempt instead of a newer daily reminder", () => {
   const selected = selectPaymentConversationReminder([
@@ -59,5 +62,20 @@ Deno.test("ordinary replies still fall back to the newest reminder", () => {
 
   if (selected?.id !== "newer") {
     throw new Error(`Expected newer, got ${String(selected?.id || "none")}`);
+  }
+});
+
+Deno.test("a Pay Now click without proof is described as an attempt, not a payment", () => {
+  const message = buildManagerAttemptNoProofMessage("Karthikeya");
+  if (
+    !message.includes("proof not received yet") ||
+    !message.includes("opened Pay Now")
+  ) {
+    throw new Error("The soft manager alert is missing attempt/proof context.");
+  }
+  if (/payment (?:received|confirmed)|payment vochindi/i.test(message)) {
+    throw new Error(
+      "The soft manager alert falsely claims payment was received.",
+    );
   }
 });

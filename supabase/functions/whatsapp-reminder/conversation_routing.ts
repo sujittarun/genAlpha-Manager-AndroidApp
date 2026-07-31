@@ -36,3 +36,13 @@ export function selectPaymentConversationReminder(
     paymentActivityAt(right) - paymentActivityAt(left)
   )[0] || null;
 }
+
+export function buildManagerAttemptNoProofMessage(playerName: string): string {
+  return [
+    "Payment attempt — proof not received yet.",
+    "",
+    `Player: ${playerName || "Unknown player"}`,
+    "The parent opened Pay Now, but no Paid reply or payment proof has been received.",
+    "Please wait for proof before confirming payment.",
+  ].join("\n");
+}

@@ -13,7 +13,10 @@ import {
   PLAN_OPTIONS,
   SAMPLE_REMINDER_EVENT_PREFIX,
 } from "./payment_plans.ts";
-import { selectPaymentConversationReminder } from "./conversation_routing.ts";
+import {
+  buildManagerAttemptNoProofMessage,
+  selectPaymentConversationReminder,
+} from "./conversation_routing.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -44,6 +47,7 @@ const PAYMENT_PAGE_URL = "https://genalphaacademy.in/pay.html";
 const MANAGER_PAYMENT_ALERT_PHONE = "9985822772";
 const MANAGER_PAYMENT_ALERT_DELAY_MINUTES = 5;
 const PAYMENT_CONFIRMATION_TEMPLATE_NAME = "gen_alpha_payment_confirmation";
+const MANAGER_PAYMENT_ATTEMPT_TEMPLATE_NAME = "manager_payment_attempt_no_proof";
 
 const DEFAULT_DIRECT_PAY_TEMPLATE_NAME = "gen_alpha_fee_direct_pay";
 const HEALTHY_ECOSYSTEM_ERROR_CODE = "131049";
@@ -1488,6 +1492,62 @@ async function handleSetupPaymentConfirmationTemplate(request: Request) {
   }
 }
 
+async function handleSetupManagerPaymentAttemptTemplate(request: Request) {
+  await assertAuthenticatedOrServiceRole(request);
+
+  const wabaId = await resolveWhatsappBusinessAccountId();
+  const languageCode = env("META_WHATSAPP_TEMPLATE_LANGUAGE") || "en";
+  const templatePayload = {
+    name: MANAGER_PAYMENT_ATTEMPT_TEMPLATE_NAME,
+    language: languageCode,
+    category: "UTILITY",
+    components: [
+      {
+        type: "BODY",
+        text:
+          "Payment attempt - proof not received yet.\n\nPlayer: {{1}}\nThe parent opened Pay Now, but no Paid reply or payment proof has been received.\nPlease wait for proof before confirming payment.",
+        example: { body_text: [["Aarav"]] },
+      },
+    ],
+  };
+
+  try {
+    const metaResponse = await graphRequest(
+      `${encodeURIComponent(wabaId)}/message_templates`,
+      { method: "POST", body: JSON.stringify(templatePayload) },
+    );
+    return jsonResponse({
+      success: true,
+      templateName: MANAGER_PAYMENT_ATTEMPT_TEMPLATE_NAME,
+      languageCode,
+      metaResponse,
+    });
+  } catch (error) {
+    const errorPayload = parseProviderError(error);
+    if (/already exists|duplicate/i.test(JSON.stringify(errorPayload))) {
+      const existing = await tryGraphRequest(
+        `${encodeURIComponent(wabaId)}/message_templates?name=${
+          encodeURIComponent(MANAGER_PAYMENT_ATTEMPT_TEMPLATE_NAME)
+        }&fields=name,status,language,category,rejected_reason`,
+      );
+      return jsonResponse({
+        success: true,
+        alreadyExists: true,
+        templateName: MANAGER_PAYMENT_ATTEMPT_TEMPLATE_NAME,
+        languageCode,
+        metaResponse: existing.body || errorPayload,
+      });
+    }
+    return jsonResponse({
+      success: false,
+      templateName: MANAGER_PAYMENT_ATTEMPT_TEMPLATE_NAME,
+      languageCode,
+      error: providerErrorMessage(errorPayload),
+      metaResponse: errorPayload,
+    }, 502);
+  }
+}
+
 async function paymentConfirmationTemplateStatus() {
   const wabaId = await resolveWhatsappBusinessAccountId();
   const result = await graphRequest(
@@ -2247,6 +2307,7 @@ async function managerAlertMessageBody(
   playerName: string,
   reminderEvent: any,
   proofWasSubmitted: boolean,
+  paymentClaimed: boolean,
 ): Promise<string> {
   try {
     const wabaId = await resolveWhatsappBusinessAccountId();
@@ -2270,6 +2331,17 @@ async function managerAlertMessageBody(
     console.warn("Unable to load manager alert template body", error);
   }
 
+  if (!proofWasSubmitted && !paymentClaimed) {
+    return buildManagerAttemptNoProofMessage(playerName);
+  }
+  if (paymentClaimed) {
+    return [
+      "Parent reported that payment was completed — screenshot not submitted.",
+      "",
+      `Player: ${playerName}`,
+      "Please verify the payment before confirming it in the app.",
+    ].join("\n");
+  }
   return [
     "Vempati Sandeep - Proud owner of Gen Alpha Academy - Payment vochindi babu chusko.",
     "",
@@ -2339,7 +2411,13 @@ async function createUpiPaymentLink(
 
 async function sendManagerPaymentAlert(
   reminderEvent: any,
-  options: { proofMedia?: any; forceWithProof?: boolean; forceWithoutProof?: boolean; source?: string } = {},
+  options: {
+    proofMedia?: any;
+    forceWithProof?: boolean;
+    forceWithoutProof?: boolean;
+    paymentClaimed?: boolean;
+    source?: string;
+  } = {},
 ) {
   if (!reminderEvent?.id) return { sent: false, reason: "missing reminder event" };
   const currentAlertStatus = String(reminderEvent.manager_payment_alert_status || "");
@@ -2348,6 +2426,7 @@ async function sendManagerPaymentAlert(
   const proofBucket = String(proofMedia?.storage_bucket || "payment-proofs");
   const hasProof = Boolean(proofPath);
   const proofWasSubmitted = hasProof || options.forceWithProof === true;
+  const paymentClaimed = options.paymentClaimed === true;
 
   if (proofWasSubmitted && currentAlertStatus === "sent_with_proof") {
     return { sent: false, reason: "manager already alerted with proof" };
@@ -2379,7 +2458,9 @@ async function sendManagerPaymentAlert(
   const shouldUseProofTemplate = proofWasSubmitted && Boolean(proofSignedUrl);
   const templateName = shouldUseProofTemplate
     ? (env("META_MANAGER_PAYMENT_ALERT_WITH_PROOF_TEMPLATE_NAME") || "manager_payment_alert_with_proof")
-    : (env("META_MANAGER_PAYMENT_ALERT_TEMPLATE_NAME") || "manager_payment_alert");
+    : paymentClaimed
+    ? (env("META_MANAGER_PAYMENT_ALERT_TEMPLATE_NAME") || "manager_payment_alert")
+    : (env("META_MANAGER_PAYMENT_ATTEMPT_TEMPLATE_NAME") || MANAGER_PAYMENT_ATTEMPT_TEMPLATE_NAME);
   const components = shouldUseProofTemplate
     ? [
       {
@@ -2395,12 +2476,34 @@ async function sendManagerPaymentAlert(
     ]
     : [bodyComponent];
 
-  const templateResponse = await sendTemplatePayload(to, templateName, components);
+  let templateResponse: any;
+  try {
+    templateResponse = await sendTemplatePayload(to, templateName, components);
+  } catch (error) {
+    if (!proofWasSubmitted && !paymentClaimed) {
+      const retryAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+      await updateReminderEvent(reminderEvent.id, {
+        manager_payment_alert_status: "scheduled",
+        manager_payment_alert_due_at: retryAt,
+        manager_payment_alert_error: {
+          reason: "soft_attempt_template_unavailable",
+          provider_error: parseProviderError(error),
+          retry_at: retryAt,
+        },
+      });
+      return {
+        sent: false,
+        reason: "soft payment-attempt template is not approved yet",
+      };
+    }
+    throw error;
+  }
   const renderedMessageBody = await managerAlertMessageBody(
     templateName,
     playerName,
     reminderEvent,
     proofWasSubmitted,
+    paymentClaimed,
   );
 
   await updateReminderEvent(reminderEvent.id, {
@@ -2425,7 +2528,11 @@ async function sendManagerPaymentAlert(
       : "manager_payment_alert_without_proof_sent",
     direction: "outbound",
     parent_phone: MANAGER_PAYMENT_ALERT_PHONE,
-    message_kind: proofWasSubmitted ? "manager_alert_with_proof_template" : "manager_alert_template",
+    message_kind: proofWasSubmitted
+      ? "manager_alert_with_proof_template"
+      : paymentClaimed
+      ? "manager_alert_payment_claim_template"
+      : "manager_payment_attempt_template",
     message_body: renderedMessageBody,
     message_id: String(templateResponse?.messages?.[0]?.id || ""),
     status: String(templateResponse?.messages?.[0]?.id || "")
@@ -2988,6 +3095,7 @@ async function handlePaymentConfirmationMessage(
       proofMedia,
       forceWithProof: Boolean(proofPath),
       forceWithoutProof: !proofPath,
+      paymentClaimed: !proofPath,
       source: "WhatsApp",
     },
   );
@@ -4470,6 +4578,9 @@ Deno.serve(async (request) => {
     }
     if (payload?.action === "setup_payment_confirmation_template") {
       return await handleSetupPaymentConfirmationTemplate(request);
+    }
+    if (payload?.action === "setup_manager_payment_attempt_template") {
+      return await handleSetupManagerPaymentAttemptTemplate(request);
     }
     if (payload?.action === "payment_options") {
       return await handlePaymentOptions(payload);
