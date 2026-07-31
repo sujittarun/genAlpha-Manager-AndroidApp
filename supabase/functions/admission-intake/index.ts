@@ -85,6 +85,36 @@ async function rpc(name: string, payload: Record<string, unknown>) {
   return await rest(`rpc/${name}`, { method: "POST", body: JSON.stringify(payload) });
 }
 
+async function sendRenewalParentConfirmation(
+  session: any,
+  finalizedRow: any,
+  confirmedBy: string,
+) {
+  const response = await fetch(
+    `${env("SUPABASE_URL").replace(/\/+$/, "")}/functions/v1/whatsapp-reminder`,
+    {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify({
+        action: "agent_renewal_confirmed",
+        studentId: finalizedRow?.student_id,
+        sourcePaymentId: finalizedRow?.payment_id,
+        fromDate: finalizedRow?.cycle_start_date,
+        toDate: finalizedRow?.renewal_to_date,
+        planLabel: planLabel(session?.draft?.plan_type),
+        amount: Number(session?.draft?.payment?.amount || 0),
+        isJoiningFee: session?.matched_student_snapshot?.fees_paid === false,
+        confirmedBy,
+      }),
+    },
+  );
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body?.success === false) {
+    throw new Error(body?.error || `Parent confirmation returned ${response.status}.`);
+  }
+  return body;
+}
+
 async function assertAuthorized(request: Request) {
   const suppliedSecret = request.headers.get("x-intake-secret") || "";
   const expectedSecret = env("ADMISSION_INTAKE_WEBHOOK_SECRET");
@@ -1300,14 +1330,29 @@ async function finalizeConfirmedSession(session: any, confirmationMessageId: str
       p_confirmed_by: confirmedBy,
     });
     const row = result?.[0] || result;
+    let parentConfirmation: any = null;
+    let parentConfirmationError = "";
+    try {
+      parentConfirmation = await sendRenewalParentConfirmation(session, row, confirmedBy);
+    } catch (error) {
+      parentConfirmationError = errorMessage(error);
+      console.error("AgentAlpha renewal parent confirmation", error);
+    }
     return {
       intakeType: isJoiningPayment ? "joining_payment" : "renewal",
       row,
+      parentConfirmation,
+      parentConfirmationError,
       message: [
         isJoiningPayment ? "✅ *JOINING PAYMENT SAVED*" : "✅ *RENEWAL SAVED*",
         `Player: ${row?.student_name || "Player"}`,
         `Coverage: ${displayDate(row?.cycle_start_date)} → ${displayDate(row?.renewal_to_date)}`,
         "Payment and finance ledger updated.",
+        parentConfirmationError
+          ? `⚠️ Parent confirmation could not be sent: ${parentConfirmationError}`
+          : parentConfirmation?.skipped
+          ? "Parent confirmation was already submitted."
+          : "Parent confirmation submitted to WhatsApp.",
       ].join("\n"),
     };
   }
@@ -1584,7 +1629,13 @@ Deno.serve(async (request) => {
         payload.confirmation_message_id || "web",
         payload.confirmed_by || "Manager web intake",
       );
-      return jsonResponse({ success: true, intakeType: finalized.intakeType, result: finalized.row });
+      return jsonResponse({
+        success: true,
+        intakeType: finalized.intakeType,
+        result: finalized.row,
+        parentConfirmation: finalized.parentConfirmation || null,
+        parentConfirmationError: finalized.parentConfirmationError || "",
+      });
     }
     return jsonResponse({ error: `Unknown action: ${action}` }, 400);
   } catch (error) {

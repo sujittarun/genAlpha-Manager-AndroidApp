@@ -13,6 +13,7 @@ import {
   PLAN_OPTIONS,
   SAMPLE_REMINDER_EVENT_PREFIX,
 } from "./payment_plans.ts";
+import { selectPaymentConversationReminder } from "./conversation_routing.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -42,6 +43,7 @@ const ACADEMY_PAYMENT_BANK = "Kotak Mahindra Bank";
 const PAYMENT_PAGE_URL = "https://genalphaacademy.in/pay.html";
 const MANAGER_PAYMENT_ALERT_PHONE = "9985822772";
 const MANAGER_PAYMENT_ALERT_DELAY_MINUTES = 5;
+const PAYMENT_CONFIRMATION_TEMPLATE_NAME = "gen_alpha_payment_confirmation";
 
 const DEFAULT_DIRECT_PAY_TEMPLATE_NAME = "gen_alpha_fee_direct_pay";
 const HEALTHY_ECOSYSTEM_ERROR_CODE = "131049";
@@ -842,6 +844,16 @@ async function findLatestReminderByPhone(phone: string) {
   return rows?.[0] || null;
 }
 
+async function findPaymentConversationReminderByPhone(phone: string): Promise<any> {
+  const parentPhone = phone.slice(-10);
+  const rows = await rest(
+    `reminder_events?select=*&parent_phone=eq.${
+      encodeURIComponent(parentPhone)
+    }&order=created_at.desc&limit=25`,
+  );
+  return selectPaymentConversationReminder(rows || []);
+}
+
 function buildReminderPreview(
   student: any,
   dueDate: string,
@@ -1416,6 +1428,78 @@ async function handleSetupDirectPaymentTemplate(request: Request) {
       metaResponse: errorPayload,
     }, 502);
   }
+}
+
+async function handleSetupPaymentConfirmationTemplate(request: Request) {
+  await assertAuthenticatedOrServiceRole(request);
+
+  const wabaId = await resolveWhatsappBusinessAccountId();
+  const languageCode = env("META_WHATSAPP_TEMPLATE_LANGUAGE") || "en";
+  const templatePayload = {
+    name: PAYMENT_CONFIRMATION_TEMPLATE_NAME,
+    language: languageCode,
+    category: "UTILITY",
+    components: [
+      {
+        type: "BODY",
+        text:
+          "Payment confirmed for {{1}} at Gen Alpha Cricket Academy.\n\nPlan: {{2}}\nTraining updated until: {{3}}\nAmount received: Rs {{4}}\n\nThank you for being part of Gen Alpha Cricket Academy!",
+        example: {
+          body_text: [["Aarav", "1 Month", "11th August 2026", "3,500"]],
+        },
+      },
+    ],
+  };
+
+  try {
+    const metaResponse = await graphRequest(
+      `${encodeURIComponent(wabaId)}/message_templates`,
+      { method: "POST", body: JSON.stringify(templatePayload) },
+    );
+    return jsonResponse({
+      success: true,
+      templateName: PAYMENT_CONFIRMATION_TEMPLATE_NAME,
+      languageCode,
+      metaResponse,
+    });
+  } catch (error) {
+    const errorPayload = parseProviderError(error);
+    if (/already exists|duplicate/i.test(JSON.stringify(errorPayload))) {
+      const existing = await tryGraphRequest(
+        `${encodeURIComponent(wabaId)}/message_templates?name=${
+          encodeURIComponent(PAYMENT_CONFIRMATION_TEMPLATE_NAME)
+        }&fields=name,status,language,category,rejected_reason`,
+      );
+      return jsonResponse({
+        success: true,
+        alreadyExists: true,
+        templateName: PAYMENT_CONFIRMATION_TEMPLATE_NAME,
+        languageCode,
+        metaResponse: existing.body || errorPayload,
+      });
+    }
+    return jsonResponse({
+      success: false,
+      templateName: PAYMENT_CONFIRMATION_TEMPLATE_NAME,
+      languageCode,
+      error: providerErrorMessage(errorPayload),
+      metaResponse: errorPayload,
+    }, 502);
+  }
+}
+
+async function paymentConfirmationTemplateStatus() {
+  const wabaId = await resolveWhatsappBusinessAccountId();
+  const result = await graphRequest(
+    `${encodeURIComponent(wabaId)}/message_templates?name=${
+      encodeURIComponent(PAYMENT_CONFIRMATION_TEMPLATE_NAME)
+    }&fields=name,status,language,category,rejected_reason`,
+  );
+  const template = graphDataList(result)?.[0] || null;
+  return {
+    status: String(template?.status || "MISSING").toUpperCase(),
+    template,
+  };
 }
 
 function parseProviderError(input: unknown): Record<string, any> {
@@ -2369,6 +2453,25 @@ async function sendManagerPaymentAlert(
   return { sent: true, hasProof, templateName, templateResponse };
 }
 
+async function findProofForPaymentCycle(reminderEvent: any) {
+  if (!reminderEvent?.student_id) return null;
+  const dueDateFilter = reminderEvent.due_date
+    ? `&payment_from_date=eq.${encodeURIComponent(String(reminderEvent.due_date))}`
+    : "";
+  const rows = await rest(
+    `whatsapp_flow_events?select=proof_bucket,proof_path,created_at` +
+      `&student_id=eq.${encodeURIComponent(String(reminderEvent.student_id))}` +
+      `&event_type=eq.payment_pending_verification&proof_path=not.eq.` +
+      `${dueDateFilter}&order=created_at.desc&limit=1`,
+  );
+  const proof = rows?.[0];
+  if (!proof?.proof_path) return null;
+  return {
+    storage_bucket: String(proof.proof_bucket || "payment-proofs"),
+    storage_path: String(proof.proof_path),
+  };
+}
+
 async function processDueManagerPaymentAlerts(limit = 20) {
   const nowIso = new Date().toISOString();
   let events: any[] = [];
@@ -2385,10 +2488,19 @@ async function processDueManagerPaymentAlerts(limit = 20) {
   const results = [];
   for (const event of events || []) {
     try {
-      const sent = await sendManagerPaymentAlert(event, { source: "system_cron" });
+      // A parent may receive several reminder rows for one due cycle. Never
+      // announce "proof not submitted" when the proof landed on a sibling row.
+      const siblingProof = await findProofForPaymentCycle(event);
+      const sent = await sendManagerPaymentAlert(event, {
+        proofMedia: siblingProof || undefined,
+        forceWithProof: Boolean(siblingProof),
+        source: "system_cron",
+      });
       results.push({
         reminderEventId: event.id,
-        status: sent.sent ? "sent_without_proof" : "skipped",
+        status: sent.sent
+          ? (siblingProof ? "sent_with_proof" : "sent_without_proof")
+          : "skipped",
         reason: sent.reason || "",
       });
     } catch (error) {
@@ -2775,7 +2887,7 @@ async function handlePaymentConfirmationMessage(
   message: any,
   webhookLog: any,
 ) {
-  const reminderEvent = await findLatestReminderByPhone(from);
+  const reminderEvent = await findPaymentConversationReminderByPhone(from);
   if (!reminderEvent) {
     await insertWhatsappFlowEvent({
       event_type: "payment_pending_verification",
@@ -3341,10 +3453,57 @@ async function handleSamplePaymentProofMessage(
   }
 }
 
-async function handleRenewalVerified(request: Request, payload: any) {
-  const managerEmail = await assertAuthenticated(request);
+async function findReminderForConfirmedCycle(
+  studentId: string,
+  fromDate: string,
+): Promise<any> {
+  const dueDateFilter = fromDate
+    ? `&due_date=eq.${encodeURIComponent(fromDate)}`
+    : "";
+  const rows = await rest(
+    `reminder_events?select=*&student_id=eq.${encodeURIComponent(studentId)}` +
+      `${dueDateFilter}&order=created_at.desc&limit=25`,
+  );
+  return selectPaymentConversationReminder(rows || []);
+}
+
+async function findExistingPaymentConfirmation(studentId: string, sourcePaymentId: string) {
+  if (!sourcePaymentId) return null;
+  const rows = await rest(
+    `whatsapp_flow_events?select=*&student_id=eq.${encodeURIComponent(studentId)}` +
+      `&event_type=eq.confirmation_message_sent&order=created_at.desc&limit=50`,
+  );
+  const prior = (rows || []).find((row: any) =>
+    String(row?.provider_payload?.source_payment_id || "") === sourcePaymentId
+  );
+  if (!prior?.message_id) return prior || null;
+
+  const statuses = await rest(
+    `whatsapp_flow_events?select=status,error_message,created_at` +
+      `&event_type=eq.confirmation_message_status` +
+      `&message_id=eq.${encodeURIComponent(String(prior.message_id))}` +
+      `&order=created_at.desc&limit=1`,
+  );
+  return String(statuses?.[0]?.status || "") === "failed" ? null : prior;
+}
+
+async function sendRenewalConfirmation(payload: any, confirmedBy: string) {
   const studentId = String(payload.studentId || "");
   if (!studentId) return jsonResponse({ error: "studentId is required." }, 400);
+
+  const sourcePaymentId = String(payload.sourcePaymentId || payload.paymentId || "");
+  const existingConfirmation = await findExistingPaymentConfirmation(
+    studentId,
+    sourcePaymentId,
+  );
+  if (existingConfirmation) {
+    return jsonResponse({
+      success: true,
+      skipped: true,
+      message: "The parent confirmation for this payment was already submitted to WhatsApp.",
+      messageId: String(existingConfirmation.message_id || ""),
+    });
+  }
 
   const student = await fetchStudent(studentId);
   if (isWhatsappContactBlocked(student)) {
@@ -3376,12 +3535,37 @@ async function handleRenewalVerified(request: Request, payload: any) {
 
   const message = `✅ *Payment Confirmed!* 🏏\n\nHi! We've successfully received the payment for *${student.name || "Player"}'s* *${actionText}*. The training status has been updated until *${displayDate(toDate)}*.\n\n*Amount received: Rs ${amount.toLocaleString("en-IN")}.*\n\n${happyMessage}\n\nThank you for being part of Gen Alpha Cricket Academy!`;
 
-  const metaResponse = await sendTextMessage(to, message);
+  let metaResponse: any;
+  let messageKind = "confirmation_template";
+  let templateFallbackError: Record<string, any> | null = null;
+  try {
+    metaResponse = await sendTemplatePayload(
+      to,
+      PAYMENT_CONFIRMATION_TEMPLATE_NAME,
+      [
+        {
+          type: "body",
+          parameters: [
+            { type: "text", text: String(student.name || "Player") },
+            { type: "text", text: actionText },
+            { type: "text", text: displayDate(toDate) },
+            { type: "text", text: amount.toLocaleString("en-IN") },
+          ],
+        },
+      ],
+    );
+  } catch (error) {
+    // Keep existing manager-confirmation behavior working while the utility
+    // template is first created or awaiting Meta approval.
+    templateFallbackError = parseProviderError(error);
+    messageKind = "confirmation_text";
+    metaResponse = await sendTextMessage(to, message);
+  }
   const confirmationMessageId = String(metaResponse?.messages?.[0]?.id || "");
   const confirmedAt = new Date().toISOString();
 
-  const latestReminder = await findLatestReminderByPhone(to);
-  if (latestReminder?.id && latestReminder.student_id === student.id) {
+  const latestReminder = await findReminderForConfirmedCycle(student.id, fromDate);
+  if (latestReminder?.id) {
     await updateReminderEvent(latestReminder.id, {
       status: "payment_confirmed",
       payment_confirmed_at: confirmedAt,
@@ -3396,9 +3580,10 @@ async function handleRenewalVerified(request: Request, payload: any) {
           to_date: toDate,
           plan_label: planLabel,
           amount,
-          sent_by: managerEmail,
+          sent_by: confirmedBy,
           sent_at: confirmedAt,
           meta_response: metaResponse,
+          source_payment_id: sourcePaymentId || null,
         },
       },
     });
@@ -3419,28 +3604,36 @@ async function handleRenewalVerified(request: Request, payload: any) {
       payment_amount: amount,
       payment_from_date: fromDate || null,
       payment_to_date: toDate || null,
-      created_by: managerEmail,
-    });
-    await insertWhatsappFlowEvent({
-      student_id: student.id,
-      reminder_event_id: latestReminder.id,
-      event_type: "confirmation_message_sent",
-      direction: "outbound",
-      parent_phone: String(student.parent_contact_no || "").slice(-10),
-      message_kind: "confirmation_text",
-      message_body: message,
-      message_id: confirmationMessageId,
-      status: confirmationMessageId ? "accepted" : "sent",
-      status_at: confirmedAt,
-      sent_at: confirmedAt,
-      payment_plan: planLabel,
-      payment_amount: amount,
-      payment_from_date: fromDate || null,
-      payment_to_date: toDate || null,
-      provider_payload: metaResponse,
-      created_by: managerEmail,
+      provider_payload: sourcePaymentId ? { source_payment_id: sourcePaymentId } : {},
+      created_by: confirmedBy,
     });
   }
+  await insertWhatsappFlowEvent({
+    student_id: student.id,
+    reminder_event_id: latestReminder?.id || null,
+    event_type: "confirmation_message_sent",
+    direction: "outbound",
+    parent_phone: String(student.parent_contact_no || "").slice(-10),
+    message_kind: messageKind,
+    message_body: message,
+    message_id: confirmationMessageId,
+    status: confirmationMessageId ? "accepted" : "sent",
+    status_at: confirmedAt,
+    sent_at: confirmedAt,
+    payment_plan: planLabel,
+    payment_amount: amount,
+    payment_from_date: fromDate || null,
+    payment_to_date: toDate || null,
+    provider_payload: {
+      source_payment_id: sourcePaymentId || null,
+      template_name: messageKind === "confirmation_template"
+        ? PAYMENT_CONFIRMATION_TEMPLATE_NAME
+        : null,
+      template_fallback_error: templateFallbackError,
+      meta_response: metaResponse,
+    },
+    created_by: confirmedBy,
+  });
   await insertStudentTimelineEvent({
     student_id: student.id,
     event_type: "renewal_whatsapp_confirmation",
@@ -3449,14 +3642,92 @@ async function handleRenewalVerified(request: Request, payload: any) {
     details: `${planLabel} renewed from ${displayDate(fromDate)} to ${displayDate(toDate)}${
       amountText ? ` - ${amountText.trim()}` : ""
     }`,
-    changed_by: managerEmail,
+    changed_by: confirmedBy,
   });
 
   return jsonResponse({
     success: true,
-    message: `Renewal confirmation sent for ${student.name}.`,
+    message: `Renewal confirmation submitted to WhatsApp for ${student.name}.`,
+    messageId: confirmationMessageId,
+    messageKind,
+    usedTemplateFallback: Boolean(templateFallbackError),
     metaResponse,
   });
+}
+
+async function handleRenewalVerified(request: Request, payload: any) {
+  const managerEmail = await assertAuthenticated(request);
+  return await sendRenewalConfirmation(payload, managerEmail);
+}
+
+async function handleAgentRenewalConfirmed(request: Request, payload: any) {
+  const actor = await assertAuthenticatedOrServiceRole(request);
+  return await sendRenewalConfirmation(
+    payload,
+    String(payload.confirmedBy || payload.confirmed_by || actor || "AgentAlpha"),
+  );
+}
+
+async function processFailedAgentConfirmations(limit = 10) {
+  let templateStatus: Awaited<ReturnType<typeof paymentConfirmationTemplateStatus>>;
+  try {
+    templateStatus = await paymentConfirmationTemplateStatus();
+  } catch (error) {
+    return [{ status: "template_check_failed", error: parseProviderError(error) }];
+  }
+  if (templateStatus.status !== "APPROVED") {
+    return [{ status: "template_not_approved", templateStatus: templateStatus.status }];
+  }
+
+  const sentRows = await rest(
+    `whatsapp_flow_events?select=*&event_type=eq.confirmation_message_sent` +
+      `&order=created_at.desc&limit=100`,
+  );
+  const candidates = [];
+  const seenPaymentIds = new Set<string>();
+  for (const row of sentRows || []) {
+    const sourcePaymentId = String(row?.provider_payload?.source_payment_id || "");
+    if (!sourcePaymentId || seenPaymentIds.has(sourcePaymentId)) continue;
+    seenPaymentIds.add(sourcePaymentId);
+    const statuses = await rest(
+      `whatsapp_flow_events?select=status,error_message,created_at` +
+        `&event_type=eq.confirmation_message_status` +
+        `&message_id=eq.${encodeURIComponent(String(row.message_id || ""))}` +
+        `&order=created_at.desc&limit=1`,
+    );
+    if (String(statuses?.[0]?.status || "") === "failed") candidates.push(row);
+    if (candidates.length >= limit) break;
+  }
+
+  const results = [];
+  for (const row of candidates) {
+    try {
+      const response = await sendRenewalConfirmation(
+        {
+          studentId: row.student_id,
+          sourcePaymentId: row.provider_payload.source_payment_id,
+          fromDate: row.payment_from_date,
+          toDate: row.payment_to_date,
+          planLabel: row.payment_plan,
+          amount: row.payment_amount,
+        },
+        "AgentAlpha confirmation retry",
+      );
+      const body = await response.json();
+      results.push({
+        sourcePaymentId: row.provider_payload.source_payment_id,
+        success: response.ok && body?.success === true,
+        messageId: body?.messageId || "",
+      });
+    } catch (error) {
+      results.push({
+        sourcePaymentId: row.provider_payload.source_payment_id,
+        success: false,
+        error: parseProviderError(error),
+      });
+    }
+  }
+  return results;
 }
 
 async function handleSendAdmissionReminder(request: Request, payload: any) {
@@ -4191,8 +4462,14 @@ Deno.serve(async (request) => {
     if (payload?.action === "renewal_verified") {
       return await handleRenewalVerified(request, payload);
     }
+    if (payload?.action === "agent_renewal_confirmed") {
+      return await handleAgentRenewalConfirmed(request, payload);
+    }
     if (payload?.action === "setup_direct_payment_template") {
       return await handleSetupDirectPaymentTemplate(request);
+    }
+    if (payload?.action === "setup_payment_confirmation_template") {
+      return await handleSetupPaymentConfirmationTemplate(request);
     }
     if (payload?.action === "payment_options") {
       return await handlePaymentOptions(payload);
@@ -4211,6 +4488,7 @@ Deno.serve(async (request) => {
         ? await processDueReminderRetries(RETRY_WORKER_LIMIT, settings)
         : [];
       const managerPaymentAlerts = await processDueManagerPaymentAlerts();
+      const failedAgentConfirmations = await processFailedAgentConfirmations();
       return jsonResponse({
         success: true,
         remindersPaused: !settings.whatsappRemindersEnabled,
@@ -4219,6 +4497,7 @@ Deno.serve(async (request) => {
           : "Reminder retries paused by global reminder setting.",
         retries,
         managerPaymentAlerts,
+        failedAgentConfirmations,
       });
     }
     if (payload?.action === "send_admission_reminder") {
