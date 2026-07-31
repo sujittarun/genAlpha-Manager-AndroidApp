@@ -18,6 +18,12 @@ import {
   buildManagerPaymentClaimMessage,
   selectPaymentConversationReminder,
 } from "./conversation_routing.ts";
+import {
+  buildRenewalConfirmationMessage,
+  PAYMENT_CONFIRMATION_TEMPLATE_BODY,
+  PAYMENT_CONFIRMATION_TEMPLATE_NAME,
+  renewalConfirmationTemplateValues,
+} from "./confirmation_message.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -47,7 +53,6 @@ const ACADEMY_PAYMENT_BANK = "Kotak Mahindra Bank";
 const PAYMENT_PAGE_URL = "https://genalphaacademy.in/pay.html";
 const MANAGER_PAYMENT_ALERT_PHONE = "9985822772";
 const MANAGER_PAYMENT_ALERT_DELAY_MINUTES = 5;
-const PAYMENT_CONFIRMATION_TEMPLATE_NAME = "gen_alpha_payment_confirmation";
 const MANAGER_PAYMENT_ATTEMPT_TEMPLATE_NAME = "manager_payment_attempt_no_proof";
 const MANAGER_PAYMENT_CLAIM_TEMPLATE_NAME = "manager_payment_claim_no_proof";
 
@@ -1448,8 +1453,7 @@ async function handleSetupPaymentConfirmationTemplate(request: Request) {
     components: [
       {
         type: "BODY",
-        text:
-          "Payment confirmed for {{1}} at Gen Alpha Cricket Academy.\n\nPlan: {{2}}\nTraining updated until: {{3}}\nAmount received: Rs {{4}}\n\nThank you for being part of Gen Alpha Cricket Academy!",
+        text: PAYMENT_CONFIRMATION_TEMPLATE_BODY,
         example: {
           body_text: [["Aarav", "1 Month", "11th August 2026", "3,500"]],
         },
@@ -3700,33 +3704,41 @@ async function sendRenewalConfirmation(payload: any, confirmedBy: string) {
     ? `Welcome to the Gen Alpha family! We are thrilled to start this journey with your ${terms.child} and help develop skills on the field. 🏏`
     : `Great to see the commitment! We are excited to continue working with your ${terms.child} and watching progress every day. Let's keep the game going! 🏏`;
 
-  const message = `✅ *Payment Confirmed!* 🏏\n\nHi! We've successfully received the payment for *${student.name || "Player"}'s* *${actionText}*. The training status has been updated until *${displayDate(toDate)}*.\n\n*Amount received: Rs ${amount.toLocaleString("en-IN")}.*\n\n${happyMessage}\n\nThank you for being part of Gen Alpha Cricket Academy!`;
+  const confirmationValues = {
+    playerName: String(student.name || "Player"),
+    actionText,
+    paidThroughText: displayDate(toDate),
+    amountText: amount.toLocaleString("en-IN"),
+  };
+  const message = isJoining
+    ? `✅ *Payment Confirmed!* 🏏\n\nHi! We've successfully received the payment for *${student.name || "Player"}'s* *${actionText}*. The training status has been updated until *${displayDate(toDate)}*.\n\n*Amount received: Rs ${amount.toLocaleString("en-IN")}.*\n\n${happyMessage}\n\nThank you for being part of Gen Alpha Cricket Academy!`
+    : buildRenewalConfirmationMessage(confirmationValues);
 
   let metaResponse: any;
-  let messageKind = "confirmation_template";
+  let messageKind = isJoining ? "confirmation_text" : "confirmation_template";
   let templateFallbackError: Record<string, any> | null = null;
-  try {
-    metaResponse = await sendTemplatePayload(
-      to,
-      PAYMENT_CONFIRMATION_TEMPLATE_NAME,
-      [
-        {
-          type: "body",
-          parameters: [
-            { type: "text", text: String(student.name || "Player") },
-            { type: "text", text: actionText },
-            { type: "text", text: displayDate(toDate) },
-            { type: "text", text: amount.toLocaleString("en-IN") },
-          ],
-        },
-      ],
-    );
-  } catch (error) {
-    // Keep existing manager-confirmation behavior working while the utility
-    // template is first created or awaiting Meta approval.
-    templateFallbackError = parseProviderError(error);
-    messageKind = "confirmation_text";
+  if (isJoining) {
     metaResponse = await sendTextMessage(to, message);
+  } else {
+    try {
+      const templateValues = renewalConfirmationTemplateValues(confirmationValues);
+      metaResponse = await sendTemplatePayload(
+        to,
+        PAYMENT_CONFIRMATION_TEMPLATE_NAME,
+        [
+          {
+            type: "body",
+            parameters: templateValues.map((text) => ({ type: "text", text })),
+          },
+        ],
+      );
+    } catch (error) {
+      // Keep the existing in-window confirmation working while Meta reviews
+      // the same-content utility template.
+      templateFallbackError = parseProviderError(error);
+      messageKind = "confirmation_text";
+      metaResponse = await sendTextMessage(to, message);
+    }
   }
   const confirmationMessageId = String(metaResponse?.messages?.[0]?.id || "");
   const confirmedAt = new Date().toISOString();
