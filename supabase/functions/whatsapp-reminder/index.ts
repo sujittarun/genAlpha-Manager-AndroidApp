@@ -2595,7 +2595,7 @@ async function sendManagerPaymentAlert(
       ? "manager_alert_with_proof_template"
       : paymentClaimed
       ? "manager_alert_payment_claim_template"
-      : "manager_payment_attempt_template",
+      : "manager_alert_payment_attempt_template",
     message_body: renderedMessageBody,
     message_id: String(templateResponse?.messages?.[0]?.id || ""),
     status: String(templateResponse?.messages?.[0]?.id || "")
