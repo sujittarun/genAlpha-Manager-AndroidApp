@@ -41,3 +41,13 @@ Deno.test("month keys return the requested oldest-to-newest window", () => {
     throw new Error(`Unexpected month keys: ${keys.join(",")}`);
   }
 });
+
+Deno.test("total players are unique across months", () => {
+  const result = aggregateWhatsappMonthlyStats([
+    { student_id: "same-student", reminder_event_id: "may-reminder", event_type: "reminder_message_status", direction: "outbound", message_id: "may-message", status: "accepted", status_at: "2026-05-10T10:00:00Z" },
+    { student_id: "same-student", reminder_event_id: "june-reminder", event_type: "reminder_message_status", direction: "outbound", message_id: "june-message", status: "accepted", status_at: "2026-06-10T10:00:00Z" },
+  ], ["2026-05", "2026-06"], new Date("2026-06-15T00:00:00Z"));
+  if (result.months[0].playersReached !== 1 || result.months[1].playersReached !== 1 || result.totals.playersReached !== 1) {
+    throw new Error(`Expected one player across the period, got ${JSON.stringify(result)}`);
+  }
+});

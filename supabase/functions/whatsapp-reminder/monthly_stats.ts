@@ -205,10 +205,12 @@ export function aggregateWhatsappMonthlyStats(
     readRate: 0,
     conversionRate: 0,
   });
+  totals.playersReached = new Set(
+    [...buckets.values()].flatMap((bucket) => [...bucket.players]),
+  ).size;
   totals.deliveryRate = percentage(totals.delivered, totals.remindersSent);
   totals.readRate = percentage(totals.read, totals.remindersSent);
   totals.conversionRate = percentage(totals.paymentsViaReminder, totals.playersReached);
   totals.revenueViaReminder = Math.round(totals.revenueViaReminder * 100) / 100;
   return { months, totals };
 }
-
