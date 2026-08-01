@@ -294,6 +294,43 @@ data class StudentPayment(
     @Json(name = "jersey_pairs") val jerseyPairs: Int? = 0,
 )
 
+data class WhatsappMonthlyStat(
+    val month: String,
+    val label: String,
+    val fullLabel: String,
+    val isCurrent: Boolean,
+    val remindersSent: Int,
+    val playersReached: Int,
+    val delivered: Int,
+    val read: Int,
+    val proofSubmitted: Int,
+    val paymentsViaReminder: Int,
+    val revenueViaReminder: Double,
+    val deliveryRate: Double,
+    val readRate: Double,
+    val conversionRate: Double,
+)
+
+data class WhatsappStatsTotals(
+    val remindersSent: Int = 0,
+    val playersReached: Int = 0,
+    val delivered: Int = 0,
+    val read: Int = 0,
+    val proofSubmitted: Int = 0,
+    val paymentsViaReminder: Int = 0,
+    val revenueViaReminder: Double = 0.0,
+    val deliveryRate: Double = 0.0,
+    val readRate: Double = 0.0,
+    val conversionRate: Double = 0.0,
+)
+
+data class WhatsappPerformanceStats(
+    val generatedAt: String,
+    val timezone: String,
+    val months: List<WhatsappMonthlyStat>,
+    val totals: WhatsappStatsTotals,
+)
+
 data class PaymentFollowUp(
     val studentId: String,
     val reminderId: String = "",

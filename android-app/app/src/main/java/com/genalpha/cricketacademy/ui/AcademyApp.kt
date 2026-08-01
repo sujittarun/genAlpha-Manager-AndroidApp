@@ -169,6 +169,7 @@ import com.genalpha.cricketacademy.data.Student
 import com.genalpha.cricketacademy.data.StudentDraft
 import com.genalpha.cricketacademy.data.StudentPayment
 import com.genalpha.cricketacademy.data.StudentTimelineItem
+import com.genalpha.cricketacademy.data.WhatsappPerformanceStats
 import com.genalpha.cricketacademy.data.addMonthsForPlan
 import com.genalpha.cricketacademy.data.calculateAgeFromDate
 import com.genalpha.cricketacademy.data.cardTimelineLabel
@@ -2009,6 +2010,7 @@ private fun FinancePanel(
     var customRangeStart by rememberSaveable { mutableStateOf(YearMonth.from(LocalDate.now()).atDay(1).toString()) }
     var customRangeEnd by rememberSaveable { mutableStateOf(YearMonth.from(LocalDate.now()).atEndOfMonth().toString()) }
     var selectedMonthDetailKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var showWhatsappStats by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     fun calendarMonthKey(calendar: java.util.Calendar): String =
@@ -2091,6 +2093,27 @@ private fun FinancePanel(
             darkModeEnabled = uiState.darkModeEnabled,
         )
 
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            OutlinedButton(
+                onClick = { showWhatsappStats = true },
+                shape = RoundedCornerShape(999.dp),
+                border = BorderStroke(1.dp, BrandGreen.copy(alpha = 0.3f)),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 7.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Notifications,
+                    contentDescription = null,
+                    tint = BrandGreen,
+                    modifier = Modifier.size(17.dp),
+                )
+                Spacer(Modifier.width(7.dp))
+                Text("WhatsApp stats", color = BrandGreen, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+            }
+        }
+
         FinanceMiniChart(
             months = monthBuckets,
             formatCurrency = { value -> formatCurrency(value) },
@@ -2127,6 +2150,14 @@ private fun FinancePanel(
                     deletingExpenseId = null
                 }
             },
+        )
+    }
+
+    if (showWhatsappStats) {
+        WhatsappPerformanceDialog(
+            stats = uiState.whatsappPerformance,
+            isLoading = uiState.isFinanceLoading,
+            onDismiss = { showWhatsappStats = false },
         )
     }
 
@@ -2191,6 +2222,152 @@ private fun FinancePanel(
         )
     }
 }
+
+@Composable
+private fun WhatsappPerformanceDialog(
+    stats: WhatsappPerformanceStats?,
+    isLoading: Boolean,
+    onDismiss: () -> Unit,
+) {
+    val currency: (Double) -> String = { value -> "Rs ${String.format(Locale.US, "%,.0f", value)}" }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 26.dp),
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 8.dp,
+            shadowElevation = 16.dp,
+        ) {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 720.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("WHATSAPP PERFORMANCE", color = BrandGreen, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 0.7.sp)
+                        Text("Reminders to payments", color = MaterialTheme.colorScheme.onSurface, fontSize = 21.sp, fontWeight = FontWeight.Black)
+                        Text("Deduplicated month-on-month results", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), fontSize = 12.sp)
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Outlined.Close, contentDescription = "Close WhatsApp statistics")
+                    }
+                }
+
+                when {
+                    isLoading && stats == null -> LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = BrandGreen)
+                    stats == null -> Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.errorContainer,
+                    ) {
+                        Text(
+                            "WhatsApp statistics are temporarily unavailable. Close and refresh Finance to try again.",
+                            modifier = Modifier.padding(16.dp),
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            fontSize = 13.sp,
+                        )
+                    }
+                    else -> {
+                        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                            WhatsappSummaryMetric("Reminders", stats.totals.remindersSent.toString(), "${stats.totals.playersReached} players", BrandGreen, Modifier.weight(1f))
+                            WhatsappSummaryMetric("Payments", stats.totals.paymentsViaReminder.toString(), "${stats.totals.conversionRate.cleanPercent()} converted", BrandBlue, Modifier.weight(1f))
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                            WhatsappSummaryMetric("Revenue", currency(stats.totals.revenueViaReminder), "via reminders", Color(0xFF9B6800), Modifier.weight(1f))
+                            WhatsappSummaryMetric("Read rate", stats.totals.readRate.cleanPercent(), "${stats.totals.deliveryRate.cleanPercent()} delivered", BrandGold, Modifier.weight(1f))
+                        }
+
+                        stats.months.forEach { month ->
+                            Surface(
+                                shape = RoundedCornerShape(19.dp),
+                                color = if (month.isCurrent) BrandBlue.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                border = BorderStroke(1.dp, if (month.isCurrent) BrandBlue.copy(alpha = 0.2f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)),
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(month.fullLabel, fontWeight = FontWeight.Black, fontSize = 14.sp)
+                                            if (month.isCurrent) {
+                                                Spacer(Modifier.width(7.dp))
+                                                Surface(shape = RoundedCornerShape(999.dp), color = BrandBlue.copy(alpha = 0.12f)) {
+                                                    Text("MTD", modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp), color = BrandBlue, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                                                }
+                                            }
+                                        }
+                                        Text("${month.remindersSent} reminders", color = BrandGreen, fontSize = 13.sp, fontWeight = FontWeight.Black)
+                                    }
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text("${month.paymentsViaReminder} payments", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text(currency(month.revenueViaReminder), color = BrandBlue, fontSize = 12.sp, fontWeight = FontWeight.Black)
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        WhatsappRatePill("${month.deliveryRate.cleanPercent()} delivered")
+                                        WhatsappRatePill("${month.readRate.cleanPercent()} read")
+                                        WhatsappRatePill("${month.conversionRate.cleanPercent()} converted")
+                                    }
+                                }
+                            }
+                        }
+                        Text(
+                            "Payments count only confirmed reminder conversations. AgentAlpha and manual renewals are excluded.",
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WhatsappSummaryMetric(
+    label: String,
+    value: String,
+    caption: String,
+    accent: Color,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        color = accent.copy(alpha = 0.09f),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(label.uppercase(Locale.US), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f), fontSize = 9.sp, fontWeight = FontWeight.Black)
+            Text(value, color = accent, fontSize = 19.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(caption, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f), fontSize = 10.sp, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun WhatsappRatePill(label: String) {
+    Surface(shape = RoundedCornerShape(999.dp), color = BrandBlue.copy(alpha = 0.08f)) {
+        Text(label, modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+private fun Double.cleanPercent(): String = if (this % 1.0 == 0.0) "${toInt()}%" else "${String.format(Locale.US, "%.1f", this)}%"
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

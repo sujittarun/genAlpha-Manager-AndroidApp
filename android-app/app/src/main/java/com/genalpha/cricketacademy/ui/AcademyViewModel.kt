@@ -23,6 +23,7 @@ import com.genalpha.cricketacademy.data.SupabaseException
 import com.genalpha.cricketacademy.data.SupabaseRepository
 import com.genalpha.cricketacademy.data.AcademyExpense
 import com.genalpha.cricketacademy.data.StudentPayment
+import com.genalpha.cricketacademy.data.WhatsappPerformanceStats
 import com.genalpha.cricketacademy.data.addMonthsForPlan
 import com.genalpha.cricketacademy.data.buildSlotSummary
 import com.genalpha.cricketacademy.data.buildStats
@@ -67,6 +68,7 @@ data class AcademyUiState(
     val expenses: List<AcademyExpense> = emptyList(),
     val payments: List<StudentPayment> = emptyList(),
     val paymentFollowUps: List<PaymentFollowUp> = emptyList(),
+    val whatsappPerformance: WhatsappPerformanceStats? = null,
     val isFinanceLoading: Boolean = false,
     val selectedSlotFilter: String = "",
     val searchQuery: String = "",
@@ -344,6 +346,7 @@ class AcademyViewModel(
                     expenses = emptyList(),
                     payments = emptyList(),
                     paymentFollowUps = emptyList(),
+                    whatsappPerformance = null,
                     isFinanceLoading = false,
                 )
             }
@@ -355,12 +358,16 @@ class AcademyViewModel(
             val fetchedExpenses = repository.fetchExpenses(session.accessToken)
             val fetchedPayments = repository.fetchPayments(session.accessToken)
             val fetchedFollowUps = repository.fetchPaymentFollowUps(session.accessToken)
+            val fetchedWhatsappPerformance = runCatching {
+                repository.fetchWhatsappPerformanceStats(session.accessToken)
+            }.getOrNull()
 
             _uiState.update {
                 it.copy(
                     expenses = fetchedExpenses,
                     payments = fetchedPayments,
                     paymentFollowUps = fetchedFollowUps,
+                    whatsappPerformance = fetchedWhatsappPerformance,
                     isFinanceLoading = false,
                 )
             }

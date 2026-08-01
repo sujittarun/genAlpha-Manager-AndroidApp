@@ -336,6 +336,72 @@ class SupabaseRepository(
         }
     }
 
+    suspend fun fetchWhatsappPerformanceStats(
+        accessToken: String,
+        months: Int = 4,
+    ): WhatsappPerformanceStats = withContext(Dispatchers.IO) {
+        val payload = JSONObject()
+            .put("action", "whatsapp_monthly_stats")
+            .put("months", months.coerceIn(3, 12))
+        val request = baseRequest("$baseUrl/functions/v1/whatsapp-reminder")
+            .header("Authorization", "Bearer $accessToken")
+            .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw SupabaseException(response.code, parseError(body))
+            }
+            val json = JSONObject(body)
+            if (!json.optBoolean("success", false)) {
+                throw SupabaseException(response.code, json.optString("error", "Unable to load WhatsApp statistics."))
+            }
+            val monthlyRows = json.optJSONArray("months") ?: JSONArray()
+            val parsedMonths = buildList {
+                repeat(monthlyRows.length()) { index ->
+                    val row = monthlyRows.optJSONObject(index) ?: return@repeat
+                    add(
+                        WhatsappMonthlyStat(
+                            month = row.optString("month"),
+                            label = row.optString("label"),
+                            fullLabel = row.optString("fullLabel"),
+                            isCurrent = row.optBoolean("isCurrent", false),
+                            remindersSent = row.optInt("remindersSent", 0),
+                            playersReached = row.optInt("playersReached", 0),
+                            delivered = row.optInt("delivered", 0),
+                            read = row.optInt("read", 0),
+                            proofSubmitted = row.optInt("proofSubmitted", 0),
+                            paymentsViaReminder = row.optInt("paymentsViaReminder", 0),
+                            revenueViaReminder = row.optDouble("revenueViaReminder", 0.0),
+                            deliveryRate = row.optDouble("deliveryRate", 0.0),
+                            readRate = row.optDouble("readRate", 0.0),
+                            conversionRate = row.optDouble("conversionRate", 0.0),
+                        )
+                    )
+                }
+            }
+            val totals = json.optJSONObject("totals") ?: JSONObject()
+            WhatsappPerformanceStats(
+                generatedAt = json.optString("generatedAt"),
+                timezone = json.optString("timezone", "Asia/Kolkata"),
+                months = parsedMonths,
+                totals = WhatsappStatsTotals(
+                    remindersSent = totals.optInt("remindersSent", 0),
+                    playersReached = totals.optInt("playersReached", 0),
+                    delivered = totals.optInt("delivered", 0),
+                    read = totals.optInt("read", 0),
+                    proofSubmitted = totals.optInt("proofSubmitted", 0),
+                    paymentsViaReminder = totals.optInt("paymentsViaReminder", 0),
+                    revenueViaReminder = totals.optDouble("revenueViaReminder", 0.0),
+                    deliveryRate = totals.optDouble("deliveryRate", 0.0),
+                    readRate = totals.optDouble("readRate", 0.0),
+                    conversionRate = totals.optDouble("conversionRate", 0.0),
+                ),
+            )
+        }
+    }
+
     suspend fun fetchPaymentFollowUps(accessToken: String): List<PaymentFollowUp> = withContext(Dispatchers.IO) {
         val reminderRequest = baseRequest("$baseUrl/rest/v1/reminder_events?select=id,student_id,reminder_type,status,due_date,selected_plan,amount,created_at,overdue_days,meta_error,failed_at,retry_count,max_retry_count,next_retry_at,last_retry_at,retry_reason,manual_followup_required,manual_followup_reason&order=created_at.desc&limit=300")
             .header("Authorization", "Bearer $accessToken")

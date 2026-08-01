@@ -24,6 +24,10 @@ import {
   PAYMENT_CONFIRMATION_TEMPLATE_NAME,
   renewalConfirmationTemplateValues,
 } from "./confirmation_message.ts";
+import {
+  aggregateWhatsappMonthlyStats,
+  whatsappStatsMonthKeys,
+} from "./monthly_stats.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -494,6 +498,50 @@ async function rest(path: string, init: RequestInit = {}) {
     throw new Error(body?.message || body?.error || response.statusText);
   }
   return body;
+}
+
+async function restAll(path: string, pageSize = 1000) {
+  const rows: any[] = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const separator = path.includes("?") ? "&" : "?";
+    const page = await rest(`${path}${separator}limit=${pageSize}&offset=${offset}`);
+    if (!Array.isArray(page)) return rows;
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
+  }
+}
+
+async function handleWhatsappMonthlyStats(request: Request, payload: any) {
+  await assertAuthenticated(request);
+  const requestedCount = Math.min(12, Math.max(3, Number(payload?.months || 4) || 4));
+  const now = new Date();
+  const months = whatsappStatsMonthKeys(requestedCount, now);
+  const [year, month] = months[0].split("-").map(Number);
+  // Include the prior month so a payment confirmed this month can still be
+  // connected to a reminder interaction that began near month-end.
+  const evidenceStart = new Date(Date.UTC(year, month - 2, 1)).toISOString();
+  const eventTypes = [
+    "reminder_message_status",
+    "reminder_retry_sent",
+    "direct_payment_reminder_sent",
+    "direct_payment_reminder_retry_sent",
+    "parent_plan_selected",
+    "payment_attempted",
+    "payment_pending_verification",
+    "payment_confirmed",
+  ].join(",");
+  const events = await restAll(
+    `whatsapp_flow_events?select=student_id,reminder_event_id,event_type,direction,message_id,status,status_at,created_at,payment_amount,proof_path,provider_payload` +
+      `&event_type=in.(${eventTypes})&created_at=gte.${encodeURIComponent(evidenceStart)}&order=created_at.asc`,
+  );
+  const stats = aggregateWhatsappMonthlyStats(events, months, now);
+  return jsonResponse({
+    success: true,
+    generatedAt: now.toISOString(),
+    timezone: "Asia/Kolkata",
+    monthsRequested: requestedCount,
+    ...stats,
+  });
 }
 
 async function forwardToAdmissionIntake(value: any, message: any) {
@@ -4627,6 +4675,9 @@ Deno.serve(async (request) => {
     const payload = await request.json();
     if (payload?.action === "send_reminder") {
       return await handleSendReminder(request, payload);
+    }
+    if (payload?.action === "whatsapp_monthly_stats") {
+      return await handleWhatsappMonthlyStats(request, payload);
     }
     if (
       [
