@@ -1514,15 +1514,8 @@ class SupabaseRepository(
             if (isJoiningFee) {
                 val updateBody = JSONObject()
                     .put("fees_paid", true)
-                    .put("amount_paid", amount)
+                    .put("amount_paid", insertedPayment.amount)
                     .put("payment_status", "paid")
-                    .put("fee_plan", planType)
-                    .put("coaching_fee", coachingFee.coerceAtLeast(0.0))
-                    .put("admission_fee", admissionFee.coerceAtLeast(0.0))
-                    .put("jersey_amount", jerseyAmount.coerceAtLeast(0.0))
-                    .put("total_fee_amount", totalFeeAmount.coerceAtLeast(0.0))
-                    .put("jersey_size", jerseySize.trim())
-                    .put("jersey_pairs", jerseyPairs.coerceAtLeast(0))
                     .put("updated_by", managerEmail)
                 appendActiveStatusFields(updateBody, student)
                 try {

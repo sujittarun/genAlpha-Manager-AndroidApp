@@ -933,7 +933,7 @@ class AcademyViewModel(
                             student = student,
                             session = session,
                             planLabel = if (isJoiningFee) "Joining Fee" else renewalPlanLabel(planType),
-                            amount = amount,
+                            amount = payment.amount,
                             fromDate = cycleDate,
                             toDate = addMonthsForPlan(cycleDate, monthsCovered),
                         )
@@ -948,15 +948,8 @@ class AcademyViewModel(
                 upsertLocalStudent(
                     student.copy(
                         feesPaid = true,
-                        amountPaid = amount,
+                        amountPaid = insertedPayment.amount,
                         paymentStatus = "paid",
-                        feePlan = planType,
-                        coachingFee = coachingFee,
-                        admissionFee = admissionFee,
-                        jerseyAmount = jerseyAmount,
-                        totalFeeAmount = totalFeeAmount,
-                        jerseySize = jerseySize,
-                        jerseyPairs = jerseyPairs,
                         updatedBy = session.email,
                         discontinued = false,
                         rejoinedAt = if (student.discontinued) todayIsoDate() else student.rejoinedAt,
@@ -1002,6 +995,7 @@ class AcademyViewModel(
         }
         val amount = followUp?.amount?.takeIf { it > 0.0 }
             ?: student.amountPaid.takeIf { isJoiningFee && it > 0.0 }
+            ?: student.totalFeeAmount.takeIf { isJoiningFee && it > 0.0 }
             ?: when (planType) {
             "quarterly" -> 9975.0
             "halfyearly" -> 18900.0
