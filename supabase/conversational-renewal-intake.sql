@@ -116,6 +116,9 @@ begin
      and not v_has_payment_after_rejoin then
     v_paid_through := v_paid_through + greatest(v_student.fee_pause_days, 0);
   end if;
+  if v_student.rejoined_at is not null and not v_has_payment_after_rejoin then
+    v_paid_through := greatest(v_paid_through, v_student.rejoined_at);
+  end if;
   return v_paid_through;
 end;
 $$;
