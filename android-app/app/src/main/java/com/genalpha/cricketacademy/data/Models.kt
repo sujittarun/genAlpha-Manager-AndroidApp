@@ -637,8 +637,7 @@ fun Student.paidThroughDate(payments: List<StudentPayment>): String {
         paidCycleStarts.any { it.take(10) >= rejoinDate }
     } ?: false
     if (hasRenewalAfterRejoin) return paidUntil
-    val pauseAdjusted = if (feePauseDays > 0) addDays(paidUntil, feePauseDays) else paidUntil
-    return rejoinedAt?.takeIf { it.isNotBlank() }?.let { maxIsoDate(pauseAdjusted, it) } ?: pauseAdjusted
+    return rejoinedAt?.takeIf { it.isNotBlank() } ?: paidUntil
 }
 
 private fun StudentPayment.monthsCoveredForDueDate(): Int {
