@@ -13,6 +13,11 @@ Last updated: 2026-07-23
 
 ## 2026-07-17
 
+### Direct Pay Template Wording V2
+
+- New default direct-pay template `gen_alpha_fee_direct_pay_v2`: body now says "Tap Pay Now to complete your UPI payment..." without "choose 1/3/6 months", since plan selection happens on the payment page.
+- Rollout: deploy the function, then call `setup_direct_payment_template` to register the v2 template with Meta; until Meta approves it, sends fall back to the legacy plan-button flow automatically.
+
 ### Overdue Day-3 Fee Reminder
 
 - WhatsApp reminder scheduler now also sends an automatic fee reminder on overdue day 3, in addition to the existing due-day, day-5, and daily day 7-14 nudges; day 15+ remains manual follow-up.

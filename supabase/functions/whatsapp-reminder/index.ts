@@ -60,7 +60,7 @@ const MANAGER_PAYMENT_ALERT_DELAY_MINUTES = 5;
 const MANAGER_PAYMENT_ATTEMPT_TEMPLATE_NAME = "manager_payment_attempt_no_proof";
 const MANAGER_PAYMENT_CLAIM_TEMPLATE_NAME = "manager_payment_claim_no_proof";
 
-const DEFAULT_DIRECT_PAY_TEMPLATE_NAME = "gen_alpha_fee_direct_pay";
+const DEFAULT_DIRECT_PAY_TEMPLATE_NAME = "gen_alpha_fee_direct_pay_v2";
 const HEALTHY_ECOSYSTEM_ERROR_CODE = "131049";
 const HEALTHY_ECOSYSTEM_RETRY_MINUTES = [5, 30, 60];
 const DEFAULT_REMINDER_MAX_RETRIES = HEALTHY_ECOSYSTEM_RETRY_MINUTES.length;
@@ -1067,7 +1067,7 @@ function buildDirectPaymentMessageBody(
 ) {
   return renderTemplateBody(
     env("META_WHATSAPP_DIRECT_PAY_TEMPLATE_BODY") ||
-      "Hi {{1}}, your Gen Alpha Cricket Academy fee is due from {{2}}.\n\nTap Pay Now to choose 1/3/6 months and complete UPI payment. After payment, reply here with Paid or send the payment screenshot.",
+      "Hi {{1}}, your Gen Alpha Cricket Academy fee is due from {{2}}.\n\nTap Pay Now to complete your UPI payment. After payment, reply here with Paid or send the payment screenshot.",
     {
       "1": String(student?.name || "Player"),
       "2": buildReminderDueText(reminderType, dueDate),
@@ -1422,7 +1422,7 @@ async function handleSetupDirectPaymentTemplate(request: Request) {
   const templateName = directPaymentTemplateName();
   const languageCode = env("META_WHATSAPP_TEMPLATE_LANGUAGE") || "en";
   const bodyText = env("META_WHATSAPP_DIRECT_PAY_TEMPLATE_BODY") ||
-    "Hi {{1}}, your Gen Alpha Cricket Academy fee is due from {{2}}.\n\nTap Pay Now to choose 1/3/6 months and complete UPI payment. After payment, reply here with Paid or send the payment screenshot.";
+    "Hi {{1}}, your Gen Alpha Cricket Academy fee is due from {{2}}.\n\nTap Pay Now to complete your UPI payment. After payment, reply here with Paid or send the payment screenshot.";
   const templatePayload = {
     name: templateName,
     language: languageCode,
