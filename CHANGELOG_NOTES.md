@@ -15,7 +15,9 @@ Last updated: 2026-07-23
 
 ### Direct Pay Template Wording V2
 
-- New default direct-pay template `gen_alpha_fee_direct_pay_v2`: body now says "Tap Pay Now to complete your UPI payment..." without "choose 1/3/6 months", since plan selection happens on the payment page.
+- New default direct-pay template `gen_alpha_fee_direct_pay_v2`: body now says "Tap Pay Now to complete your UPI payment. After payment, send the payment screenshot here so the academy can verify and confirm your renewal." — no "choose 1/3/6 months" (plan selection happens on the payment page) and no "reply Paid" (verification requires a screenshot).
+- Parent-facing copy now consistently asks for the payment screenshot instead of a "Paid" reply: Pay Now follow-up message, pay.html hint, and the direct-pay template body.
+- A text-only "Paid" style reply still marks the reminder pending verification and alerts the manager (no proof), but the parent now gets a reply asking for the payment screenshot; the existing "Once the academy confirms the payment..." reply is sent only when a screenshot/document proof is received.
 - Rollout: deploy the function, then call `setup_direct_payment_template` to register the v2 template with Meta; until Meta approves it, sends fall back to the legacy plan-button flow automatically.
 
 ### Overdue Day-3 Fee Reminder

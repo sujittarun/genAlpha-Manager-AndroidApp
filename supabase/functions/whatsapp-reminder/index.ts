@@ -439,10 +439,13 @@ function paymentContactDetails(): string {
 }
 
 const AFTER_PAY_NOW_FOLLOWUP =
-  "✅ After payment, please reply *Paid* here or send the payment screenshot. This helps our manager verify and update your kid's status immediately.";
+  "✅ After payment, please send the payment screenshot here. Our manager will verify it and confirm your kid's renewal.";
 
 const PAYMENT_CONFIRMATION_REPLY =
   "Once the academy confirms the payment, we’ll update your renewal. Thank You!";
+
+const PAYMENT_SCREENSHOT_REQUEST_REPLY =
+  "Please send the payment screenshot here so the academy can verify your payment. Your renewal will be confirmed after verification. Thank You!";
 
 function normalizeSampleReminderFlow(value: unknown, action: unknown): string {
   const requested = normalizeChoiceText(value);
@@ -1067,7 +1070,7 @@ function buildDirectPaymentMessageBody(
 ) {
   return renderTemplateBody(
     env("META_WHATSAPP_DIRECT_PAY_TEMPLATE_BODY") ||
-      "Hi {{1}}, your Gen Alpha Cricket Academy fee is due from {{2}}.\n\nTap Pay Now to complete your UPI payment. After payment, reply here with Paid or send the payment screenshot.",
+      "Hi {{1}}, your Gen Alpha Cricket Academy fee is due from {{2}}.\n\nTap Pay Now to complete your UPI payment. After payment, send the payment screenshot here so the academy can verify and confirm your renewal.",
     {
       "1": String(student?.name || "Player"),
       "2": buildReminderDueText(reminderType, dueDate),
@@ -1422,7 +1425,7 @@ async function handleSetupDirectPaymentTemplate(request: Request) {
   const templateName = directPaymentTemplateName();
   const languageCode = env("META_WHATSAPP_TEMPLATE_LANGUAGE") || "en";
   const bodyText = env("META_WHATSAPP_DIRECT_PAY_TEMPLATE_BODY") ||
-    "Hi {{1}}, your Gen Alpha Cricket Academy fee is due from {{2}}.\n\nTap Pay Now to complete your UPI payment. After payment, reply here with Paid or send the payment screenshot.";
+    "Hi {{1}}, your Gen Alpha Cricket Academy fee is due from {{2}}.\n\nTap Pay Now to complete your UPI payment. After payment, send the payment screenshot here so the academy can verify and confirm your renewal.";
   const templatePayload = {
     name: templateName,
     language: languageCode,
@@ -3225,7 +3228,12 @@ async function handlePaymentConfirmationMessage(
     );
   }
 
-  const replyResponse = await sendTextMessage(from, PAYMENT_CONFIRMATION_REPLY);
+  // Text-only claims ("Paid" etc.) get asked for the screenshot; renewal is
+  // confirmed only after the manager verifies an actual payment proof.
+  const replyText = proofPath || ["image", "document"].includes(paymentConfirmation.type)
+    ? PAYMENT_CONFIRMATION_REPLY
+    : PAYMENT_SCREENSHOT_REQUEST_REPLY;
+  const replyResponse = await sendTextMessage(from, replyText);
   await insertWhatsappFlowEvent({
     student_id: reminderEvent.student_id,
     reminder_event_id: reminderEvent.id,
@@ -3233,7 +3241,7 @@ async function handlePaymentConfirmationMessage(
     direction: "outbound",
     parent_phone: from.slice(-10),
     message_kind: "text",
-    message_body: PAYMENT_CONFIRMATION_REPLY,
+    message_body: replyText,
     message_id: String(replyResponse?.messages?.[0]?.id || ""),
     status: String(replyResponse?.messages?.[0]?.id || "") ? "accepted" : "sent",
     status_at: new Date().toISOString(),
