@@ -13,6 +13,11 @@ Last updated: 2026-07-23
 
 ## 2026-07-17
 
+### Renewal Save Network Resilience (Web)
+
+- Investigated Jiyansh renewal failure ("TypeError: Failed to fetch", 1 month custom Rs 2,500): Supabase API gateway logs showed no POST to `student_payments` at all that day, so the request never left the device — a transient client-side network failure, not a server/RLS/schema error. Nothing was saved; the renewal was intentionally not re-recorded.
+- Web renewal/joining save now retries up to 3 times on network-level fetch failures, checks for an identical existing payment row before every insert attempt (same student, type, amount, paid_on, cycle_start_date) so lost responses or pressing Save again cannot create duplicate payments, retries the student-status update, and shows a clear network error message instead of the raw TypeError.
+
 ### Direct Pay Template Wording V2
 
 - New default direct-pay template `gen_alpha_fee_direct_pay_v2`: body now says "Tap Pay Now to complete your UPI payment. After payment, send the payment screenshot here so the academy can verify and confirm your renewal." — no "choose 1/3/6 months" (plan selection happens on the payment page) and no "reply Paid" (verification requires a screenshot).
