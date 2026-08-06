@@ -13,6 +13,10 @@ Last updated: 2026-07-23
 
 ## 2026-07-17
 
+### Recent Revenue Pill Colors (Web)
+
+- Web finance Recent revenue table classified explicit joining `student_payments` rows like renewals (only legacy `isInitial` rows got the joining style), so Joining and Renewal pills shared one color. Pills now classify by payment type label: Joining green, Renewal blue, Jersey amber. Android already had distinct colors.
+
 ### Renewal Save Network Resilience (Web)
 
 - Investigated Jiyansh renewal failure ("TypeError: Failed to fetch", 1 month custom Rs 2,500): Supabase API gateway logs showed no POST to `student_payments` at all that day, so the request never left the device — a transient client-side network failure, not a server/RLS/schema error. Nothing was saved; the renewal was intentionally not re-recorded.
