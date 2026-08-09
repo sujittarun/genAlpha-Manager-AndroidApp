@@ -21,7 +21,20 @@ Triggered by Yuvaan Bejugam reading `Manual follow-up` four days into a fresh cy
 - Removed a hardcoded per-student data repair that ran on every web roster load and re-inserted a Rs 3,250 payment keyed on a display name. It had already double-inserted for Dhruvin Karthikeya (12 May and 14 May) — the duplicate row is still in the database and needs a manager decision.
 - Test infrastructure: `web-app-repo/package.json` (`npm test`, 25 cases) and an Android unit-test source set with JUnit (`./gradlew :app:testDebugUnitTest`). The rule modules had tests but nothing ran them.
 
-Known follow-ups, verified but not yet fixed: the reminder and payment-link rows are still paired per student without checking `reminder_event_id`; the follow-up selection still prefers the newest row over an unresolved one, so a proved payment can lose its Confirm button after the next morning's cron; the retry worker still messages discontinued students; Android still duplicates the coverage-months rule inside the UI layer.
+### Follow-Up Row Selection and Retry Safety (web + Android + reminder function)
+
+Cleared the follow-ups left open above.
+
+- Follow-up rows were collapsed to the newest one per student, so the morning after a parent sent payment proof the new reminder became the newest row: the `Pending verification` badge disappeared and the manager lost the Confirm action for money that had actually been collected. An unresolved proof now outranks a newer routine reminder in both apps.
+- Payment links are matched to the reminder they belong to (`reminder_event_id`) instead of by student alone, so an old link's amount, plan and cycle can no longer speak for a current reminder. A link claimed by a different reminder is dropped rather than mis-paired.
+- The scheduler now skips a student whose current-cycle reminder is already `payment_pending_verification` — nudging them reads as ignoring their payment, and the new row would hide the proof the manager still has to confirm.
+- The retry worker cancels queued retries for a discontinued player (`cancelled_discontinued`) instead of messaging someone who has left.
+
+### Duplicate Payment Corrected
+
+- Deleted the duplicate Rs 3,250 renewal for Dhruvin Karthikeya (`ec6edd77-4500-497d-88c2-09670568fa0e`, `paid_on 2026-05-14`), created by the hardcoded roster-load repair that was removed above. The original `2026-05-12` row (`b4a9a63e-a8dd-4313-81b6-2fe4142f35b9`, cycle `2026-04-30`, monthly, 1 month) was kept. May 2026 revenue is now Rs 1,07,000 across 29 rows.
+
+Remaining known follow-up, verified but not fixed: Android still duplicates the coverage-months rule inside the UI layer (`AcademyApp.kt` `initialCoverageMonthsForAmount` / `paymentMonthsCovered` drop the `special` arm), which affects payment-history labels only, not billing dates.
 
 ## 2026-07-23
 
