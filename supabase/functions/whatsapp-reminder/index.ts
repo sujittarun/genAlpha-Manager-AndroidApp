@@ -2171,6 +2171,18 @@ async function processDueReminderRetries(
     const retryCount = Number(event.retry_count || 0) + 1;
     try {
       const student = await fetchStudent(String(event.student_id || ""));
+      // A player who has left the academy must not keep receiving fee reminders because a
+      // retry was already queued when they were discontinued.
+      if (student?.discontinued === true || String(student?.discontinued).toLowerCase() === "true") {
+        await updateReminderEvent(event.id, {
+          status: "cancelled_discontinued",
+          next_retry_at: null,
+          manual_followup_required: false,
+          retry_reason: "Player is discontinued; automatic retries cancelled.",
+        });
+        results.push({ student: student.name, status: "cancelled_discontinued" });
+        continue;
+      }
       if (isWhatsappAutoReminderPaused(student)) {
         await updateReminderEvent(event.id, {
           status: "manual_followup",
@@ -4566,6 +4578,20 @@ async function handleAutoSchedule() {
         await markReminderContactBlocked(lastFollowUp, student);
       }
       console.log(`Skipping ${student.name}: ${whatsappContactBlockedMessage(student)}`);
+      continue;
+    }
+
+    // The parent has already sent proof for this cycle and it is sitting with the manager.
+    // Nudging them again reads as "we ignored your payment", and the new reminder row would
+    // become the newest row for this student, hiding the proof the manager still has to
+    // confirm. Wait for the manager instead.
+    const pendingProof = followUps.find((f: any) =>
+      f.student_id === student.id &&
+      String(f.due_date || "").slice(0, 10) === String(dueDate || "").slice(0, 10) &&
+      ["payment_pending_verification", "pending_verification"].includes(String(f.status || ""))
+    );
+    if (pendingProof) {
+      console.log(`Skipping ${student.name}: payment proof awaiting manager verification.`);
       continue;
     }
 

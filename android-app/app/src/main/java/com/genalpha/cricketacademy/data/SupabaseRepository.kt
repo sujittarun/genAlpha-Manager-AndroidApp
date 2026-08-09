@@ -434,18 +434,34 @@ class SupabaseRepository(
             if (!response.isSuccessful) JSONArray() else JSONArray(response.body?.string().orEmpty())
         }
 
+        fun JSONObject.isPaymentPendingRow(): Boolean =
+            optString("status") in setOf("payment_pending_verification", "pending_verification")
+
+        // Rows arrive newest first. Taking the newest one per student loses a payment the
+        // parent has already proved: the next morning's reminder becomes the newest row and
+        // the manager loses the Confirm action for money that was actually collected. An
+        // unresolved proof outranks a newer routine reminder.
         val remindersByStudent = mutableMapOf<String, JSONObject>()
         repeat(reminders.length()) { index ->
             val row = reminders.getJSONObject(index)
             val studentId = row.optString("student_id")
-            if (studentId.isNotBlank() && !remindersByStudent.containsKey(studentId)) {
+            if (studentId.isBlank()) return@repeat
+            val existing = remindersByStudent[studentId]
+            if (existing == null || (row.isPaymentPendingRow() && !existing.isPaymentPendingRow())) {
                 remindersByStudent[studentId] = row
             }
         }
 
+        // Pair a payment link to the reminder it actually belongs to. Matching by student
+        // alone let an old link's amount, plan and cycle override a current reminder's.
+        val linksByReminder = mutableMapOf<String, JSONObject>()
         val linksByStudent = mutableMapOf<String, JSONObject>()
         repeat(links.length()) { index ->
             val row = links.getJSONObject(index)
+            val reminderEventId = row.optString("reminder_event_id")
+            if (reminderEventId.isNotBlank() && !linksByReminder.containsKey(reminderEventId)) {
+                linksByReminder[reminderEventId] = row
+            }
             val studentId = row.optString("student_id")
             if (studentId.isNotBlank() && !linksByStudent.containsKey(studentId)) {
                 linksByStudent[studentId] = row
@@ -454,7 +470,12 @@ class SupabaseRepository(
 
         (remindersByStudent.keys + linksByStudent.keys).map { studentId ->
             val reminder = remindersByStudent[studentId]
-            val link = linksByStudent[studentId]
+            val newestLink = linksByStudent[studentId]
+            val matchedLink = reminder?.optString("id")?.takeIf { it.isNotBlank() }?.let { linksByReminder[it] }
+            // Fall back to the newest link only when it is not claimed by some other
+            // reminder; never let a link from a different reminder speak for this one.
+            val link = matchedLink
+                ?: newestLink?.takeIf { reminder == null || it.optString("reminder_event_id").isBlank() }
             PaymentFollowUp(
                 studentId = studentId,
                 reminderId = reminder?.optString("id").orEmpty().ifBlank { link?.optString("reminder_event_id").orEmpty() },
