@@ -30,6 +30,17 @@ Cleared the follow-ups left open above.
 - The scheduler now skips a student whose current-cycle reminder is already `payment_pending_verification` — nudging them reads as ignoring their payment, and the new row would hide the proof the manager still has to confirm.
 - The retry worker cancels queued retries for a discontinued player (`cancelled_discontinued`) instead of messaging someone who has left.
 
+### Roster and Finance Load Time (Web)
+
+Measured a real page load rather than guessing: 16 Supabase calls, last one finishing at 9.3s, with the roster's fee pills not settling until ~6.5s. Not caused by the cycle-gate work — the reminder queries were unchanged in count and size — but real.
+
+- Students and their reminder rows were fetched one after the other even though they are independent; they now go together.
+- Finance loaded twice on every page load: startup asked for it, and the roster finishing queued another once the first had already completed (so an in-flight check could not catch it). A best-effort refresh now skips when finance was loaded moments ago; a direct call after recording a payment still always fetches.
+- WhatsApp monthly stats (2-4s, whole-month aggregates) was fetched on both loads. Cached for 60s.
+- The auth listener rendered an empty roster while the real one was still loading — that was the visible "page loads, then changes a few seconds later".
+
+Result on the same connection: 10 calls instead of 16, every endpoint exactly once, last activity 5.3s instead of 9.3s, and the roster with correct fee pills painting at ~3.6s instead of ~6.5s. The remaining tail is the non-blocking WhatsApp stats call.
+
 ### Duplicate Payment Corrected
 
 - Deleted the duplicate Rs 3,250 renewal for Dhruvin Karthikeya (`ec6edd77-4500-497d-88c2-09670568fa0e`, `paid_on 2026-05-14`), created by the hardcoded roster-load repair that was removed above. The original `2026-05-12` row (`b4a9a63e-a8dd-4313-81b6-2fe4142f35b9`, cycle `2026-04-30`, monthly, 1 month) was kept. May 2026 revenue is now Rs 1,07,000 across 29 rows.
