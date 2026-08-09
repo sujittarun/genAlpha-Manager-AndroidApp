@@ -67,6 +67,55 @@
       "name": "timestamps are compared by date only",
       "input": { "cycleDueDate": "2026-08-03", "followUpDueDate": "2026-08-03T23:59:59+05:30", "followUpCreatedAt": "2026-08-03T09:00:00+05:30", "rejoinedAt": "2026-08-03" },
       "expected": true
+    },
+    {
+      "name": "proof sent from the heads-up reminder two days before the due date still counts",
+      "input": { "cycleDueDate": "2026-08-09", "followUpDueDate": "2026-08-09", "followUpCreatedAt": "2026-08-07", "rejoinedAt": "" },
+      "expected": true
+    }
+  ],
+  "rejoinAwarePaidThroughDate": [
+    {
+      "name": "rejoin date becomes the cycle when the paused cycle ended earlier",
+      "input": { "paidThrough": "2026-07-06", "rejoinedAt": "2026-08-03", "hasRenewalAfterRejoin": false },
+      "expected": "2026-08-03"
+    },
+    {
+      "name": "a player who prepaid past their return date is not billed again",
+      "input": { "paidThrough": "2026-09-15", "rejoinedAt": "2026-08-03", "hasRenewalAfterRejoin": false },
+      "expected": "2026-09-15"
+    },
+    {
+      "name": "a renewal paid after returning takes over",
+      "input": { "paidThrough": "2026-09-03", "rejoinedAt": "2026-08-03", "hasRenewalAfterRejoin": true },
+      "expected": "2026-09-03"
+    },
+    {
+      "name": "no rejoin leaves the paid-through date alone",
+      "input": { "paidThrough": "2026-07-20", "rejoinedAt": "", "hasRenewalAfterRejoin": false },
+      "expected": "2026-07-20"
+    }
+  ],
+  "isLeftDuringRange": [
+    {
+      "name": "a player who rejoins in the same month is not counted as left",
+      "input": { "discontinuedAt": "2026-08-03", "rejoinedAt": "2026-08-03", "rangeStart": "2026-08-01", "rangeEnd": "2026-08-31" },
+      "expected": false
+    },
+    {
+      "name": "an earlier historical exit remains left when the rejoin is in a later month",
+      "input": { "discontinuedAt": "2026-06-20", "rejoinedAt": "2026-08-03", "rangeStart": "2026-06-01", "rangeEnd": "2026-06-30" },
+      "expected": true
+    },
+    {
+      "name": "a player who left again after an earlier return still counts as left",
+      "input": { "discontinuedAt": "2026-09-05", "rejoinedAt": "2026-08-03", "rangeStart": "2026-09-01", "rangeEnd": "2026-09-30" },
+      "expected": true
+    },
+    {
+      "name": "a player who never returned remains left",
+      "input": { "discontinuedAt": "2026-08-03", "rejoinedAt": "", "rangeStart": "2026-08-01", "rangeEnd": "2026-08-31" },
+      "expected": true
     }
   ]
 }

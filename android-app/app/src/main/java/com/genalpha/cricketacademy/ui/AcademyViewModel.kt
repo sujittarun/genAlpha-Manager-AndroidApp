@@ -982,20 +982,26 @@ class AcademyViewModel(
     }
 
     suspend fun confirmPendingPayment(student: Student, followUp: PaymentFollowUp?): OperationResult {
-        val isJoiningFee = student.isPaymentPendingVerification() && followUp == null
-        if (followUp?.isPendingVerification() != true && !isJoiningFee) {
+        // Resolve the follow-up through the same cycle gate the confirm banner uses, so the
+        // plan, amount and period recorded are exactly what the manager was shown. A stale row
+        // would otherwise book a joining fee as somebody's old quarterly renewal.
+        val payments = _uiState.value.payments
+        val currentFollowUp = student.currentFollowUp(followUp, payments)
+            ?.takeIf { it.isPendingVerification() }
+        val isJoiningFee = student.isPaymentPendingVerification() && currentFollowUp == null
+        if (currentFollowUp == null && !isJoiningFee) {
             return OperationResult(false, "No pending payment proof found for this player.")
         }
         val validPlans = setOf("monthly", "quarterly", "halfyearly", "special", "custom")
-        val planType = followUp?.selectedPlan?.takeIf { it in validPlans }
+        val planType = currentFollowUp?.selectedPlan?.takeIf { it in validPlans }
             ?: student.feePlan.takeIf { it in validPlans }
             ?: "monthly"
-        val monthsCovered = followUp?.monthsCovered?.takeIf { it > 0 } ?: when (planType) {
+        val monthsCovered = currentFollowUp?.monthsCovered?.takeIf { it > 0 } ?: when (planType) {
             "quarterly" -> 3
             "halfyearly" -> 6
             else -> 1
         }
-        val amount = followUp?.amount?.takeIf { it > 0.0 }
+        val amount = currentFollowUp?.amount?.takeIf { it > 0.0 }
             ?: student.amountPaid.takeIf { isJoiningFee && it > 0.0 }
             ?: student.totalFeeAmount.takeIf { isJoiningFee && it > 0.0 }
             ?: when (planType) {
@@ -1004,11 +1010,6 @@ class AcademyViewModel(
             "special" -> 10000.0
             else -> 3500.0
         }
-        // Only trust the cycle stored on the follow-up while it still describes the current
-        // cycle. A stale row would credit the payment to a period already paid for (or spent
-        // discontinued), leaving the player "overdue" the moment the money is recorded.
-        val payments = _uiState.value.payments
-        val currentFollowUp = student.currentFollowUp(followUp, payments)
         val cycleDate = currentFollowUp?.cycleStartDate?.takeIf { it.isNotBlank() }
             ?: (if (isJoiningFee) student.joinDate else student.currentDueDate(payments))
         return recordRenewalPayment(

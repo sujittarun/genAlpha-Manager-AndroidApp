@@ -6016,10 +6016,11 @@ private fun PlayerDetailSheet(
     val reminderOverdueDays = remember(student, payments) { reminderOverdueDays(student, payments) }
     val feeLabel = student.feeStatusLabel(paymentFollowUp, payments)
     val manualFollowUpReason = student.manualFollowUpReasonLabel(paymentFollowUp, payments)
-    // Never offer to confirm a payment for a cycle that is already settled, and never for a
-    // reminder raised before a rejoin — that is how money collected once gets recorded twice.
+    // The cycle gate is what stops a settled cycle (or a pre-rejoin reminder) being confirmed
+    // twice. Deliberately no payment-due guard: proof often arrives from the heads-up reminder
+    // two days before the due date.
     val pendingFollowUp = student.currentFollowUp(paymentFollowUp, payments)
-        ?.takeIf { it.isPendingVerification() && (student.isFeesPending() || student.isRenewalPending(payments)) }
+        ?.takeIf { it.isPendingVerification() }
         ?: if (student.isPaymentPendingVerification()) {
             val savedPlan = student.feePlan.takeIf {
                 it in setOf("monthly", "quarterly", "halfyearly", "special", "custom")

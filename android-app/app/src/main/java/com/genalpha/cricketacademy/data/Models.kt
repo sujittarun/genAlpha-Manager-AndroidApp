@@ -578,9 +578,10 @@ fun Student.feeStatusLabel(followUp: PaymentFollowUp?, payments: List<StudentPay
     val paymentDue = isFeesPending() || isRenewalPending(payments)
     val current = currentFollowUp(followUp, payments)
     return when {
-        // Only claim a payment is awaiting verification while one is actually outstanding,
-        // otherwise proof sent for an already-settled cycle keeps hiding the paid state.
-        (current?.isPendingVerification() == true && paymentDue) || isPaymentPendingVerification() -> "Pending verification"
+        // No payment-due guard here on purpose: the cycle gate already drops proof sent for a
+        // settled cycle, and parents often pay from the heads-up reminder two days BEFORE the
+        // due date — requiring the payment to be due would hide that proof.
+        current?.isPendingVerification() == true || isPaymentPendingVerification() -> "Pending verification"
         whatsappRemindersPaused -> "Reminders paused"
         isManualFollowUpDue(followUp, payments) -> "Manual follow-up"
         current?.isRetryScheduled() == true && paymentDue -> "Retry scheduled"
@@ -680,7 +681,11 @@ fun Student.paidThroughDate(payments: List<StudentPayment>): String {
         paidCycleStarts.any { it.take(10) >= rejoinDate }
     } ?: false
     if (hasRenewalAfterRejoin) return paidUntil
-    return rejoinedAt?.takeIf { it.isNotBlank() } ?: paidUntil
+    val rejoinDate = rejoinedAt?.takeIf { it.isNotBlank() } ?: return paidUntil
+    // A returning player owes from the day they came back, but never earlier than what they
+    // have already paid for: someone who prepaid a quarter and stepped away inside it must not
+    // be asked for that money twice.
+    return maxIsoDate(paidUntil, rejoinDate)
 }
 
 private fun StudentPayment.monthsCoveredForDueDate(): Int {

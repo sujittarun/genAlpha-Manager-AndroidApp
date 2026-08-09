@@ -55,6 +55,25 @@ class ReminderCycleRulesTest {
     }
 
     @Test
+    fun `isLeftDuringRange matches every shared fixture`() {
+        val cases = fixtures().getJSONArray("isLeftDuringRange")
+        for (index in 0 until cases.length()) {
+            val case = cases.getJSONObject(index)
+            val input = case.getJSONObject("input")
+            assertEquals(
+                case.getString("name"),
+                case.getBoolean("expected"),
+                RosterMovementRules.isLeftDuringRange(
+                    discontinuedAt = input.optString("discontinuedAt"),
+                    rejoinedAt = input.optString("rejoinedAt"),
+                    rangeStart = input.optString("rangeStart"),
+                    rangeEnd = input.optString("rangeEnd"),
+                ),
+            )
+        }
+    }
+
+    @Test
     fun `a rejoined player is not judged by the cycle they left behind`() {
         // Yuvaan Bejugam: renewed through 2026-07-06, discontinued 2026-07-13, back 2026-08-03.
         val cycle = ReminderCycleRules.currentFeeCycleDate(

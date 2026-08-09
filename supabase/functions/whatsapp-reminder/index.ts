@@ -310,20 +310,26 @@ function getInitialCoverageMonths(student: any): number {
 
   if (!isPaid || Number(student.amount_paid || 0) <= 0) return 0;
   // Extra jersey revenue is often collected with the first fee; strip it before inferring
-  // how many months of coaching that payment actually covered.
+  // how many months of coaching that payment actually covered. Prefer the stored jersey_amount:
+  // jersey_pairs is edited independently of amount_paid (pairs added later are booked as their
+  // own payment row), so deriving the money from the pair count subtracts cash that was never
+  // in amount_paid and collapses the inferred coverage.
   const jerseyPairs = Math.max(Math.floor(Number(student.jersey_pairs || 0)), 0);
-  const amount = Math.max(
-    Number(student.amount_paid || 0) - jerseyPairs * JERSEY_PAIR_REVENUE,
-    0,
-  );
+  const jerseyAmount = student.jersey_amount === null || student.jersey_amount === undefined
+    ? jerseyPairs * JERSEY_PAIR_REVENUE
+    : Number(student.jersey_amount || 0);
+  const amount = Math.max(Number(student.amount_paid || 0) - jerseyAmount, 0);
   const planKey = String(student.fee_plan || student.feePlan || "").trim().toLowerCase();
+  // Special training is priced per month with its own discount table, so it must be resolved
+  // before the fixed-plan lookup — PLAN_MONTHS maps special to 1, which would credit a
+  // six-month special package with a single month.
+  if (planKey === "special") {
+    return inferSpecialTrainingMonthsFromAmount(amount);
+  }
   // The stored plan is authoritative when we have one; only fall back to inferring from the
   // amount for legacy rows that predate fee_plan.
   const fixedPlanMonths = PLAN_MONTHS[planKey] || 0;
   if (fixedPlanMonths > 0) return fixedPlanMonths;
-  if (planKey === "special") {
-    return inferSpecialTrainingMonthsFromAmount(amount);
-  }
   const withoutAdmissionFee = Math.max(amount - ADMISSION_ONE_TIME_FEE, 0);
   const roundedAmount = Math.round(amount);
 
@@ -385,7 +391,9 @@ function getPaidThroughDate(student: any, payments: any[]): string {
   const rejoinedAt = String(student.rejoined_at || "").slice(0, 10);
   if (rejoinedAt) {
     const hasPaidSinceRejoin = paidCycleStarts.some((cycleStart) => cycleStart >= rejoinedAt);
-    if (!hasPaidSinceRejoin) return rejoinedAt;
+    // maxIsoDate, not a bare return: a player who prepaid past their return date has already
+    // paid for that time and must not be billed again just because they stepped away.
+    if (!hasPaidSinceRejoin) return maxIsoDate(paidThrough, rejoinedAt);
   }
 
   return paidThrough;

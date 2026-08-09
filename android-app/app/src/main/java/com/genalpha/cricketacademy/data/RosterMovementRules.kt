@@ -23,6 +23,9 @@ object RosterMovementRules {
         if (leftDate < startDate || leftDate > endDate) return false
 
         val returnDate = iso10(rejoinedAt)
-        return returnDate.isBlank() || returnDate > endDate
+        // A return only cancels this exit if it happened after it. A player who came back once
+        // and later left again still left — their older rejoin date must not erase the new exit.
+        if (returnDate.isBlank() || returnDate < leftDate) return true
+        return returnDate > endDate
     }
 }
