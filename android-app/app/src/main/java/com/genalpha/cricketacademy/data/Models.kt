@@ -342,6 +342,10 @@ data class PaymentFollowUp(
     val monthsCovered: Int = 0,
     val cycleStartDate: String = "",
     val createdAt: String = "",
+    // Kept separate from cycleStartDate/createdAt on purpose: those fall back to the payment
+    // link row, and the cycle gate must only ever read the reminder's own dates.
+    val dueDate: String = "",
+    val reminderCreatedAt: String = "",
     val overdueDays: Int = 0,
     val failureReason: String = "",
     val failedAt: String = "",
@@ -535,17 +539,58 @@ fun Student.feeStatusLabel(): String = when {
     else -> "Fees pending"
 }
 
-fun Student.feeStatusLabel(followUp: PaymentFollowUp?, payments: List<StudentPayment>): String = when {
-    followUp?.isPendingVerification() == true || isPaymentPendingVerification() -> "Pending verification"
-    whatsappRemindersPaused -> "Reminders paused"
-    isManualFollowUpDue(followUp, payments) -> "Manual follow-up"
-    followUp?.isRetryScheduled() == true && (isFeesPending() || isRenewalPending(payments)) -> "Retry scheduled"
-    followUp?.isReminderFailed() == true && (isFeesPending() || isRenewalPending(payments)) -> "Reminder failed"
-    followUp?.isReminderSent() == true && (isFeesPending() || isRenewalPending(payments)) -> "Reminder sent"
-    isRenewalPending(payments) ->
-        if (daysSince(paidThroughDate(payments)) > 0) "Renewal overdue" else "Renewal due"
-    feesPaid -> "Fees paid"
-    else -> "Fees pending"
+/**
+ * The date this player's current fee cycle became due. A rejoined player who still owes the
+ * joining fee restarts from the return date, so the discontinued gap is never counted as
+ * overdue. Every overdue calculation must start here.
+ */
+fun Student.currentDueDate(payments: List<StudentPayment>): String =
+    ReminderCycleRules.currentFeeCycleDate(
+        feesPending = isFeesPending(),
+        joinDate = joinDate,
+        rejoinedAt = rejoinedAt,
+        paidThroughDate = nextRenewalCycleDate(payments),
+    )
+
+fun Student.currentOverdueDays(payments: List<StudentPayment>): Int =
+    daysSince(currentDueDate(payments)).coerceAtLeast(0)
+
+/**
+ * The follow-up row, but only while it still describes the current cycle. Anything stored on
+ * a reminder row expires with the cycle it was raised for; live player state (15+ days
+ * overdue, wrong_number, opted_out) is judged separately and never gated.
+ */
+fun Student.currentFollowUp(
+    followUp: PaymentFollowUp?,
+    payments: List<StudentPayment>,
+): PaymentFollowUp? {
+    if (followUp == null) return null
+    val isCurrent = ReminderCycleRules.isFollowUpForCurrentCycle(
+        cycleDueDate = currentDueDate(payments),
+        followUpDueDate = followUp.dueDate,
+        followUpCreatedAt = followUp.reminderCreatedAt,
+        rejoinedAt = rejoinedAt,
+    )
+    return if (isCurrent) followUp else null
+}
+
+fun Student.feeStatusLabel(followUp: PaymentFollowUp?, payments: List<StudentPayment>): String {
+    val paymentDue = isFeesPending() || isRenewalPending(payments)
+    val current = currentFollowUp(followUp, payments)
+    return when {
+        // Only claim a payment is awaiting verification while one is actually outstanding,
+        // otherwise proof sent for an already-settled cycle keeps hiding the paid state.
+        (current?.isPendingVerification() == true && paymentDue) || isPaymentPendingVerification() -> "Pending verification"
+        whatsappRemindersPaused -> "Reminders paused"
+        isManualFollowUpDue(followUp, payments) -> "Manual follow-up"
+        current?.isRetryScheduled() == true && paymentDue -> "Retry scheduled"
+        current?.isReminderFailed() == true && paymentDue -> "Reminder failed"
+        current?.isReminderSent() == true && paymentDue -> "Reminder sent"
+        isRenewalPending(payments) ->
+            if (daysSince(paidThroughDate(payments)) > 0) "Renewal overdue" else "Renewal due"
+        feesPaid -> "Fees paid"
+        else -> "Fees pending"
+    }
 }
 
 fun Student.hasBlockedWhatsappContact(): Boolean =
@@ -559,29 +604,27 @@ fun Student.manualFollowUpReasonLabel(
     if (whatsappRemindersPaused) return "Paused by staff"
     if (whatsappContactStatus == "wrong_number") return "Wrong phone number"
     if (whatsappContactStatus == "opted_out") return "WhatsApp opted out"
-    val dueDate = if (isFeesPending()) joinDate else nextRenewalCycleDate(payments)
-    val overdueDays = daysSince(dueDate).coerceAtLeast(0)
-    if (followUp?.manualFollowupReason == "overdue_15_days" || overdueDays >= MANUAL_FOLLOWUP_OVERDUE_DAYS) {
-        return "15+ days overdue"
-    }
-    return when (followUp?.manualFollowupReason) {
+    // Live overdue count decides first: a reason stored on day 15 must not keep claiming
+    // "15+ days overdue" after a payment or rejoin moved the cycle forward.
+    if (currentOverdueDays(payments) >= MANUAL_FOLLOWUP_OVERDUE_DAYS) return "15+ days overdue"
+    val current = currentFollowUp(followUp, payments) ?: return null
+    if (current.manualFollowupReason == "overdue_15_days") return "15+ days overdue"
+    return when (current.manualFollowupReason) {
         "retry_exhausted" -> "Retry limit reached"
         "missing_phone" -> "Phone number missing"
         "delivery_failure" -> "WhatsApp delivery failed"
-        else -> if (followUp?.manualFollowupRequired == true) "Delivery needs staff review" else null
+        else -> if (current.manualFollowupRequired) "Delivery needs staff review" else null
     }
 }
 
 fun Student.isManualFollowUpDue(followUp: PaymentFollowUp?, payments: List<StudentPayment>): Boolean {
     if (!isActive()) return false
-    if (followUp?.isPendingVerification() == true || isPaymentPendingVerification()) return false
+    val current = currentFollowUp(followUp, payments)
+    if (current?.isPendingVerification() == true || isPaymentPendingVerification()) return false
     if (!isFeesPending() && !isRenewalPending(payments)) return false
     if (hasBlockedWhatsappContact()) return true
-    val dueDate = if (isFeesPending()) joinDate else nextRenewalCycleDate(payments)
-    val overdueDays = daysSince(dueDate).coerceAtLeast(0)
-    return followUp?.manualFollowupRequired == true ||
-        followUp?.reminderStatus == "manual_followup" ||
-        overdueDays >= MANUAL_FOLLOWUP_OVERDUE_DAYS
+    return current?.manualFollowupRequired == true ||
+        currentOverdueDays(payments) >= MANUAL_FOLLOWUP_OVERDUE_DAYS
 }
 
 fun PendingAdmission.isPaymentPendingVerification(): Boolean =

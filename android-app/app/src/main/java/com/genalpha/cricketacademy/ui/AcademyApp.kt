@@ -184,6 +184,9 @@ import com.genalpha.cricketacademy.data.isSpecialTraining
 import com.genalpha.cricketacademy.data.isFeesPending
 import com.genalpha.cricketacademy.data.isPaymentPendingVerification
 import com.genalpha.cricketacademy.data.isRenewalPending
+import com.genalpha.cricketacademy.data.RosterMovementRules
+import com.genalpha.cricketacademy.data.currentDueDate
+import com.genalpha.cricketacademy.data.currentFollowUp
 import com.genalpha.cricketacademy.data.latestRenewal
 import com.genalpha.cricketacademy.data.membershipDateLabel
 import com.genalpha.cricketacademy.data.manualFollowUpReasonLabel
@@ -4406,7 +4409,7 @@ private fun buildStudentMovement(students: List<Student>): List<StudentMovementM
                 joined != null && !joined.isAfter(previousMonthEnd) &&
                     (!it.discontinued || (discontinued != null && !discontinued.isBefore(monthStart)))
             },
-            discontinued = students.count { studentDiscontinuedMovementDate(it)?.let { date -> !date.isBefore(monthStart) && !date.isAfter(monthEnd) } == true },
+            discontinued = students.count { studentLeftDuringRange(it, monthStart, monthEnd) },
         )
     }
 }
@@ -4417,6 +4420,15 @@ private fun parseStudentDate(value: String?): LocalDate? = try {
 } catch (_: Exception) {
     null
 }
+
+/** A player who returned inside the same window never left it — see RosterMovementRules. */
+private fun studentLeftDuringRange(student: Student, rangeStart: LocalDate, rangeEnd: LocalDate): Boolean =
+    RosterMovementRules.isLeftDuringRange(
+        discontinuedAt = studentDiscontinuedMovementDate(student)?.toString(),
+        rejoinedAt = student.rejoinedAt,
+        rangeStart = rangeStart.toString(),
+        rangeEnd = rangeEnd.toString(),
+    )
 
 private fun studentDiscontinuedMovementDate(student: Student): LocalDate? {
     parseStudentDate(student.discontinuedAt)?.let { return it }
@@ -4441,18 +4453,16 @@ private fun studentMatchesMovementFilter(student: Student, monthKey: String, typ
     val discontinuedAt = studentDiscontinuedMovementDate(student)
     return when (type) {
         "joined" -> joinDate != null && !joinDate.isBefore(monthStart) && !joinDate.isAfter(monthEnd)
-        "left" -> discontinuedAt != null && !discontinuedAt.isBefore(monthStart) && !discontinuedAt.isAfter(monthEnd)
+        "left" -> studentLeftDuringRange(student, monthStart, monthEnd)
         else -> joinDate != null && !joinDate.isAfter(previousMonthEnd) &&
             (!student.discontinued || (discontinuedAt != null && !discontinuedAt.isBefore(monthStart)))
     }
 }
 
 private fun reminderOverdueDays(student: Student, payments: List<StudentPayment>): Int {
-    val dueDate = when {
-        student.isFeesPending() -> student.joinDate
-        student.isRenewalPending(payments) -> student.nextRenewalCycleDate(payments)
-        else -> return 0
-    }
+    if (!student.isFeesPending() && !student.isRenewalPending(payments)) return 0
+    // Rejoin-aware: the discontinued gap is never counted as overdue.
+    val dueDate = student.currentDueDate(payments)
     return runCatching {
         ChronoUnit.DAYS.between(LocalDate.parse(dueDate), LocalDate.now()).toInt().coerceAtLeast(0)
     }.getOrDefault(0)
@@ -6006,7 +6016,10 @@ private fun PlayerDetailSheet(
     val reminderOverdueDays = remember(student, payments) { reminderOverdueDays(student, payments) }
     val feeLabel = student.feeStatusLabel(paymentFollowUp, payments)
     val manualFollowUpReason = student.manualFollowUpReasonLabel(paymentFollowUp, payments)
-    val pendingFollowUp = paymentFollowUp?.takeIf { it.isPendingVerification() }
+    // Never offer to confirm a payment for a cycle that is already settled, and never for a
+    // reminder raised before a rejoin — that is how money collected once gets recorded twice.
+    val pendingFollowUp = student.currentFollowUp(paymentFollowUp, payments)
+        ?.takeIf { it.isPendingVerification() && (student.isFeesPending() || student.isRenewalPending(payments)) }
         ?: if (student.isPaymentPendingVerification()) {
             val savedPlan = student.feePlan.takeIf {
                 it in setOf("monthly", "quarterly", "halfyearly", "special", "custom")
@@ -6041,7 +6054,10 @@ private fun PlayerDetailSheet(
         "special" -> 10000.0
         else -> 3500.0
     }
-    val pendingFromDate = pendingFollowUp?.cycleStartDate?.takeIf { it.isNotBlank() } ?: student.nextRenewalCycleDate(payments)
+    // Must match the cycle confirmPendingPayment will actually record, so the manager sees
+    // the real renewal period before confirming.
+    val pendingFromDate = pendingFollowUp?.cycleStartDate?.takeIf { it.isNotBlank() }
+        ?: student.currentDueDate(payments)
     val pendingToDate = addMonthsForPlan(pendingFromDate, pendingMonths)
 
     if (showDeleteConfirmation) {

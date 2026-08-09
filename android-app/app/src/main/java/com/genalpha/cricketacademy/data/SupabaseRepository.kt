@@ -466,6 +466,8 @@ class SupabaseRepository(
                 monthsCovered = link?.optInt("months_covered", 0) ?: 0,
                 cycleStartDate = link?.optString("cycle_start_date").orEmpty().ifBlank { reminder?.optString("due_date").orEmpty() },
                 createdAt = link?.optString("created_at").orEmpty().ifBlank { reminder?.optString("created_at").orEmpty() },
+                dueDate = reminder?.optString("due_date").orEmpty(),
+                reminderCreatedAt = reminder?.optString("created_at").orEmpty(),
                 overdueDays = reminder?.optInt("overdue_days", 0) ?: 0,
                 failureReason = reminder?.extractReminderFailureReason().orEmpty(),
                 failedAt = reminder?.optString("failed_at").orEmpty(),

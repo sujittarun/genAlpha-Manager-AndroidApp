@@ -177,7 +177,11 @@ function maxIsoDate(d1: string, d2: string): string {
   return d1 > d2 ? d1 : d2;
 }
 
-const ADMISSION_ONE_TIME_FEE = 2500;
+// Must match script.js ADMISSION_ONE_TIME_FEE and Models.kt: the one-time admission fee is
+// Rs 500. A wrong value here mis-infers how many months a joining payment covered, which
+// makes the scheduler chase parents who are paid up.
+const ADMISSION_ONE_TIME_FEE = 500;
+const JERSEY_PAIR_REVENUE = 750;
 
 function getPaymentMonthsCovered(payment: any): number {
   const plan = payment.plan_type || payment.planType;
@@ -296,31 +300,42 @@ async function handleAutoBackup(payload: any) {
   return jsonResponse({ success: true, message: `Backup sent to ${targetEmail}` });
 }
 
+// Mirrors getInitialCoverageMonths in web-app-repo/script.js and initialMonthsCovered in
+// Android Models.kt. The three must agree: this one decides when the scheduler thinks a fee
+// is overdue, so a divergence here sends renewal reminders to a parent who has already paid.
 function getInitialCoverageMonths(student: any): number {
-  const isPaid = student.fees_paid === true || 
-                 String(student.fees_paid).toLowerCase() === "true" || 
+  const isPaid = student.fees_paid === true ||
+                 String(student.fees_paid).toLowerCase() === "true" ||
                  String(student.fees_paid).toLowerCase() === "yes";
-                 
+
   if (!isPaid || Number(student.amount_paid || 0) <= 0) return 0;
-  const amount = Number(student.amount_paid || 0);
-  if (String(student.fee_plan || student.feePlan || "").toLowerCase() === "special") {
+  // Extra jersey revenue is often collected with the first fee; strip it before inferring
+  // how many months of coaching that payment actually covered.
+  const jerseyPairs = Math.max(Math.floor(Number(student.jersey_pairs || 0)), 0);
+  const amount = Math.max(
+    Number(student.amount_paid || 0) - jerseyPairs * JERSEY_PAIR_REVENUE,
+    0,
+  );
+  const planKey = String(student.fee_plan || student.feePlan || "").trim().toLowerCase();
+  // The stored plan is authoritative when we have one; only fall back to inferring from the
+  // amount for legacy rows that predate fee_plan.
+  const fixedPlanMonths = PLAN_MONTHS[planKey] || 0;
+  if (fixedPlanMonths > 0) return fixedPlanMonths;
+  if (planKey === "special") {
     return inferSpecialTrainingMonthsFromAmount(amount);
   }
   const withoutAdmissionFee = Math.max(amount - ADMISSION_ONE_TIME_FEE, 0);
   const roundedAmount = Math.round(amount);
 
+  if (roundedAmount === 10000) return 1;
   if (
     withoutAdmissionFee >= 18900 ||
     [18900, 19400, 20000, 20500, 21000].includes(roundedAmount)
   ) return 6;
   if (
     [9000, 9500, 9975, 10475, 10500, 11000].includes(roundedAmount) ||
-    withoutAdmissionFee >= 9975
+    (withoutAdmissionFee >= 9000 && withoutAdmissionFee <= 10500)
   ) return 3;
-  if (
-    [3500, 4000, 6000, 6500].includes(roundedAmount) ||
-    withoutAdmissionFee >= 3500
-  ) return 1;
   return 1; // Default to 1 month for any joining payment
 }
 
@@ -331,6 +346,19 @@ function getPaidThroughDate(student: any, payments: any[]): string {
     : student.join_date;
 
   if (!paidThrough) return localIsoDate();
+
+  // Every cycle the student has actually paid for, so a rejoin can tell whether the player
+  // has paid since returning.
+  const paidCycleStarts: string[] = [];
+
+  // Legacy renewals live on the students row, not in student_payments. Ignoring them made
+  // the scheduler treat long-paid players as months overdue.
+  (Array.isArray(student.renewals) ? student.renewals : []).forEach((renewalDate: string) => {
+    const cycleStart = String(renewalDate || "").slice(0, 10);
+    if (!cycleStart) return;
+    paidCycleStarts.push(cycleStart);
+    paidThrough = maxIsoDate(paidThrough, addMonthsIso(cycleStart, 1));
+  });
 
   const studentPayments = payments.filter((payment) =>
     payment.student_id === student.id && isCoachingFeePayment(payment)
@@ -343,12 +371,22 @@ function getPaidThroughDate(student: any, payments: any[]): string {
       payment.paidOn;
     const monthsCovered = getPaymentMonthsCovered(payment);
     if (cycleStart) {
+      paidCycleStarts.push(String(cycleStart).slice(0, 10));
       paidThrough = maxIsoDate(
         paidThrough,
         addMonthsIso(cycleStart, monthsCovered),
       );
     }
   });
+
+  // Rejoin anchor, matching rejoinAwarePaidThroughDate in fee-plan-rules.js and Models.kt:
+  // a returning player owes from the day they came back, and time spent discontinued is
+  // never billed. Once they pay after returning, that payment takes over again.
+  const rejoinedAt = String(student.rejoined_at || "").slice(0, 10);
+  if (rejoinedAt) {
+    const hasPaidSinceRejoin = paidCycleStarts.some((cycleStart) => cycleStart >= rejoinedAt);
+    if (!hasPaidSinceRejoin) return rejoinedAt;
+  }
 
   return paidThrough;
 }
@@ -3799,10 +3837,28 @@ async function sendRenewalConfirmation(payload: any, confirmedBy: string) {
   const confirmationMessageId = String(metaResponse?.messages?.[0]?.id || "");
   const confirmedAt = new Date().toISOString();
 
+  // Money is in, so nothing this student is carrying from an earlier cycle still needs staff
+  // chasing. Clearing it here stops the flag outliving the cycle it was raised for, even when
+  // the reminder that triggered it belongs to a cycle we can no longer match by due date.
+  await rest(
+    `reminder_events?student_id=eq.${encodeURIComponent(student.id)}&manual_followup_required=is.true`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        manual_followup_required: false,
+        manual_followup_reason: "superseded_by_payment",
+        next_retry_at: null,
+      }),
+    },
+  ).catch((error) => {
+    console.log(`Could not clear manual follow-up flags for ${student.id}: ${error}`);
+  });
+
   const latestReminder = await findReminderForConfirmedCycle(student.id, fromDate);
   if (latestReminder?.id) {
     await updateReminderEvent(latestReminder.id, {
       status: "payment_confirmed",
+      manual_followup_required: false,
       payment_confirmed_at: confirmedAt,
       confirmation_message_id: confirmationMessageId,
       confirmation_sent_at: confirmedAt,
@@ -4478,8 +4534,11 @@ async function handleAutoSchedule() {
     const amountPaid = Number(student.amount_paid || 0);
     const paymentReference = String(student.payment_reference || "").trim();
     if (isJoiningFee && (amountPaid > 0 || paymentReference)) continue;
+    // A rejoined player who still owes the joining fee restarts from their return date, so
+    // the discontinued gap is never counted as overdue. Matches currentFeeCycleDate in
+    // reminder-cycle-rules.js and ReminderCycleRules.kt.
     const dueDate = isJoiningFee
-      ? student.join_date
+      ? maxIsoDate(student.join_date, String(student.rejoined_at || "").slice(0, 10))
       : getPaidThroughDate(student, payments);
     const rawDaysSince = getDaysSinceDate(dueDate);
     const overdueDays = Math.max(0, rawDaysSince);

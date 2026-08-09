@@ -1,6 +1,27 @@
 # Gen Alpha Manager Changelog Notes
 
-Last updated: 2026-07-23
+Last updated: 2026-08-07
+
+## 2026-08-07
+
+### Rejoin / Fee-Status Domain Rebuild (web + Android + reminder function)
+
+Triggered by Yuvaan Bejugam reading `Manual follow-up` four days into a fresh cycle after rejoining. A five-way audit of the domain confirmed 28 defects; the root cause and the highest-value ones are fixed here.
+
+- Root cause: reminder rows were selected by student id only, so a `manual_followup_required` flag raised for a cycle the player had already left kept driving today's badge. 10 active players were mislabelled in production.
+- New shared rule module `web-app-repo/reminder-cycle-rules.js` + Kotlin mirror `data/ReminderCycleRules.kt`, both driven by the byte-identical `reminder-cycle-fixtures.json`, so the two apps cannot drift. A reminder row governs the UI only when its `due_date` is not older than the current cycle and it was not raised before a rejoin.
+- Two-tier rule now written into `PROJECT_CONTEXT.md`: state stored on a reminder row is cycle-scoped and gated; live player state (15+ days overdue, `wrong_number`, `opted_out`, reminders paused) is never gated. Verified against production data: both wrong-number players and all four current-cycle flags keep their badge.
+- Every overdue count now starts from one rejoin-aware helper (`currentFeeCycleDate` / `currentDueDate`). A rejoined player who still owes the joining fee previously read as permanently 15+ days overdue because the raw `join_date` was used.
+- `manual_followup_reason` is now a tie-breaker, not a trigger: the live overdue count decides first, so a reason stored on day 15 no longer prints "15+ days overdue" at 4 days. The pill sub-label and its tooltip are derived from one value instead of two independent recomputations.
+- Confirming a payment no longer credits a superseded cycle. Web and Android both gate the follow-up's `cycle_start_date`, and the pre-confirm preview shows the period that will actually be recorded.
+- Pending-verification only shows while a payment is genuinely outstanding, and "Confirm payment received" is no longer offered for a settled cycle (that path could write a second `student_payments` row for money collected once).
+- Reminder function: `getPaidThroughDate` now folds `students.renewals` and applies the rejoin anchor, matching web, Android and the SQL rule; `ADMISSION_ONE_TIME_FEE` corrected 2500 -> 500; jersey revenue is stripped and the stored `fee_plan` short-circuits the amount-band guessing. These three made the scheduler chase paid-up parents and permanently park rejoined players past the 15-day cutoff so they could never re-enter the reminder ladder.
+- Confirming a renewal now clears lingering `manual_followup_required` flags for that student (`superseded_by_payment`).
+- Android roster movement no longer counts a same-month rejoin as `Left` (ported the web rule to `data/RosterMovementRules.kt`).
+- Removed a hardcoded per-student data repair that ran on every web roster load and re-inserted a Rs 3,250 payment keyed on a display name. It had already double-inserted for Dhruvin Karthikeya (12 May and 14 May) — the duplicate row is still in the database and needs a manager decision.
+- Test infrastructure: `web-app-repo/package.json` (`npm test`, 25 cases) and an Android unit-test source set with JUnit (`./gradlew :app:testDebugUnitTest`). The rule modules had tests but nothing ran them.
+
+Known follow-ups, verified but not yet fixed: the reminder and payment-link rows are still paired per student without checking `reminder_event_id`; the follow-up selection still prefers the newest row over an unresolved one, so a proved payment can lose its Confirm button after the next morning's cron; the retry worker still messages discontinued students; Android still duplicates the coverage-months rule inside the UI layer.
 
 ## 2026-07-23
 

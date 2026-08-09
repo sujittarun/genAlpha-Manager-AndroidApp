@@ -35,6 +35,8 @@ import com.genalpha.cricketacademy.data.isActive
 import com.genalpha.cricketacademy.data.isPaymentPendingVerification
 import com.genalpha.cricketacademy.data.isFeesPending
 import com.genalpha.cricketacademy.data.isRenewalPending
+import com.genalpha.cricketacademy.data.currentDueDate
+import com.genalpha.cricketacademy.data.currentFollowUp
 import com.genalpha.cricketacademy.data.todayIsoDate
 import com.genalpha.cricketacademy.data.nextRenewalCycleDate
 import kotlinx.coroutines.Job
@@ -1002,7 +1004,13 @@ class AcademyViewModel(
             "special" -> 10000.0
             else -> 3500.0
         }
-        val cycleDate = followUp?.cycleStartDate?.takeIf { it.isNotBlank() } ?: (if (isJoiningFee) student.joinDate else student.nextRenewalCycleDate(_uiState.value.payments))
+        // Only trust the cycle stored on the follow-up while it still describes the current
+        // cycle. A stale row would credit the payment to a period already paid for (or spent
+        // discontinued), leaving the player "overdue" the moment the money is recorded.
+        val payments = _uiState.value.payments
+        val currentFollowUp = student.currentFollowUp(followUp, payments)
+        val cycleDate = currentFollowUp?.cycleStartDate?.takeIf { it.isNotBlank() }
+            ?: (if (isJoiningFee) student.joinDate else student.currentDueDate(payments))
         return recordRenewalPayment(
             student = student,
             planType = planType,

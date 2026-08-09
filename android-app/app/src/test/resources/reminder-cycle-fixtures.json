@@ -1,0 +1,72 @@
+{
+  "note": "Shared cases for the reminder-cycle gate. Mirrored at android-app/app/src/test/resources/reminder-cycle-fixtures.json — keep the two byte-identical so the JS and Kotlin implementations cannot drift.",
+  "currentFeeCycleDate": [
+    {
+      "name": "renewal student uses the rejoin-aware paid-through date",
+      "input": { "feesPending": false, "joinDate": "2026-04-06", "rejoinedAt": "2026-08-03", "paidThroughDate": "2026-08-03" },
+      "expected": "2026-08-03"
+    },
+    {
+      "name": "joining fee restarts from the return date after a rejoin",
+      "input": { "feesPending": true, "joinDate": "2026-04-06", "rejoinedAt": "2026-08-03", "paidThroughDate": "" },
+      "expected": "2026-08-03"
+    },
+    {
+      "name": "joining fee without a rejoin stays on the join date",
+      "input": { "feesPending": true, "joinDate": "2026-04-06", "rejoinedAt": "", "paidThroughDate": "" },
+      "expected": "2026-04-06"
+    }
+  ],
+  "isFollowUpForCurrentCycle": [
+    {
+      "name": "T1 Yuvaan: pre-rejoin manual-followup row does not govern the new cycle",
+      "input": { "cycleDueDate": "2026-08-03", "followUpDueDate": "2026-07-06", "followUpCreatedAt": "2026-07-11", "rejoinedAt": "2026-08-03" },
+      "expected": false
+    },
+    {
+      "name": "T5 current-cycle row is honoured",
+      "input": { "cycleDueDate": "2026-08-03", "followUpDueDate": "2026-08-03", "followUpCreatedAt": "2026-08-06", "rejoinedAt": "2026-08-03" },
+      "expected": true
+    },
+    {
+      "name": "heads-up raised two days before the due date still belongs to that cycle",
+      "input": { "cycleDueDate": "2026-08-06", "followUpDueDate": "2026-08-06", "followUpCreatedAt": "2026-08-04", "rejoinedAt": "" },
+      "expected": true
+    },
+    {
+      "name": "row from the cycle a payment already closed is stale",
+      "input": { "cycleDueDate": "2026-09-03", "followUpDueDate": "2026-08-03", "followUpCreatedAt": "2026-08-10", "rejoinedAt": "" },
+      "expected": false
+    },
+    {
+      "name": "row whose due date is ahead of our cycle is not suppressed",
+      "input": { "cycleDueDate": "2026-08-03", "followUpDueDate": "2026-08-06", "followUpCreatedAt": "2026-08-04", "rejoinedAt": "" },
+      "expected": true
+    },
+    {
+      "name": "pre-rejoin row is stale even when the due dates collide",
+      "input": { "cycleDueDate": "2026-08-03", "followUpDueDate": "2026-08-03", "followUpCreatedAt": "2026-07-30", "rejoinedAt": "2026-08-03" },
+      "expected": false
+    },
+    {
+      "name": "legacy row without a due date falls back to when it was raised",
+      "input": { "cycleDueDate": "2026-08-03", "followUpDueDate": "", "followUpCreatedAt": "2026-06-01", "rejoinedAt": "" },
+      "expected": false
+    },
+    {
+      "name": "legacy row raised inside the current cycle is kept",
+      "input": { "cycleDueDate": "2026-08-03", "followUpDueDate": "", "followUpCreatedAt": "2026-08-05", "rejoinedAt": "" },
+      "expected": true
+    },
+    {
+      "name": "no cycle date to compare against never suppresses",
+      "input": { "cycleDueDate": "", "followUpDueDate": "2026-01-01", "followUpCreatedAt": "2026-01-01", "rejoinedAt": "" },
+      "expected": true
+    },
+    {
+      "name": "timestamps are compared by date only",
+      "input": { "cycleDueDate": "2026-08-03", "followUpDueDate": "2026-08-03T23:59:59+05:30", "followUpCreatedAt": "2026-08-03T09:00:00+05:30", "rejoinedAt": "2026-08-03" },
+      "expected": true
+    }
+  ]
+}
