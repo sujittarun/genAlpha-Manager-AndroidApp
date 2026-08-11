@@ -731,7 +731,7 @@ class SupabaseRepository(
             .toString()
             .toRequestBody(JSON_MEDIA_TYPE)
 
-        val request = baseRequest("$baseUrl/auth/v1/token?grant_type=password")
+        val request = authRequest("$baseUrl/auth/v1/token?grant_type=password")
             .post(body)
             .build()
 
@@ -744,7 +744,7 @@ class SupabaseRepository(
             .toString()
             .toRequestBody(JSON_MEDIA_TYPE)
 
-        val request = baseRequest("$baseUrl/auth/v1/token?grant_type=refresh_token")
+        val request = authRequest("$baseUrl/auth/v1/token?grant_type=refresh_token")
             .post(body)
             .build()
 
@@ -1885,6 +1885,27 @@ class SupabaseRepository(
         } else {
             body.put("discontinued", false)
         }
+    }
+
+    /**
+     * Sign-in and refresh, which are NOT ordinary API calls.
+     *
+     * baseRequest sends `Bearer ${sessionToken ?: anonKey}`, so once anyone
+     * had signed in, the next sign-in request carried the PREVIOUS user's
+     * JWT as its credential. GoTrue rejects the grant when that token has
+     * expired or belongs to someone else, and the app reported it as a wrong
+     * password — the PIN was right and the screen said it was not.
+     *
+     * The schema headers are dropped too: auth is not PostgREST and has no
+     * `genalpha` schema to select.
+     */
+    private fun authRequest(url: String): Request.Builder {
+        return Request.Builder()
+            .url(url)
+            .header("apikey", anonKey)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .header("Authorization", "Bearer $anonKey")
     }
 
     private fun baseRequest(url: String): Request.Builder {

@@ -1338,7 +1338,10 @@ fun AcademyApp(
                                 }
                                 OperationResult(true, "Staff dashboard unlocked.")
                             } else {
-                                OperationResult(false, "Incorrect manager PIN.")
+                                // Pass the real reason through. It used to say
+                                // "Incorrect manager PIN" for every failure,
+                                // including ones where the PIN was accepted.
+                                unlocked
                             }
                         },
                     )
@@ -7342,18 +7345,30 @@ private fun ManagerPinSheet(
 ) {
     var pin by rememberSaveable { mutableStateOf("") }
     var inlineMessage by rememberSaveable { mutableStateOf("") }
-    var isChecking by rememberSaveable { mutableStateOf(false) }
+    // Not rememberSaveable: a check cannot survive the process that was
+    // running it, and restoring `true` would wedge the sheet permanently.
+    var isChecking by remember { mutableStateOf(false) }
     val dialogDensity = LocalDensity.current
 
-    LaunchedEffect(pin, isChecking) {
-        if (pin.length == 6 && !isChecking) {
-            isChecking = true
-            val result = onUnlock(pin)
-            if (!result.success) {
-                inlineMessage = result.message
-                pin = ""
-            }
-            isChecking = false
+    // Keyed on `pin` ALONE. It used to be keyed on (pin, isChecking), so the
+    // first line of the body — isChecking = true — changed the effect's own
+    // key and cancelled the coroutine it was running in.
+    //
+    // That was survivable while onUnlock was a string compare against a
+    // constant: it returned before recomposition could cancel anything. Now
+    // it is a network sign-in, so the request went out, Supabase accepted it
+    // and recorded the sign-in, and the cancellation landed before the reply
+    // was read. The server logged success and the screen said "Incorrect
+    // manager PIN" — the PIN was right every time.
+    LaunchedEffect(pin) {
+        if (pin.length != 6) return@LaunchedEffect
+        isChecking = true
+        val result = onUnlock(pin)
+        // Before clearing `pin`, which changes the key and cancels the rest.
+        isChecking = false
+        if (!result.success) {
+            inlineMessage = result.message
+            pin = ""
         }
     }
 

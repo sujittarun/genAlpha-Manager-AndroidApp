@@ -325,15 +325,34 @@ class AcademyViewModel(
      */
     suspend fun unlockCoach(pin: String): OperationResult {
         _uiState.update { it.copy(isAuthLoading = true) }
+
+        // Only the sign-in itself is allowed to mean "wrong PIN". Everything
+        // after it has its own reasons for failing, and reporting those as a
+        // bad PIN is what sent us hunting a credential that was correct all
+        // along — the server had accepted it twice while the screen said no.
+        val session = try {
+            repository.signInCoach(pin)
+        } catch (error: SupabaseException) {
+            _uiState.update { it.copy(isAuthLoading = false) }
+            return OperationResult(false, when {
+                error.statusCode == 400 -> "Incorrect PIN."
+                error.statusCode == 429 ->
+                    "Too many attempts — Supabase is rate-limiting this account. Wait a minute and try again."
+                else -> "Sign-in failed (${error.statusCode}): ${error.message}"
+            })
+        } catch (error: Exception) {
+            _uiState.update { it.copy(isAuthLoading = false) }
+            return OperationResult(false, "Could not reach the server: ${error.message ?: error::class.simpleName}")
+        }
+
         return try {
-            val session = repository.signInCoach(pin)
             repository.useSession(session)
             _uiState.update { it.copy(isAuthLoading = false, session = session, errorMessage = null) }
             refreshInBackground()
             OperationResult(true, "Roster unlocked.")
         } catch (error: Exception) {
             _uiState.update { it.copy(isAuthLoading = false) }
-            OperationResult(false, "That PIN was not accepted.")
+            OperationResult(false, "Signed in, but loading failed: ${error.message ?: error::class.simpleName}")
         }
     }
 
