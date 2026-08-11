@@ -11,8 +11,8 @@ android {
     applicationId = "com.genalpha.cricketacademy"
     minSdk = 24
     targetSdk = 35
-    versionCode = 63
-    versionName = "1.0.63"
+    versionCode = 64
+    versionName = "1.0.64"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -83,3 +83,40 @@ dependencies {
   testImplementation("junit:junit:4.13.2")
   testImplementation("org.json:json:20240303")
 }
+
+// ---------------------------------------------------------------------
+// pay.html runs in the WebView from file:///android_asset/ and loads
+// ./supabase-config.js while parsing, capturing it into a const. That
+// file did not exist, so window.GEN_ALPHA_SUPABASE_CONFIG was undefined,
+// supabaseConfig.url was undefined, and every payment signal the page
+// posts — payment attempted, proof nudge, manager alert — was skipped by
+// the page's own `!supabaseConfig.url` guard. The UPI intent still fired,
+// so it looked like it worked.
+//
+// Generated from SupabaseConfig.kt rather than committed, because a
+// committed copy is what failed: assets/web/supabase-config.js sat there
+// pointing at the decommissioned project long after the cutover.
+// ---------------------------------------------------------------------
+val generateWebConfig by tasks.registering {
+    val src = file("src/main/java/com/genalpha/cricketacademy/data/SupabaseConfig.kt")
+    val out = file("src/main/assets/supabase-config.js")
+    inputs.file(src)
+    outputs.file(out)
+    doLast {
+        val text = src.readText()
+        val url = Regex("const val URL\\s*=\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1)
+            ?: error("SupabaseConfig.kt: could not find URL")
+        val key = Regex("const val ANON_KEY\\s*=\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1)
+            ?: error("SupabaseConfig.kt: could not find ANON_KEY")
+        out.parentFile.mkdirs()
+        out.writeText(
+            "// GENERATED from SupabaseConfig.kt at build time. Do not edit.\n" +
+            "window.GEN_ALPHA_SUPABASE_CONFIG = {\n" +
+            "  url: \"" + url + "\",\n" +
+            "  anonKey: \"" + key + "\",\n" +
+            "};\n"
+        )
+    }
+}
+
+tasks.named("preBuild") { dependsOn(generateWebConfig) }
