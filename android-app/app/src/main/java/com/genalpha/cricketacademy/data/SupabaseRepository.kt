@@ -2035,30 +2035,40 @@ class SupabaseRepository(
                     )
                     .put(
                         "postgres_changes",
+                        // The tables that actually exist on the platform.
+                        // The app used to name students / student_payments /
+                        // academy_expenses, which live only in the `genalpha`
+                        // schema as views — unpublishable, so it received nothing.
                         JSONArray()
                             .put(
                                 JSONObject()
                                     .put("event", "*")
                                     .put("schema", "public")
-                                    .put("table", "students")
+                                    .put("table", "members")
                             )
                             .put(
                                 JSONObject()
                                     .put("event", "*")
                                     .put("schema", "public")
-                                    .put("table", "attendance")
+                                    .put("table", "payments")
                             )
                             .put(
                                 JSONObject()
                                     .put("event", "*")
                                     .put("schema", "public")
-                                    .put("table", "academy_expenses")
+                                    .put("table", "expenses")
                             )
                             .put(
                                 JSONObject()
                                     .put("event", "*")
                                     .put("schema", "public")
-                                    .put("table", "student_payments")
+                                    .put("table", "attendance_records")
+                            )
+                            .put(
+                                JSONObject()
+                                    .put("event", "*")
+                                    .put("schema", "public")
+                                    .put("table", "enrollments")
                             )
                             .put(
                                 JSONObject()
@@ -2069,8 +2079,14 @@ class SupabaseRepository(
                             .put(
                                 JSONObject()
                                     .put("event", "*")
-                                    .put("schema", "public")
+                                    .put("schema", DB_SCHEMA)
                                     .put("table", "payment_link_requests")
+                            )
+                            .put(
+                                JSONObject()
+                                    .put("event", "*")
+                                    .put("schema", DB_SCHEMA)
+                                    .put("table", "student_details")
                             )
                     )
                     .put("private", false)
@@ -2110,65 +2126,23 @@ class SupabaseRepository(
                 }
             }
             "postgres_changes" -> {
-                val payload = message.optJSONObject("payload") ?: return
-                val data = payload.optJSONObject("data") ?: return
-                val changeType = data.optString("type")
+                // A signal, not a payload.
+                //
+                // On GenAlpha's own project `students` was one table, so the
+                // changed row WAS a student and could be merged straight into
+                // the list. On the platform a student is a view over members +
+                // student_details + enrollments, and logical replication can
+                // only publish real tables — so whatever arrives here is one
+                // fragment of a join and can never rebuild a Student.
+                //
+                // So realtime says "something under you moved" and the app
+                // refetches through the view that does the join. The old
+                // per-table parsing was silently dead anyway: it dispatched on
+                // table names — students, student_payments, academy_expenses —
+                // that do not exist in `public` on this project.
+                val data = message.optJSONObject("payload")?.optJSONObject("data") ?: return
                 val table = data.optString("table")
-                when (changeType) {
-                    "DELETE" -> {
-                        val oldRecord = data.optJSONObject("old_record")
-                        if (table == "attendance" || oldRecord?.has("attendance_date") == true) {
-                            val studentId = oldRecord?.optString("student_id").orEmpty()
-                            val attendanceDate = oldRecord?.optString("attendance_date").orEmpty()
-                            if (studentId.isNotBlank() && attendanceDate.isNotBlank()) {
-                                realtimeListener?.onAttendanceDeleted(studentId, attendanceDate)
-                            }
-                        } else if (table == "academy_expenses") {
-                            val deletedId = oldRecord?.optString("id").orEmpty()
-                            if (deletedId.isNotBlank()) {
-                                realtimeListener?.onExpenseDeleted(deletedId)
-                            }
-                        } else if (table == "student_payments") {
-                            val deletedId = oldRecord?.optString("id").orEmpty()
-                            if (deletedId.isNotBlank()) {
-                                realtimeListener?.onPaymentDeleted(deletedId)
-                            }
-                        } else if (table == "reminder_events" || table == "payment_link_requests") {
-                            realtimeListener?.onReminderPaymentChanged()
-                        } else {
-                            val deletedId = oldRecord?.optString("id").orEmpty()
-                            if (deletedId.isNotBlank()) {
-                                realtimeListener?.onStudentDeleted(deletedId)
-                            }
-                        }
-                    }
-                    "INSERT", "UPDATE" -> {
-                        val record = data.optJSONObject("record") ?: return
-                        if (table == "attendance" || record.has("attendance_date")) {
-                            val studentId = record.optString("student_id")
-                            val attendanceDate = record.optString("attendance_date")
-                            if (studentId.isNotBlank() && attendanceDate.isNotBlank()) {
-                                realtimeListener?.onAttendanceUpsert(studentId, attendanceDate)
-                            }
-                        } else if (table == "academy_expenses") {
-                            realtimeListener?.onExpenseUpsert(record.toRealtimeExpense())
-                        } else if (table == "student_payments") {
-                            realtimeListener?.onPaymentUpsert(record.toRealtimePayment())
-                        } else if (table == "reminder_events" || table == "payment_link_requests") {
-                            realtimeListener?.onReminderPaymentChanged()
-                        } else {
-                            realtimeListener?.onStudentUpsert(record.toRealtimeStudent())
-                        }
-                    }
-                }
-            }
-            "system" -> {
-                val payload = message.optJSONObject("payload")
-                val status = payload?.optString("status").orEmpty()
-                val extension = payload?.optString("extension").orEmpty()
-                if (status == "error" && extension == "postgres_changes") {
-                    realtimeListener?.onError(payload?.optString("message").orEmpty())
-                }
+                if (table.isNotBlank()) realtimeListener?.onDataChanged(table)
             }
         }
     }
@@ -2356,15 +2330,14 @@ class SupabaseRepository(
 }
 
 interface StudentRealtimeListener {
-    fun onStudentUpsert(student: Student)
-    fun onStudentDeleted(studentId: String)
-    fun onAttendanceUpsert(studentId: String, attendanceDate: String) {}
-    fun onAttendanceDeleted(studentId: String, attendanceDate: String) {}
-    fun onExpenseUpsert(expense: AcademyExpense) {}
-    fun onExpenseDeleted(expenseId: String) {}
-    fun onPaymentUpsert(payment: StudentPayment) {}
-    fun onPaymentDeleted(paymentId: String) {}
-    fun onReminderPaymentChanged() {}
+    /**
+     * Something changed in `table`. Refetch what depends on it.
+     *
+     * Deliberately not a row payload: on the platform a student is a view
+     * over members + student_details + enrollments, and only real tables
+     * can be published, so no single change event can carry a Student.
+     */
+    fun onDataChanged(table: String)
     fun onStatus(message: String) {}
     fun onError(message: String) {}
 }

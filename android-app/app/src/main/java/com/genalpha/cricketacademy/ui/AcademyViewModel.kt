@@ -106,71 +106,32 @@ class AcademyViewModel(
     private var playersLiveSyncJob: Job? = null
     private var attendanceLiveSyncJob: Job? = null
 
+    private var realtimeRefreshJob: Job? = null
+
     private val realtimeListener = object : StudentRealtimeListener {
-        override fun onStudentUpsert(student: Student) {
-            _uiState.update { state ->
-                state.copy(kids = sortStudents(state.kids.filterNot { it.id == student.id } + student))
-            }
-        }
-
-        override fun onStudentDeleted(studentId: String) {
-            _uiState.update { state ->
-                state.copy(kids = sortStudents(state.kids.filterNot { it.id == studentId }))
-            }
-        }
-
-        override fun onAttendanceUpsert(studentId: String, attendanceDate: String) {
-            _uiState.update { state ->
-                val currentDates = state.recentAttendanceDates[studentId].orEmpty()
-                val nextRecentDates = state.recentAttendanceDates + (studentId to ((currentDates + attendanceDate).distinct().sortedDescending()))
-                if (attendanceDate != todayIsoDate()) return@update state.copy(recentAttendanceDates = nextRecentDates)
-                if (state.todayAttendanceIds.contains(studentId)) return@update state.copy(recentAttendanceDates = nextRecentDates)
-                val currentCount = state.attendanceCounts[studentId] ?: 0
-                state.copy(
-                    todayAttendanceIds = state.todayAttendanceIds + studentId,
-                    attendanceCounts = state.attendanceCounts + (studentId to (currentCount + 1)),
-                    recentAttendanceDates = nextRecentDates,
-                )
-            }
-        }
-
-        override fun onAttendanceDeleted(studentId: String, attendanceDate: String) {
-            _uiState.update { state ->
-                val nextRecentDates = state.recentAttendanceDates + (studentId to state.recentAttendanceDates[studentId].orEmpty().filterNot { it == attendanceDate })
-                if (attendanceDate != todayIsoDate()) return@update state.copy(recentAttendanceDates = nextRecentDates)
-                if (!state.todayAttendanceIds.contains(studentId)) return@update state.copy(recentAttendanceDates = nextRecentDates)
-                val currentCount = state.attendanceCounts[studentId] ?: 0
-                state.copy(
-                    todayAttendanceIds = state.todayAttendanceIds - studentId,
-                    attendanceCounts = state.attendanceCounts + (studentId to (currentCount - 1).coerceAtLeast(0)),
-                    recentAttendanceDates = nextRecentDates,
-                )
-            }
-        }
-
-        override fun onExpenseUpsert(expense: AcademyExpense) {
-            upsertLocalExpense(expense)
-        }
-
-        override fun onExpenseDeleted(expenseId: String) {
-            _uiState.update { state ->
-                state.copy(expenses = state.expenses.filterNot { it.id == expenseId })
-            }
-        }
-
-        override fun onPaymentUpsert(payment: StudentPayment) {
-            upsertLocalPayment(payment)
-        }
-
-        override fun onPaymentDeleted(paymentId: String) {
-            _uiState.update { state ->
-                state.copy(payments = state.payments.filterNot { it.id == paymentId })
-            }
-        }
-
-        override fun onReminderPaymentChanged() {
-            viewModelScope.launch {
-                loadFinance()
+        /**
+         * Realtime is a change SIGNAL now, not a row payload.
+         *
+         * On GenAlpha's own project `students` was a table, so the changed
+         * row was a Student and could be merged straight into the list. Here
+         * a Student is a view over members + student_details + enrollments,
+         * and only real tables can be published — so the event names the
+         * table that moved and the app refetches through the view that does
+         * the join.
+         *
+         * Coalesced: one save touches members, enrollments and
+         * student_details, which would otherwise be three refetches in a
+         * row.
+         */
+        override fun onDataChanged(table: String) {
+            realtimeRefreshJob?.cancel()
+            realtimeRefreshJob = viewModelScope.launch {
+                delay(400)
+                when (table) {
+                    "payments", "expenses", "payment_link_requests", "reminder_events" ->
+                        if (_uiState.value.session != null) loadFinance()
+                    else -> loadKids()
+                }
             }
         }
     }
