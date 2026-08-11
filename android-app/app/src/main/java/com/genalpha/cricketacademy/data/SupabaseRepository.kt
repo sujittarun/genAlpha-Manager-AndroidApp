@@ -305,6 +305,16 @@ class SupabaseRepository(
         )
     }
 
+    /**
+     * The coach tier. The six digits the coach types ARE the password of a
+     * real Supabase account, so this returns a genuine session with
+     * am_role='coach' rather than unlocking a screen. A wrong PIN is a
+     * failed sign-in that Supabase rate-limits, not a local string compare
+     * that can be read out of the APK.
+     */
+    suspend fun signInCoach(pin: String): ManagerSession =
+        signIn(COACH_EMAIL, pin)
+
     suspend fun fetchStudents(): List<Student> = withContext(Dispatchers.IO) {
         val request = baseRequest("$baseUrl/rest/v1/students?select=*&order=join_date.desc")
             .get()
@@ -2315,6 +2325,10 @@ class SupabaseRepository(
         // GenAlpha's tables are views in this schema on the shared platform
         // project; see baseRequest.
         private const val DB_SCHEMA = "genalpha"
+
+        // Fixed address; the PIN is the password. Changing the PIN is a
+        // password change on this account — no app release.
+        private const val COACH_EMAIL = "coach@genalphaacademy.in"
 
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
