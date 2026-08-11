@@ -315,6 +315,9 @@ class AcademyViewModel(
     fun logout() {
         sessionPrefs.clearSession()
         repository.startStudentRealtime(realtimeListener, null)
+        // Clear the repository's copy too, or the next anon-only call
+        // (the public admission form) would still go out signed in.
+        repository.useSession(null)
         _uiState.update { it.copy(session = null, pendingAdmissions = emptyList(), isAdmissionReviewLoading = false) }
     }
 

@@ -81,6 +81,23 @@ class SupabaseRepository(
     private var realtimeListener: StudentRealtimeListener? = null
     private var realtimeSession: ManagerSession? = null
 
+    // The signed-in manager's token, remembered so baseRequest can use it.
+    //
+    // Ten calls sent the ANON key as their bearer — students, admissions,
+    // all four attendance calls and the two attendance RPCs. That worked
+    // on GenAlpha's own project because those tables were readable by
+    // anon, which was itself the leak closed on 2026-08-10: 81 children's
+    // names, phones and home addresses fetchable with a key published in
+    // the app. On the platform they are granted to `authenticated` only,
+    // so the roster came back empty and every payment rendered against an
+    // unknown player.
+    @Volatile private var sessionToken: String? = null
+
+    /** Arm the repository with a session restored from storage at launch. */
+    fun useSession(session: ManagerSession?) {
+        sessionToken = session?.accessToken?.takeIf { it.isNotBlank() }
+    }
+
     suspend fun createAgentAlphaIntake(
         session: ManagerSession,
         notes: String,
@@ -290,7 +307,6 @@ class SupabaseRepository(
 
     suspend fun fetchStudents(): List<Student> = withContext(Dispatchers.IO) {
         val request = baseRequest("$baseUrl/rest/v1/students?select=*&order=join_date.desc")
-            .header("Authorization", "Bearer $anonKey")
             .get()
             .build()
 
@@ -921,7 +937,6 @@ class SupabaseRepository(
 
                 val executeAdmissionInsert: (JSONObject) -> AdmissionInsertResult = { payload ->
                     val insertRequest = baseRequest("$baseUrl/rest/v1/admissions?select=id,reg_no")
-                        .header("Authorization", "Bearer $anonKey")
                         .header("Prefer", "return=representation")
                         .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
                         .build()
@@ -1026,7 +1041,6 @@ class SupabaseRepository(
 
     suspend fun fetchTodayAttendance(date: String = todayIsoDate()): Set<String> = withContext(Dispatchers.IO) {
         val request = baseRequest("$baseUrl/rest/v1/attendance?select=student_id&attendance_date=eq.$date")
-            .header("Authorization", "Bearer $anonKey")
             .get()
             .build()
 
@@ -1044,7 +1058,6 @@ class SupabaseRepository(
 
     suspend fun fetchAttendanceCounts(): Map<String, Int> = withContext(Dispatchers.IO) {
         val request = baseRequest("$baseUrl/rest/v1/attendance?select=student_id")
-            .header("Authorization", "Bearer $anonKey")
             .get()
             .build()
 
@@ -1062,7 +1075,6 @@ class SupabaseRepository(
 
     suspend fun fetchAttendanceDates(studentId: String): List<String> = withContext(Dispatchers.IO) {
         val request = baseRequest("$baseUrl/rest/v1/attendance?select=attendance_date&student_id=eq.$studentId&order=attendance_date.desc")
-            .header("Authorization", "Bearer $anonKey")
             .get()
             .build()
 
@@ -1079,7 +1091,6 @@ class SupabaseRepository(
 
     suspend fun fetchRecentAttendanceDates(since: String): Map<String, List<String>> = withContext(Dispatchers.IO) {
         val request = baseRequest("$baseUrl/rest/v1/attendance?select=student_id,attendance_date&attendance_date=gte.$since&order=attendance_date.desc")
-            .header("Authorization", "Bearer $anonKey")
             .get()
             .build()
 
@@ -1358,7 +1369,6 @@ class SupabaseRepository(
                 .toRequestBody(JSON_MEDIA_TYPE)
 
             val request = baseRequest("$baseUrl/rest/v1/rpc/mark_player_attendance")
-                .header("Authorization", "Bearer $anonKey")
                 .post(body)
                 .build()
 
@@ -1379,7 +1389,6 @@ class SupabaseRepository(
                 .toRequestBody(JSON_MEDIA_TYPE)
 
             val request = baseRequest("$baseUrl/rest/v1/rpc/unmark_player_attendance")
-                .header("Authorization", "Bearer $anonKey")
                 .post(body)
                 .build()
 
@@ -1714,6 +1723,10 @@ class SupabaseRepository(
             val auth = authAdapter.fromJson(body)
                 ?: throw SupabaseException(response.code, "Unable to read login response.")
 
+            // Remember it centrally. Both signIn and refreshSession come
+            // through here, so a fresh login and an app restart that
+            // refreshes a stored token both arm baseRequest.
+            sessionToken = auth.accessToken
             return ManagerSession(
                 email = auth.user.email.orEmpty(),
                 accessToken = auth.accessToken,
@@ -1883,6 +1896,12 @@ class SupabaseRepository(
             // headers.
             .header("Accept-Profile", DB_SCHEMA)
             .header("Content-Profile", DB_SCHEMA)
+            // Signed in when we have a session, anon otherwise. Callers
+            // that pass an explicit token still override this, because
+            // .header() replaces rather than appends. The two genuinely
+            // public calls — submit_admission_form and
+            // peek_next_admission_reg_no — override back to anon.
+            .header("Authorization", "Bearer ${sessionToken ?: anonKey}")
     }
 
     private fun parseError(rawBody: String?): String {
