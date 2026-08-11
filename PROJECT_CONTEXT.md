@@ -14,20 +14,20 @@ This file is the source-of-truth briefing for Codex/future agents. Read this fir
 
 ## Repository Map
 
-- Android/native app repo root: `/Users/jiths/Documents/New project`
+- Android/native app repo root: `/Users/jiths/Documents/Academy Manager Business/GenAlphaApp`
 - Android remote: `git@github.com:sujittarun/genAlpha-Manager-AndroidApp.git`
 - Android branch: `main`
-- Android project folder: `/Users/jiths/Documents/New project/android-app`
-- Web repo root: `/Users/jiths/Documents/New project/web-app-repo`
+- Android project folder: `/Users/jiths/Documents/Academy Manager Business/GenAlphaApp/android-app`
+- Web repo root: `/Users/jiths/Documents/Academy Manager Business/GenAlpha`
 - Web remote: `git@github.com:sujittarun/cricket-academy-manager.git`
 - Web branch: `main`
-- Supabase SQL/function files live under Android repo root: `/Users/jiths/Documents/New project/supabase`
+- Supabase SQL/function files live under Android repo root: `/Users/jiths/Documents/Academy Manager Business/GenAlphaApp/supabase`
 
 Important: keep Android-only code in the Android repo and web-only code in `web-app-repo`. Do not accidentally push web changes to the Android repo or Android changes to the web repo.
 
 ## Expected Working Rule
 
-- This workspace contains two separate app projects: the Android/native app at `/Users/jiths/Documents/New project` and the web/browser app at `/Users/jiths/Documents/New project/web-app-repo`.
+- This workspace contains two separate app projects: the Android/native app at `/Users/jiths/Documents/Academy Manager Business/GenAlphaApp` and the web/browser app at `/Users/jiths/Documents/Academy Manager Business/GenAlpha`.
 - Unless the user explicitly says "Android only" or "web only", any logic, product behavior, business rule, schema/RPC payload, fee/reminder/payment flow, validation, or shared bug fix must be checked and implemented in both Android and browser apps.
 - Do not blindly copy UI/code between apps. Understand each app's project structure, data flow, design language, navigation, and user flow, then fit the change exactly where it belongs in that app.
 - If a shared change truly does not apply to one app, note why in the final response and, when meaningful, in `CHANGELOG_NOTES.md`.
@@ -303,13 +303,13 @@ Migration discipline:
 
 Key files:
 
-- `/Users/jiths/Documents/New project/web-app-repo/index.html`
-- `/Users/jiths/Documents/New project/web-app-repo/script.js`
-- `/Users/jiths/Documents/New project/web-app-repo/styles.css`
-- `/Users/jiths/Documents/New project/web-app-repo/supabase-config.js`
-- `/Users/jiths/Documents/New project/web-app-repo/pay.html`
-- `/Users/jiths/Documents/New project/web-app-repo/manifest.webmanifest`
-- `/Users/jiths/Documents/New project/web-app-repo/assets/...`
+- `/Users/jiths/Documents/Academy Manager Business/GenAlpha/index.html`
+- `/Users/jiths/Documents/Academy Manager Business/GenAlpha/script.js`
+- `/Users/jiths/Documents/Academy Manager Business/GenAlpha/styles.css`
+- `/Users/jiths/Documents/Academy Manager Business/GenAlpha/supabase-config.js`
+- `/Users/jiths/Documents/Academy Manager Business/GenAlpha/pay.html`
+- `/Users/jiths/Documents/Academy Manager Business/GenAlpha/manifest.webmanifest`
+- `/Users/jiths/Documents/Academy Manager Business/GenAlpha/assets/...`
 
 Web expectations:
 
@@ -332,12 +332,12 @@ Web layout traps:
 
 Key files:
 
-- `/Users/jiths/Documents/New project/android-app/app/src/main/java/com/genalpha/cricketacademy/ui/AcademyApp.kt`
-- `/Users/jiths/Documents/New project/android-app/app/src/main/java/com/genalpha/cricketacademy/ui/AcademyViewModel.kt`
-- `/Users/jiths/Documents/New project/android-app/app/src/main/java/com/genalpha/cricketacademy/data/SupabaseRepository.kt`
-- `/Users/jiths/Documents/New project/android-app/app/src/main/java/com/genalpha/cricketacademy/data/Models.kt`
-- `/Users/jiths/Documents/New project/android-app/app/src/main/AndroidManifest.xml`
-- APK output: `/Users/jiths/Documents/New project/android-app/app/build/outputs/apk/debug/genAlpha-manager.apk`
+- `/Users/jiths/Documents/Academy Manager Business/GenAlphaApp/android-app/app/src/main/java/com/genalpha/cricketacademy/ui/AcademyApp.kt`
+- `/Users/jiths/Documents/Academy Manager Business/GenAlphaApp/android-app/app/src/main/java/com/genalpha/cricketacademy/ui/AcademyViewModel.kt`
+- `/Users/jiths/Documents/Academy Manager Business/GenAlphaApp/android-app/app/src/main/java/com/genalpha/cricketacademy/data/SupabaseRepository.kt`
+- `/Users/jiths/Documents/Academy Manager Business/GenAlphaApp/android-app/app/src/main/java/com/genalpha/cricketacademy/data/Models.kt`
+- `/Users/jiths/Documents/Academy Manager Business/GenAlphaApp/android-app/app/src/main/AndroidManifest.xml`
+- APK output: `/Users/jiths/Documents/Academy Manager Business/GenAlphaApp/android-app/app/build/outputs/apk/debug/genAlpha-manager.apk`
 
 Android package:
 
@@ -361,10 +361,10 @@ Android UX rules:
 Android build/test commands:
 
 - Build debug APK:
-  - `cd /Users/jiths/Documents/New project/android-app`
+  - `cd /Users/jiths/Documents/Academy Manager Business/GenAlphaApp/android-app`
   - `./gradlew assembleDebug`
 - Install into emulator:
-  - `/Users/jiths/Library/Android/sdk/platform-tools/adb install -r /Users/jiths/Documents/New project/android-app/app/build/outputs/apk/debug/genAlpha-manager.apk`
+  - `/Users/jiths/Library/Android/sdk/platform-tools/adb install -r /Users/jiths/Documents/Academy Manager Business/GenAlphaApp/android-app/app/build/outputs/apk/debug/genAlpha-manager.apk`
 - Launch:
   - `/Users/jiths/Library/Android/sdk/platform-tools/adb shell monkey -p com.genalpha.cricketacademy 1`
 - Screenshot:
@@ -394,8 +394,8 @@ Android build/test commands:
 - There may be untracked or unrelated files in the worktree. Do not delete/revert unrelated changes unless the user explicitly asks.
 - Use `git status` before commits.
 - Commit/push to the correct repo:
-  - Android: `/Users/jiths/Documents/New project`, `origin main`.
-  - Web: `/Users/jiths/Documents/New project/web-app-repo`, `origin main`.
+  - Android: `/Users/jiths/Documents/Academy Manager Business/GenAlphaApp`, `origin main`.
+  - Web: `/Users/jiths/Documents/Academy Manager Business/GenAlpha`, `origin main`.
 - If the user says "push both", push Android repo and web repo separately.
 - If user says "git pull", pull the relevant repo(s). If context says both apps are involved, pull both.
 - Do not use `git reset --hard` or destructive commands unless explicitly approved.

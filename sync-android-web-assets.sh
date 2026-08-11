@@ -3,11 +3,15 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
-WEB_REPO_DIR="$ROOT_DIR/web-app-repo"
+# The web app is a SIBLING repo now, not a nested clone. The old
+# web-app-repo/ copy was 10 commits stale and still pointed at the
+# decommissioned Supabase project, so running this script used to
+# overwrite the Android web assets with dead-database code.
+WEB_REPO_DIR="${WEB_REPO_DIR:-$ROOT_DIR/../GenAlpha}"
 ANDROID_WEB_DIR="$ROOT_DIR/android-app/app/src/main/assets/web"
 
 if [ ! -d "$WEB_REPO_DIR" ]; then
-  echo "Missing web-app-repo directory. Clone or copy the cricket-academy-manager repo into $WEB_REPO_DIR first."
+  echo "Missing web app at $WEB_REPO_DIR. Expected the GenAlpha web repo as a sibling of this one."
   exit 1
 fi
 

@@ -2,17 +2,13 @@
 
 Tenant `genalpha` on the Academy Manager platform since 2026-08-10.
 
-**This folder sits outside `Academy Manager Business/`, so it does NOT
-inherit the platform `CLAUDE.md`.** Read
-`/Users/jiths/Documents/Academy Manager Business/CLAUDE.md` before
-changing anything that touches the database. Moving this repo under that
-folder is planned and would make this file unnecessary.
+This folder now sits under `Academy Manager Business/`, so the platform
+`CLAUDE.md` one level up **is inherited automatically** — the house rule,
+the migration ledger and the security facts all apply here without being
+restated. What follows is only what is specific to GenAlpha.
 
 ## The rules that apply here
 
-- **A commit message is one line, at most 100 characters.** Every repo,
-  no exceptions. The reasoning goes in a comment above the code it
-  explains, or in the migration header — somewhere it gets read again.
 - **Anything that computes money lives in Postgres.** Fees come from
   `genalpha.quote_fee()`, payments through `record_fee_payment()`. This
   app used to hardcode 3500/9975/18900 while 52 of 81 students were on a

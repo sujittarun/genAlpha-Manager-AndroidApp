@@ -509,7 +509,7 @@ For current source-of-truth rules, read `PROJECT_CONTEXT.md` first.
 - Commit pushed to Android repo:
   - `6a3742b Center staff login dialog`
 - Main file changed:
-  - `/Users/jiths/Documents/New project/android-app/app/src/main/java/com/genalpha/cricketacademy/ui/AcademyApp.kt`
+  - `/Users/jiths/Documents/Academy Manager Business/GenAlphaApp/android-app/app/src/main/java/com/genalpha/cricketacademy/ui/AcademyApp.kt`
 
 ### Project Memory Files
 
