@@ -2328,7 +2328,7 @@ class SupabaseRepository(
 
         // Fixed address; the PIN is the password. Changing the PIN is a
         // password change on this account — no app release.
-        private const val COACH_EMAIL = "coach@genalphaacademy.in"
+        const val COACH_EMAIL = "coach@genalphaacademy.in"
 
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }

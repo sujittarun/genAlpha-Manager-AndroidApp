@@ -235,7 +235,9 @@ private fun adaptiveSp(base: Float, fontScale: Float, minRatio: Float = 0.72f): 
         .sp
 }
 private val DarkAttentionBorder = Color(0x66D7A12B)
-private const val MANAGER_VIEW_PIN = "290326"
+// The PIN moved to Supabase: it is the password of coach@genalphaacademy.in.
+// The old constant is gone rather than left unused — it was in the git
+// history and inside every shipped APK, and a dead copy invites reuse.
 private const val CompactMaxFontScale = 0.90f
 
 private fun compactDensityScale(density: Density): Float = when {
@@ -908,9 +910,9 @@ fun AcademyApp(
             bottomBar = {
                 AppBottomBar(
                     selectedView = selectedView,
-                    showFinance = uiState.session != null,
+                    showFinance = uiState.session != null && !viewModel.isCoachSession(),
                     onSelected = { view ->
-                        if (view == AppView.Finance && uiState.session != null) {
+                        if (view == AppView.Finance && uiState.session != null && !viewModel.isCoachSession()) {
                             selectedView = view
                         } else if (view == AppView.Manager && selectedView != view) {
                             resetStaffRosterFilters()
@@ -1319,7 +1321,13 @@ fun AcademyApp(
                     ManagerPinSheet(
                         onDismiss = { showManagerPinSheet = false },
                         onUnlock = { pin ->
-                            if (pin == MANAGER_VIEW_PIN) {
+                            // The PIN is the password of a real coach
+                            // account now, so this is a sign-in. A wrong
+                            // one is a rate-limited auth failure, not a
+                            // local string compare that anyone can read
+                            // out of the APK.
+                            val unlocked = viewModel.unlockCoach(pin)
+                            if (unlocked.success) {
                                 if (pendingProtectedView == AppView.Manager) {
                                     resetStaffRosterFilters()
                                 }
@@ -7329,7 +7337,8 @@ private fun LoginSheet(
 @Composable
 private fun ManagerPinSheet(
     onDismiss: () -> Unit,
-    onUnlock: (String) -> OperationResult,
+    // suspend: the PIN is checked by Supabase now, not in memory.
+    onUnlock: suspend (String) -> OperationResult,
 ) {
     var pin by rememberSaveable { mutableStateOf("") }
     var inlineMessage by rememberSaveable { mutableStateOf("") }

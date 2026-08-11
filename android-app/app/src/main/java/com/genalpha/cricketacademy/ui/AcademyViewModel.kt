@@ -312,6 +312,35 @@ class AcademyViewModel(
         }
     }
 
+    /**
+     * The coach tier. The six digits ARE the password of a real Supabase
+     * account, so this is a sign-in, not a screen unlock — the platform
+     * then serves the roster and register, with contact details nulled in
+     * the view for anyone whose role is 'coach'.
+     *
+     * The session is held here, in the ViewModel, on purpose: it survives
+     * rotation and backgrounding and dies with the process. That is the
+     * requested lifetime — no PIN on minimise, PIN again after a close —
+     * with no timer to tune and nothing written to disk.
+     */
+    suspend fun unlockCoach(pin: String): OperationResult {
+        _uiState.update { it.copy(isAuthLoading = true) }
+        return try {
+            val session = repository.signInCoach(pin)
+            repository.useSession(session)
+            _uiState.update { it.copy(isAuthLoading = false, session = session, errorMessage = null) }
+            refreshInBackground()
+            OperationResult(true, "Roster unlocked.")
+        } catch (error: Exception) {
+            _uiState.update { it.copy(isAuthLoading = false) }
+            OperationResult(false, "That PIN was not accepted.")
+        }
+    }
+
+    /** True when the signed-in account is the shared coach, not a manager. */
+    fun isCoachSession(): Boolean =
+        _uiState.value.session?.email.equals(SupabaseRepository.COACH_EMAIL, ignoreCase = true)
+
     fun logout() {
         sessionPrefs.clearSession()
         repository.startStudentRealtime(realtimeListener, null)
