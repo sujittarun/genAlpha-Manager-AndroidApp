@@ -41,6 +41,8 @@ import com.genalpha.cricketacademy.data.todayIsoDate
 import com.genalpha.cricketacademy.data.nextRenewalCycleDate
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -97,6 +99,17 @@ data class AcademyUiState(
     val lastEmail: String = "",
     val lastPassword: String = "",
     val errorMessage: String? = null,
+)
+
+/**
+ * The four finance reads, fetched together. A data class rather than a
+ * Tuple so destructuring at the call site keeps its field order honest.
+ */
+private data class FinanceLoad(
+    val expenses: List<AcademyExpense>,
+    val payments: List<StudentPayment>,
+    val followUps: List<PaymentFollowUp>,
+    val whatsappPerformance: WhatsappPerformanceStats?,
 )
 
 class AcademyViewModel(
@@ -421,12 +434,31 @@ class AcademyViewModel(
 
         _uiState.update { it.copy(isFinanceLoading = true) }
         try {
-            val fetchedExpenses = repository.fetchExpenses(session.accessToken)
-            val fetchedPayments = repository.fetchPayments(session.accessToken)
-            val fetchedFollowUps = repository.fetchPaymentFollowUps(session.accessToken)
-            val fetchedWhatsappPerformance = runCatching {
-                repository.fetchWhatsappPerformanceStats(session.accessToken)
-            }.getOrNull()
+            // Four independent reads, so fetch them at the same time.
+            //
+            // The database answers each of these in single-digit
+            // milliseconds; the round-trip to ap-northeast-1 is ~180 ms.
+            // Run sequentially that is roughly three quarters of a second
+            // of the Finance tab doing nothing but waiting, and the
+            // WhatsApp stats call is slower again because it aggregates
+            // four months inside an edge function. In parallel the tab
+            // costs one round-trip instead of four.
+            val (fetchedExpenses, fetchedPayments, fetchedFollowUps, fetchedWhatsappPerformance) =
+                coroutineScope {
+                    val expensesJob = async { repository.fetchExpenses(session.accessToken) }
+                    val paymentsJob = async { repository.fetchPayments(session.accessToken) }
+                    val followUpsJob = async { repository.fetchPaymentFollowUps(session.accessToken) }
+                    // Stats are the one call allowed to fail without taking
+                    // the tab down with it — same as before.
+                    val statsJob = async {
+                        runCatching { repository.fetchWhatsappPerformanceStats(session.accessToken) }
+                            .getOrNull()
+                    }
+                    FinanceLoad(
+                        expensesJob.await(), paymentsJob.await(),
+                        followUpsJob.await(), statsJob.await(),
+                    )
+                }
 
             _uiState.update {
                 it.copy(
