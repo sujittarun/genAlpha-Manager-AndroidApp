@@ -112,7 +112,116 @@
         font-size: clamp(2.65rem, 11vw, 4.35rem);
         line-height: 0.95;
         font-weight: 900;
-        letter-spacing: -0.04em;
+        letter-spacing: 0;
+      }
+
+      .plan-section {
+        margin: 0 0 14px;
+      }
+
+      .plan-title {
+        margin: 0 0 9px;
+        color: var(--deep);
+        font-size: 0.92rem;
+        font-weight: 900;
+      }
+
+      .plan-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 9px;
+      }
+
+      .plan-button {
+        min-height: 68px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 10px 8px;
+        background: #ffffff;
+        color: var(--ink);
+        cursor: pointer;
+        text-align: center;
+      }
+
+      .plan-button.is-selected {
+        border-color: var(--blue);
+        background: #edf5ff;
+        box-shadow: 0 0 0 3px rgba(21, 87, 166, 0.13);
+      }
+
+      .plan-button strong,
+      .plan-button span {
+        display: block;
+      }
+
+      .plan-button strong {
+        font-size: 0.92rem;
+        font-weight: 900;
+      }
+
+      .plan-button span {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 0.8rem;
+        font-weight: 800;
+      }
+
+      .special-months {
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        margin-top: 10px;
+        padding: 13px 14px;
+        border: 1px solid rgba(21, 87, 166, 0.2);
+        border-radius: 16px;
+        background: #f7faff;
+      }
+
+      .special-months.is-visible {
+        display: flex;
+      }
+
+      .special-months-copy strong,
+      .special-months-copy span {
+        display: block;
+      }
+
+      .special-months-copy strong {
+        color: var(--deep);
+        font-size: 0.9rem;
+      }
+
+      .special-months-copy span {
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 0.76rem;
+        line-height: 1.35;
+      }
+
+      .month-counter {
+        display: grid;
+        grid-template-columns: 42px 48px 42px;
+        align-items: center;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: white;
+      }
+
+      .month-counter button {
+        min-height: 42px;
+        border: 0;
+        color: var(--blue);
+        background: white;
+        font-size: 1.35rem;
+        font-weight: 900;
+        cursor: pointer;
+      }
+
+      .month-counter strong {
+        text-align: center;
+        font-size: 1rem;
       }
 
       .detail-grid {
@@ -166,6 +275,53 @@
         margin-top: 11px;
       }
 
+      .upi-options {
+        display: none;
+        margin-top: 12px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: #ffffff;
+      }
+
+      .upi-options.is-visible {
+        display: block;
+      }
+
+      .upi-options-title {
+        margin: 0 0 10px;
+        color: var(--deep);
+        font-size: 0.9rem;
+        font-weight: 900;
+        text-align: center;
+      }
+
+      .upi-app-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 9px;
+      }
+
+      .upi-app-button {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        min-height: 46px;
+        padding: 10px 12px;
+        color: var(--ink);
+        background: var(--soft);
+        font-size: 0.9rem;
+        font-weight: 900;
+        cursor: pointer;
+      }
+
+      .upi-options-note {
+        margin: 10px 0 0;
+        color: var(--muted);
+        font-size: 0.8rem;
+        line-height: 1.35;
+        text-align: center;
+      }
+
       .secondary {
         border: 1px solid var(--line);
         border-radius: 14px;
@@ -201,11 +357,29 @@
           grid-template-columns: 1fr;
         }
 
+        .plan-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .special-months {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .month-counter {
+          align-self: stretch;
+          grid-template-columns: 1fr 64px 1fr;
+        }
+
         .brand {
           align-items: flex-start;
         }
 
         .secondary-row {
+          grid-template-columns: 1fr;
+        }
+
+        .upi-app-grid {
           grid-template-columns: 1fr;
         }
       }
@@ -226,6 +400,22 @@
         <p class="amount" id="amountText">Rs 0</p>
       </section>
 
+      <section class="plan-section" id="planSection">
+        <p class="plan-title">Choose payment period</p>
+        <div class="plan-grid" id="planGrid"></div>
+        <div class="special-months" id="specialMonthsControl">
+          <div class="special-months-copy">
+            <strong>Special Training duration</strong>
+            <span id="specialDiscountText">₹10,000 per month</span>
+          </div>
+          <div class="month-counter" aria-label="Special Training months">
+            <button id="decreaseSpecialMonths" type="button" aria-label="Decrease months">−</button>
+            <strong id="specialMonthsText">1</strong>
+            <button id="increaseSpecialMonths" type="button" aria-label="Increase months">+</button>
+          </div>
+        </div>
+      </section>
+
       <div class="detail-grid">
         <div class="detail">
           <span>For</span>
@@ -238,6 +428,17 @@
       </div>
 
       <button class="pay-button" id="payButton" type="button">Pay Now</button>
+      <section class="upi-options" id="upiOptions" aria-live="polite">
+        <p class="upi-options-title">Choose your UPI app</p>
+        <div class="upi-app-grid">
+          <button class="upi-app-button" type="button" data-upi-app="phonepe">PhonePe</button>
+          <button class="upi-app-button" type="button" data-upi-app="gpay">Google Pay</button>
+          <button class="upi-app-button" type="button" data-upi-app="paytm">Paytm</button>
+          <button class="upi-app-button" type="button" data-upi-app="bhim">BHIM</button>
+          <button class="upi-app-button" type="button" data-upi-app="generic">Other UPI app</button>
+        </div>
+        <p class="upi-options-note">If an app does not open, copy the UPI ID and amount below.</p>
+      </section>
       <div class="secondary-row">
         <button class="secondary" id="copyUpiButton" type="button">Copy UPI</button>
         <button class="secondary" id="copyAmountButton" type="button">Copy Amount</button>
@@ -249,37 +450,162 @@
       const params = new URLSearchParams(window.location.search);
       const config = window.GEN_ALPHA_PAYMENT_CONFIG || {};
       const supabaseConfig = window.GEN_ALPHA_SUPABASE_CONFIG || {};
-      const upiId = String(params.get("upiId") || config.upiId || "").trim();
-      const payeeName = String(params.get("payeeName") || config.payeeName || "Gen Alpha Cricket Academy").trim();
+      const upiId = String(config.upiId || "").trim();
+      const payeeName = String(config.payeeName || "Gen Alpha Cricket Academy").trim();
       const amount = Number(params.get("a") || 0);
       const player = String(params.get("name") || "Cricket fees").trim();
       const plan = String(params.get("p") || "fees").trim();
       const reminderEventId = String(params.get("e") || "").trim();
+      const requestedInitialMonths = Number(params.get("m") || 1);
+      const initialMonths = Number.isFinite(requestedInitialMonths)
+        ? Math.min(36, Math.max(1, Math.floor(requestedInitialMonths)))
+        : 1;
       const amountText = document.getElementById("amountText");
       const playerText = document.getElementById("playerText");
       const upiText = document.getElementById("upiText");
       const messageText = document.getElementById("messageText");
+      const upiOptions = document.getElementById("upiOptions");
+      const planGrid = document.getElementById("planGrid");
+      const planSection = document.getElementById("planSection");
+      const specialMonthsControl = document.getElementById("specialMonthsControl");
+      const specialMonthsText = document.getElementById("specialMonthsText");
+      const specialDiscountText = document.getElementById("specialDiscountText");
+      const basePlanOptions = [
+        { id: "monthly", label: "1 Month", months: 1, amount: 3500 },
+        { id: "quarterly", label: "3 Months", months: 3, amount: 9975 },
+        { id: "halfyearly", label: "6 Months", months: 6, amount: 18900 },
+        { id: "special", label: "Special Training", months: 1, amount: 10000, customMonths: true, minMonths: 1, maxMonths: 36 },
+      ];
+      const planLabelToId = {
+        "1 month": "monthly",
+        monthly: "monthly",
+        "3 months": "quarterly",
+        quarterly: "quarterly",
+        "6 months": "halfyearly",
+        halfyearly: "halfyearly",
+        special: "special",
+        "special training": "special",
+      };
+      let paymentOptions = basePlanOptions;
+      let selectedPlanId = planLabelToId[plan.toLowerCase()] || "";
+      let selectedAmount = Number.isFinite(amount) && amount > 0 ? amount : 0;
+      let selectedPlanLabel = plan || "fees";
+      let playerName = player;
+      let selectedMonths = initialMonths;
+
+      const specialDiscountRate = (months) => months >= 6 ? 0.1 : (months >= 3 ? 0.05 : 0);
+      const specialAmount = (months) => Math.round(10000 * months * (1 - specialDiscountRate(months)));
+      const clampSpecialMonths = (months) => Math.min(36, Math.max(1, Math.floor(Number(months || 1))));
 
       const formatAmount = (value) =>
         Number.isFinite(value) && value > 0
           ? `Rs ${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`
           : "Enter amount in UPI app";
 
-      const encode = (value) => encodeURIComponent(String(value || ""));
-      const note = `Gen Alpha ${plan} fee - ${player}`;
-      const upiUri = [
-        `pa=${upiId}`,
-        `pn=${encode(payeeName)}`,
-        `tn=${encode(note)}`,
-        amount > 0 ? `am=${amount.toFixed(2)}` : "",
-        "cu=INR",
-      ]
-        .filter(Boolean)
-        .join("&");
+      const rupees = (value) =>
+        Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
 
-      amountText.textContent = formatAmount(amount);
-      playerText.textContent = player;
+      const encode = (value) => encodeURIComponent(String(value || ""));
+
+      const currentOption = () =>
+        paymentOptions.find((option) => option.id === selectedPlanId) ||
+        paymentOptions[0];
+
+      const currentAmount = () => {
+        const option = currentOption();
+        return selectedAmount || Number(option?.amount || 0);
+      };
+
+      const currentPlanLabel = () => {
+        const option = currentOption();
+        if (option?.id === "special") {
+          return `Special Training (${selectedMonths} month${selectedMonths === 1 ? "" : "s"})`;
+        }
+        return option?.label || selectedPlanLabel || "fees";
+      };
+
+      const renderSpecialMonths = () => {
+        const isSpecial = selectedPlanId === "special";
+        specialMonthsControl.classList.toggle("is-visible", isSpecial);
+        if (!isSpecial) return;
+        specialMonthsText.textContent = String(selectedMonths);
+        const discount = specialDiscountRate(selectedMonths);
+        specialDiscountText.textContent = discount > 0
+          ? `₹10,000/month • ${Math.round(discount * 100)}% multi-month discount applied`
+          : "₹10,000 per month";
+      };
+
+      const buildUpiUri = () => {
+        const amountDue = currentAmount();
+        const note = `Gen Alpha ${currentPlanLabel()} fee - ${playerName}`;
+        return [
+          `pa=${upiId}`,
+          `pn=${encode(payeeName)}`,
+          `tn=${encode(note)}`,
+          amountDue > 0 ? `am=${amountDue.toFixed(2)}` : "",
+          "cu=INR",
+        ]
+          .filter(Boolean)
+          .join("&");
+      };
+
+      const buildUpiLinks = () => {
+        const upiUri = buildUpiUri();
+        return {
+          generic: `upi://pay?${upiUri}`,
+          phonepe: `phonepe://pay?${upiUri}`,
+          gpay: `gpay://upi/pay?${upiUri}`,
+          paytm: `paytmmp://pay?${upiUri}`,
+          bhim: `bhim://upi/pay?${upiUri}`,
+        };
+      };
+
+      const renderPlanOptions = () => {
+        if (!paymentOptions.length) {
+          planSection.style.display = "none";
+          return;
+        }
+        planSection.style.display = "";
+        planGrid.innerHTML = paymentOptions.map((option) => `
+          <button class="plan-button${option.id === selectedPlanId ? " is-selected" : ""}" type="button" data-plan-id="${option.id}">
+            <strong>${option.label}</strong>
+            <span>${option.id === "special" ? `${option.months} mo • ` : ""}Rs ${rupees(option.amount)}</span>
+          </button>
+        `).join("");
+        renderSpecialMonths();
+      };
+
+      const selectPlan = (planId, requestedMonths = 0, amountOverride = 0) => {
+        const option = paymentOptions.find((item) => item.id === planId) || paymentOptions[0];
+        if (!option) return;
+        selectedPlanId = option.id;
+        selectedPlanLabel = option.label;
+        if (option.id === "special") {
+          selectedMonths = clampSpecialMonths(requestedMonths || selectedMonths || option.months || 1);
+          option.months = selectedMonths;
+          option.amount = specialAmount(selectedMonths);
+          selectedAmount = option.amount;
+        } else {
+          selectedMonths = Number(option.months || 0);
+          selectedAmount = Number(amountOverride || option.amount || 0);
+        }
+        amountText.textContent = formatAmount(selectedAmount);
+        renderPlanOptions();
+      };
+
+      amountText.textContent = formatAmount(selectedAmount || currentAmount());
+      playerText.textContent = playerName;
       upiText.textContent = upiId || "Not configured";
+
+      const isAppleTouchDevice = () =>
+        /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+      if (!selectedPlanId) {
+        selectPlan("monthly");
+      } else {
+        selectPlan(selectedPlanId, initialMonths, selectedAmount);
+      }
 
       const copyText = async (value, label) => {
         try {
@@ -292,15 +618,16 @@
 
       const notifyPaymentAttempt = async () => {
         if (!reminderEventId || !supabaseConfig.url) {
-          return;
+          return false;
         }
 
-        const notifyKey = `gen-alpha-payment-attempt-${reminderEventId}`;
+        const notifyKey = `gen-alpha-payment-attempt-${reminderEventId}-${selectedPlanId}-${selectedMonths}`;
         if (sessionStorage.getItem(notifyKey)) {
-          return;
+          return true;
         }
 
-        const endpoint = `${String(supabaseConfig.url).replace(/\/+$/, "")}/functions/v1/whatsapp-reminder`;
+        // genalpha-whatsapp, NOT whatsapp-reminder: since the cutover this project hosts both, and whatsapp-reminder is the PLATFORM's engine for raj/mpp/demo, which has no payment_options action.
+        const endpoint = `${String(supabaseConfig.url).replace(/\/+$/, "")}/functions/v1/genalpha-whatsapp`;
         const request = fetch(endpoint, {
           method: "POST",
           keepalive: true,
@@ -311,17 +638,166 @@
           body: JSON.stringify({
             action: "payment_attempted",
             eventId: reminderEventId,
+            selectedPlan: selectedPlanId,
+            selectedMonths,
           }),
-        }).then((response) => {
+        }).then(async (response) => {
           if (response.ok) {
             sessionStorage.setItem(notifyKey, "1");
+            return true;
           }
+          console.warn("Unable to send the WhatsApp payment follow-up.", await response.text());
+          return false;
+        }).catch((error) => {
+          console.warn("Unable to send the WhatsApp payment follow-up.", error);
+          return false;
         });
 
-        await Promise.race([
-          request.catch(() => {}),
-          new Promise((resolve) => window.setTimeout(resolve, 4000)),
+        return await Promise.race([
+          request,
+          new Promise((resolve) => window.setTimeout(() => resolve(false), 4000)),
         ]);
+      };
+
+      const applyRemotePaymentOptions = (payload) => {
+        if (!payload?.success) return;
+        if (payload.playerName) {
+          playerName = String(payload.playerName);
+          playerText.textContent = playerName;
+        }
+        if (Array.isArray(payload.options) && payload.options.length) {
+          paymentOptions = payload.options.map((option) => ({
+            id: String(option.id || ""),
+            label: String(option.label || ""),
+            months: Number(option.months || 0),
+            amount: Number(option.amount || 0),
+            customMonths: Boolean(option.customMonths),
+            minMonths: Number(option.minMonths || option.months || 1),
+            maxMonths: Number(option.maxMonths || option.months || 36),
+          })).filter((option) => option.id && option.label && option.amount > 0);
+        }
+        selectedAmount = 0;
+        selectPlan(
+          payload.defaultPlan || selectedPlanId || "monthly",
+          Number(payload.selectedMonths || initialMonths),
+        );
+      };
+
+      const loadPaymentOptions = async () => {
+        if (!reminderEventId || !supabaseConfig.url) return;
+        try {
+          const endpoint = `${String(supabaseConfig.url).replace(/\/+$/, "")}/functions/v1/genalpha-whatsapp`;
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(supabaseConfig.anonKey ? { apikey: supabaseConfig.anonKey } : {}),
+            },
+            body: JSON.stringify({
+              action: "payment_options",
+              eventId: reminderEventId,
+            }),
+          });
+          if (!response.ok) return;
+          applyRemotePaymentOptions(await response.json());
+        } catch {
+          // The embedded query params and default plan amounts remain usable offline.
+        }
+      };
+
+      const showUpiOptions = () => {
+        upiOptions.classList.add("is-visible");
+        messageText.textContent = "Choose your UPI app. If it does not open, copy the UPI ID and amount.";
+      };
+
+
+      // DID A UPI APP ACTUALLY OPEN, AND FOR HOW LONG?
+      //
+      // A upi:// intent gives the page no callback — the browser cannot be
+      // told whether the payment succeeded. That needs a payment gateway,
+      // and it is exactly why this flow asks for a screenshot instead.
+      //
+      // What the page CAN see is whether it lost visibility right after
+      // the intent fired. If an app opened, the tab is backgrounded within
+      // a moment; if nothing is installed or the intent was blocked, the
+      // page just sits there. And when the parent comes back, the gap
+      // tells us roughly what happened:
+      //
+      //   never left            no UPI app opened at all
+      //   back in a few seconds opened it and bailed
+      //   back after a while    was in a payment flow
+      //
+      // That is what lets the follow-up nudge say something specific two
+      // minutes later instead of nagging everyone identically.
+      const watchForUpiApp = () => {
+        const firedAt = Date.now();
+        let opened = false;
+
+        const report = (body) => {
+          const endpoint = `${String(supabaseConfig.url).replace(/\/+$/, "")}/functions/v1/genalpha-whatsapp`;
+          fetch(endpoint, {
+            method: "POST",
+            keepalive: true,
+            headers: {
+              "Content-Type": "application/json",
+              ...(supabaseConfig.anonKey ? { apikey: supabaseConfig.anonKey } : {}),
+            },
+            body: JSON.stringify({ eventId: reminderEventId, ...body }),
+          }).catch(() => {});
+        };
+
+        const onHide = () => {
+          if (document.visibilityState !== "hidden" || opened) return;
+          opened = true;
+          report({ action: "upi_app_opened", openedAt: new Date().toISOString() });
+        };
+        document.addEventListener("visibilitychange", onHide);
+
+        // Back on the page: report the gap, once.
+        const onShow = () => {
+          if (document.visibilityState !== "visible" || !opened) return;
+          document.removeEventListener("visibilitychange", onHide);
+          document.removeEventListener("visibilitychange", onShow);
+          report({
+            action: "upi_app_returned",
+            secondsAway: Math.round((Date.now() - firedAt) / 1000),
+          });
+        };
+        document.addEventListener("visibilitychange", onShow);
+
+        // Still here after 2.5s means nothing opened. Worth knowing: the
+        // parent tapped and got nowhere, which is a different problem from
+        // paying and forgetting the screenshot.
+        window.setTimeout(() => {
+          if (opened) return;
+          document.removeEventListener("visibilitychange", onHide);
+          document.removeEventListener("visibilitychange", onShow);
+          report({ action: "upi_app_not_opened" });
+        }, 2500);
+      };
+
+      const openUpiApp = async (appName = "generic") => {
+        // Open the UPI app FIRST, then tell the academy.
+        //
+        // This used to await notifyPaymentAttempt(), which is a round trip
+        // to an edge function raced against a 4-second timeout — so a
+        // parent tapping Pay Now waited on a cold function start before
+        // their UPI app appeared. On a phone that reads as the button
+        // being broken, and the whole point of this template is that
+        // paying is one tap.
+        //
+        // Nothing is lost by not waiting: the fetch already sets
+        // keepalive: true, which is precisely the flag that lets a request
+        // finish after the page navigates away.
+        const upiLinks = buildUpiLinks();
+        const targetUrl = upiLinks[appName] || upiLinks.generic;
+        void notifyPaymentAttempt();
+        messageText.textContent = "Opening your UPI app...";
+        watchForUpiApp();
+        window.location.href = targetUrl;
+        window.setTimeout(() => {
+          messageText.textContent = 'After payment, send the payment screenshot on WhatsApp so the academy can verify it.';
+        }, 1600);
       };
 
       document.getElementById("payButton").addEventListener("click", async () => {
@@ -329,17 +805,41 @@
           messageText.textContent = "UPI payment is not configured. Please contact academy staff.";
           return;
         }
-        messageText.textContent = "Preparing payment and WhatsApp instructions...";
-        await notifyPaymentAttempt();
-        messageText.textContent = "Opening your UPI app...";
-        window.location.href = `upi://pay?${upiUri}`;
-        window.setTimeout(() => {
-          messageText.textContent = 'After payment, reply "Paid" on WhatsApp or send the payment screenshot.';
-        }, 1600);
+        if (isAppleTouchDevice()) {
+          // Same reasoning: show the chooser immediately, notify behind it.
+          void notifyPaymentAttempt();
+          showUpiOptions();
+          return;
+        }
+        await openUpiApp("generic");
+      });
+
+      document.querySelectorAll("[data-upi-app]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          if (!upiId) {
+            messageText.textContent = "UPI payment is not configured. Please contact academy staff.";
+            return;
+          }
+          await openUpiApp(button.dataset.upiApp || "generic");
+        });
+      });
+
+      planGrid.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-plan-id]");
+        if (!button) return;
+        selectPlan(button.dataset.planId);
+      });
+
+      document.getElementById("decreaseSpecialMonths").addEventListener("click", () => {
+        selectPlan("special", selectedMonths - 1);
+      });
+      document.getElementById("increaseSpecialMonths").addEventListener("click", () => {
+        selectPlan("special", selectedMonths + 1);
       });
 
       document.getElementById("copyUpiButton").addEventListener("click", () => copyText(upiId, "UPI ID"));
-      document.getElementById("copyAmountButton").addEventListener("click", () => copyText(amount > 0 ? amount.toFixed(2) : "", "Amount"));
+      document.getElementById("copyAmountButton").addEventListener("click", () => copyText(currentAmount() > 0 ? currentAmount().toFixed(2) : "", "Amount"));
+      void loadPaymentOptions();
     </script>
   </body>
 </html>

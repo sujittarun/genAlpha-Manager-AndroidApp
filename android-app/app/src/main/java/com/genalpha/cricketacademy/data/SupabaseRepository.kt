@@ -1870,6 +1870,19 @@ class SupabaseRepository(
             .header("apikey", anonKey)
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
+            // GenAlpha's tables are views in the `genalpha` schema on the
+            // shared platform project, not in `public`. PostgREST picks the
+            // schema per request from these two headers; without them every
+            // call resolves against `public`, where students,
+            // student_payments and the rest do not exist, and returns 404.
+            //
+            // Accept-Profile governs reads and Content-Profile governs
+            // writes — and a POST to /rpc/ routes on Content-Profile — so
+            // both go on every request. The web app does the same thing via
+            // db.schema (script.js) and the edge functions via the same two
+            // headers.
+            .header("Accept-Profile", DB_SCHEMA)
+            .header("Content-Profile", DB_SCHEMA)
     }
 
     private fun parseError(rawBody: String?): String {
@@ -2280,6 +2293,10 @@ class SupabaseRepository(
     }
 
     companion object {
+        // GenAlpha's tables are views in this schema on the shared platform
+        // project; see baseRequest.
+        private const val DB_SCHEMA = "genalpha"
+
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 }
