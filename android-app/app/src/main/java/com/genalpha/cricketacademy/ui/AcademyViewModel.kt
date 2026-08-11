@@ -318,7 +318,29 @@ class AcademyViewModel(
         // Clear the repository's copy too, or the next anon-only call
         // (the public admission form) would still go out signed in.
         repository.useSession(null)
-        _uiState.update { it.copy(session = null, pendingAdmissions = emptyList(), isAdmissionReviewLoading = false) }
+        // Staff logout drops the FINANCE tier only.
+        //
+        // Two tiers of access here: a coach unlocks roster and attendance,
+        // a staff member additionally unlocks money. Signing out of staff
+        // should take back the money and leave the coach where they were —
+        // so payments, expenses, follow-ups, the WhatsApp stats and the
+        // admission queue go, and kids and attendance stay.
+        //
+        // Before this, logout cleared the session and nothing else, so the
+        // next person holding the phone still saw the finances.
+        _uiState.update {
+            it.copy(
+                session = null,
+                payments = emptyList(),
+                expenses = emptyList(),
+                paymentFollowUps = emptyList(),
+                whatsappPerformance = null,
+                pendingAdmissions = emptyList(),
+                isAdmissionReviewLoading = false,
+                isFinanceLoading = false,
+                errorMessage = null,
+            )
+        }
     }
 
     suspend fun peekNextAdmissionRegNo(): Long = repository.peekNextAdmissionRegNo()
