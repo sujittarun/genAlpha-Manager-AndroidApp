@@ -82,7 +82,18 @@ data class AcademyUiState(
     val rosterFeePaidFilter: String = "all",
     val rosterFeeDueFilter: String = "all",
     val darkModeEnabled: Boolean = false,
+    // The STAFF tier: a manager signed in with email and password. This is
+    // what unlocks money, editing and the admission queue, and it is what
+    // `session == null` has always meant — the login button, canEdit() and
+    // the finance tab all read it.
     val session: ManagerSession? = null,
+    // The COACH tier: the shared PIN, which is the password of a real
+    // account. Roster and attendance only, with contacts nulled by the
+    // database. Held separately and NOT in `session`, because collapsing
+    // the two made the app believe a manager was present: it hid the staff
+    // login button (session != null) while also hiding finance (the session
+    // is a coach one), locking the user out of both at once.
+    val coachSession: ManagerSession? = null,
     val lastEmail: String = "",
     val lastPassword: String = "",
     val errorMessage: String? = null,
@@ -304,6 +315,7 @@ class AcademyViewModel(
                     errorMessage = null,
                 )
             }
+            armBestToken()
             refreshAdmissionReviewInBackground()
             OperationResult(true, "Manager login successful.")
         } catch (error: Exception) {
@@ -346,8 +358,11 @@ class AcademyViewModel(
         }
 
         return try {
-            repository.useSession(session)
-            _uiState.update { it.copy(isAuthLoading = false, session = session, errorMessage = null) }
+            _uiState.update { it.copy(isAuthLoading = false, coachSession = session, errorMessage = null) }
+            // signInCoach already armed the repository with the coach token.
+            // If a manager is signed in, theirs must win — a coach token
+            // would silently downgrade what the rest of the app can read.
+            armBestToken()
             refreshInBackground()
             OperationResult(true, "Roster unlocked.")
         } catch (error: Exception) {
@@ -356,16 +371,31 @@ class AcademyViewModel(
         }
     }
 
-    /** True when the signed-in account is the shared coach, not a manager. */
-    fun isCoachSession(): Boolean =
-        _uiState.value.session?.email.equals(SupabaseRepository.COACH_EMAIL, ignoreCase = true)
+    /**
+     * Staff outranks coach. Called after either tier changes, so the API
+     * always carries the strongest token the user actually holds — and so
+     * signing out of staff falls back to the coach token rather than to
+     * anon, which would empty the roster the coach is still entitled to.
+     */
+    private fun armBestToken() {
+        val state = _uiState.value
+        repository.useSession(state.session ?: state.coachSession)
+    }
+
+    /** Roster and attendance: either tier is enough. */
+    fun hasRosterAccess(): Boolean =
+        _uiState.value.session != null || _uiState.value.coachSession != null
+
 
     fun logout() {
         sessionPrefs.clearSession()
         repository.startStudentRealtime(realtimeListener, null)
         // Clear the repository's copy too, or the next anon-only call
         // (the public admission form) would still go out signed in.
-        repository.useSession(null)
+        // NOT null: if a coach is still unlocked, the roster and register
+        // they are entitled to must keep loading. Falls back to anon only
+        // when neither tier is held.
+        repository.useSession(_uiState.value.coachSession)
         // Staff logout drops the FINANCE tier only.
         //
         // Two tiers of access here: a coach unlocks roster and attendance,

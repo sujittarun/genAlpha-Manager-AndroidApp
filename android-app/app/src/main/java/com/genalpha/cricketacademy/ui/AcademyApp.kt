@@ -734,6 +734,10 @@ fun AcademyApp(
     var pendingProtectedView by rememberSaveable { mutableStateOf(AppView.Manager) }
     var showManagerPinSheet by rememberSaveable { mutableStateOf(false) }
     var showLoginSheet by rememberSaveable { mutableStateOf(false) }
+    // Set only when the login sheet was reached from the PIN sheet, so that
+    // route lands on the roster the user was asking for. Logging in from the
+    // header, or from a share intent, must not yank the view.
+    var loginCameFromPin by rememberSaveable { mutableStateOf(false) }
     var showAdmissionSheet by rememberSaveable { mutableStateOf(false) }
     var editingStudent by remember { mutableStateOf<Student?>(null) }
     var showEditorSheet by rememberSaveable { mutableStateOf(false) }
@@ -910,11 +914,15 @@ fun AcademyApp(
             bottomBar = {
                 AppBottomBar(
                     selectedView = selectedView,
-                    showFinance = uiState.session != null && !viewModel.isCoachSession(),
+                    showFinance = uiState.session != null,
                     onSelected = { view ->
-                        if (view == AppView.Finance && uiState.session != null && !viewModel.isCoachSession()) {
+                        if (view == AppView.Finance && uiState.session != null) {
                             selectedView = view
-                        } else if (view == AppView.Manager && selectedView != view) {
+                        } else if (view == AppView.Manager && selectedView != view &&
+                                   !viewModel.hasRosterAccess()) {
+                            // Only when neither tier is held. It used to ask
+                            // unconditionally, so every trip to attendance and
+                            // back demanded the PIN again.
                             resetStaffRosterFilters()
                             pendingProtectedView = view
                             showManagerPinSheet = true
@@ -1295,11 +1303,18 @@ fun AcademyApp(
                         lastEmail = uiState.lastEmail,
                         lastPassword = uiState.lastPassword,
                         isLoading = uiState.isAuthLoading,
-                        onDismiss = { showLoginSheet = false },
+                        onDismiss = {
+                            showLoginSheet = false
+                            loginCameFromPin = false
+                        },
                         onSubmit = { email, password ->
                             viewModel.login(email, password).also { result ->
                                 if (result.success) {
                                     showLoginSheet = false
+                                    if (loginCameFromPin) {
+                                        selectedView = pendingProtectedView
+                                        loginCameFromPin = false
+                                    }
                                 }
                                 scope.launch {
                                     snackbarHostState.showSnackbar(result.message)
@@ -1320,6 +1335,11 @@ fun AcademyApp(
                 if (showManagerPinSheet) {
                     ManagerPinSheet(
                         onDismiss = { showManagerPinSheet = false },
+                        onStaffLogin = {
+                            showManagerPinSheet = false
+                            loginCameFromPin = true
+                            showLoginSheet = true
+                        },
                         onUnlock = { pin ->
                             // The PIN is the password of a real coach
                             // account now, so this is a sign-in. A wrong
@@ -7340,6 +7360,10 @@ private fun LoginSheet(
 @Composable
 private fun ManagerPinSheet(
     onDismiss: () -> Unit,
+    // A manager who knows their password but not the shared PIN would
+    // otherwise be stuck: the login button lives inside the roster, and the
+    // roster is behind this sheet.
+    onStaffLogin: () -> Unit,
     // suspend: the PIN is checked by Supabase now, not in memory.
     onUnlock: suspend (String) -> OperationResult,
 ) {
@@ -7418,13 +7442,24 @@ private fun ManagerPinSheet(
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
-                            "Unlock staff-only dashboard and player management.",
+                            "Unlocks the player roster and attendance. Fees and payments need a manager login.",
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
                             fontSize = 12.sp,
                             lineHeight = 17.sp,
-                            maxLines = 2,
+                            maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
                         )
+                        TextButton(
+                            onClick = onStaffLogin,
+                            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
+                        ) {
+                            Text(
+                                "Manager login instead",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = BrandBlue,
+                            )
+                        }
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
