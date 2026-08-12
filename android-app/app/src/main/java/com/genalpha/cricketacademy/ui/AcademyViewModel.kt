@@ -166,11 +166,18 @@ class AcademyViewModel(
         sessionPrefs.clearSession()
         viewModelScope.launch {
             refreshSessionIfPossible()
-            loadKids()
-            loadTodayAttendance()
-            loadAttendanceCounts()
-            loadRecentAttendanceDates()
-            loadFinance()
+            // These five read different tables and do not depend on each other. Run them
+            // together: from India each round trip to the Tokyo region costs ~200ms, so
+            // chaining them made the app wait five trips before it was usable.
+            coroutineScope {
+                val kidsJob = async { loadKids() }
+                val todayJob = async { loadTodayAttendance() }
+                val countsJob = async { loadAttendanceCounts() }
+                val recentJob = async { loadRecentAttendanceDates() }
+                val financeJob = async { loadFinance() }
+                kidsJob.await(); todayJob.await(); countsJob.await()
+                recentJob.await(); financeJob.await()
+            }
             startPlayersLiveSync()
             startAttendanceLiveSync()
         }
@@ -257,11 +264,18 @@ class AcademyViewModel(
         viewModelScope.launch {
             refreshSessionIfPossible()
             repository.startStudentRealtime(realtimeListener, _uiState.value.session)
-            loadKids()
-            loadTodayAttendance()
-            loadAttendanceCounts()
-            loadRecentAttendanceDates()
-            loadFinance()
+            // These five read different tables and do not depend on each other. Run them
+            // together: from India each round trip to the Tokyo region costs ~200ms, so
+            // chaining them made the app wait five trips before it was usable.
+            coroutineScope {
+                val kidsJob = async { loadKids() }
+                val todayJob = async { loadTodayAttendance() }
+                val countsJob = async { loadAttendanceCounts() }
+                val recentJob = async { loadRecentAttendanceDates() }
+                val financeJob = async { loadFinance() }
+                kidsJob.await(); todayJob.await(); countsJob.await()
+                recentJob.await(); financeJob.await()
+            }
         }
     }
 
