@@ -52,6 +52,9 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
+// Days of attendance history the streak badges need. See loadRecentAttendanceDates.
+private const val ATTENDANCE_HISTORY_DAYS = 60L
+
 private val TIME_SLOTS = listOf("6AM", "7:30AM", "4PM", "5:30PM", "7PM")
 private const val JERSEY_PAIR_REVENUE = 750.0
 
@@ -579,13 +582,16 @@ class AcademyViewModel(
 
     suspend fun loadRecentAttendanceDates() {
         try {
-            val since = LocalDate.now().minusDays(120).toString()
+            // Only the streak badges read this history now that the absence follow-up is
+            // gone, and the longest milestone is 30 weekdays (~6 calendar weeks), so 60 days
+            // covers it with room for holidays.
+            val since = LocalDate.now().minusDays(ATTENDANCE_HISTORY_DAYS).toString()
             val recentDates = repository.fetchRecentAttendanceDates(since)
             _uiState.update { it.copy(recentAttendanceDates = recentDates) }
         } catch (error: Exception) {
             _uiState.update {
                 it.copy(
-                    errorMessage = error.message ?: "Unable to load attendance follow-up nudges.",
+                    errorMessage = error.message ?: "Unable to load attendance history.",
                 )
             }
         }

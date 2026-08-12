@@ -772,9 +772,6 @@ fun AcademyApp(
     val todaysPresentCount = remember(uiState.todayAttendanceIds, activePlayers) {
         activePlayers.count { uiState.todayAttendanceIds.contains(it.id) }
     }
-    val attendanceFollowUps = remember(activePlayers, uiState.recentAttendanceDates, uiState.todayAttendanceIds) {
-        buildAttendanceFollowUps(activePlayers, uiState.recentAttendanceDates, uiState.todayAttendanceIds)
-    }
     val attendanceStreaks = remember(activePlayers, uiState.recentAttendanceDates, uiState.todayAttendanceIds) {
         buildAttendanceStreaks(activePlayers, uiState.recentAttendanceDates, uiState.todayAttendanceIds)
     }
@@ -1235,11 +1232,6 @@ fun AcademyApp(
                                 },
                                 isRefreshing = uiState.isAttendanceRefreshing,
                             )
-                        }
-                        if (attendanceFollowUps.isNotEmpty()) {
-                            item {
-                                AttendanceFollowUpNudge(followUps = attendanceFollowUps)
-                            }
                         }
                         item {
                             PlayerAttendanceToolbar(
@@ -4809,12 +4801,6 @@ private fun CompactRosterFilter(
     }
 }
 
-private data class AttendanceFollowUp(
-    val student: Student,
-    val absentDays: Long,
-    val lastPresentDate: String?,
-)
-
 private data class AttendanceStreak(
     val student: Student,
     val days: Int,
@@ -4822,7 +4808,6 @@ private data class AttendanceStreak(
     val tier: String,
 )
 
-private const val AttendanceFollowUpDays = 5L
 
 private fun isAttendanceWeekday(date: LocalDate): Boolean {
     return date.dayOfWeek.value in 1..5
@@ -4897,32 +4882,6 @@ private fun buildAttendanceStreaks(
     }.sortedWith(compareByDescending<AttendanceStreak> { it.days }.thenBy { it.student.name.lowercase() })
 }
 
-private fun buildAttendanceFollowUps(
-    activePlayers: List<Student>,
-    recentAttendanceDates: Map<String, List<String>>,
-    todayAttendanceIds: Set<String>,
-): List<AttendanceFollowUp> {
-    val today = LocalDate.now()
-    return activePlayers.mapNotNull { student ->
-        val presentDates = recentAttendanceDates[student.id].orEmpty()
-            .mapNotNull { runCatching { LocalDate.parse(it.take(10)) }.getOrNull() }
-            .filter { !it.isAfter(today) }
-        val lastPresent = when {
-            todayAttendanceIds.contains(student.id) -> today
-            else -> presentDates.maxOrNull()
-        }
-        val joined = runCatching { LocalDate.parse(student.joinDate.take(10)) }.getOrNull() ?: return@mapNotNull null
-        val streakStart = lastPresent ?: joined
-        val absentDays = ChronoUnit.DAYS.between(streakStart, today).coerceAtLeast(0)
-        if (absentDays < AttendanceFollowUpDays) return@mapNotNull null
-        AttendanceFollowUp(
-            student = student,
-            absentDays = absentDays,
-            lastPresentDate = lastPresent?.takeIf { it != today }?.toString(),
-        )
-    }.sortedWith(compareByDescending<AttendanceFollowUp> { it.absentDays }.thenBy { it.student.name.lowercase() })
-}
-
 @Composable
 private fun AttendanceStreakBadge(streak: AttendanceStreak, compact: Boolean = false) {
     val (container, textColor) = when (streak.tier) {
@@ -4945,72 +4904,6 @@ private fun AttendanceStreakBadge(streak: AttendanceStreak, compact: Boolean = f
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun AttendanceFollowUpNudge(followUps: List<AttendanceFollowUp>) {
-    Card(
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFEFF6FF)),
-        border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.18f)),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Icon(
-                    Icons.Outlined.Notifications,
-                    contentDescription = null,
-                    tint = BrandBlue,
-                    modifier = Modifier.size(18.dp),
-                )
-                Column {
-                    Text(
-                        "${followUps.size} player${if (followUps.size == 1) "" else "s"} need attendance follow-up",
-                        color = BrandBlueDeep,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 14.sp,
-                    )
-                    Text(
-                        "No attendance marked for 5+ days. Review before marking discontinued.",
-                        color = Color(0xFF416184),
-                        fontSize = 12.sp,
-                        lineHeight = 15.sp,
-                    )
-                }
-            }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                followUps.take(6).forEach { item ->
-                    Surface(
-                        shape = RoundedCornerShape(999.dp),
-                        color = Color.White.copy(alpha = 0.75f),
-                        border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.16f)),
-                    ) {
-                        Text(
-                            text = "${item.student.name} • ${item.absentDays}d${item.lastPresentDate?.let { " • last ${displayDate(it)}" } ?: " • never marked"}",
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            color = BrandBlueDeep,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                val remaining = followUps.size - 6
-                if (remaining > 0) {
-                    Text("+$remaining more", color = Color(0xFF416184), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
     }
 }
 
