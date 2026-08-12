@@ -170,11 +170,11 @@ class AcademyViewModel(
             // together: from India each round trip to the Tokyo region costs ~200ms, so
             // chaining them made the app wait five trips before it was usable.
             coroutineScope {
-                val kidsJob = async { loadKids() }
-                val todayJob = async { loadTodayAttendance() }
-                val countsJob = async { loadAttendanceCounts() }
-                val recentJob = async { loadRecentAttendanceDates() }
-                val financeJob = async { loadFinance() }
+                val kidsJob = async { loadKids(silent = true) }
+                val todayJob = async { loadTodayAttendance(silent = true) }
+                val countsJob = async { loadAttendanceCounts(silent = true) }
+                val recentJob = async { loadRecentAttendanceDates(silent = true) }
+                val financeJob = async { loadFinance(silent = true) }
                 kidsJob.await(); todayJob.await(); countsJob.await()
                 recentJob.await(); financeJob.await()
             }
@@ -268,11 +268,11 @@ class AcademyViewModel(
             // together: from India each round trip to the Tokyo region costs ~200ms, so
             // chaining them made the app wait five trips before it was usable.
             coroutineScope {
-                val kidsJob = async { loadKids() }
-                val todayJob = async { loadTodayAttendance() }
-                val countsJob = async { loadAttendanceCounts() }
-                val recentJob = async { loadRecentAttendanceDates() }
-                val financeJob = async { loadFinance() }
+                val kidsJob = async { loadKids(silent = true) }
+                val todayJob = async { loadTodayAttendance(silent = true) }
+                val countsJob = async { loadAttendanceCounts(silent = true) }
+                val recentJob = async { loadRecentAttendanceDates(silent = true) }
+                val financeJob = async { loadFinance(silent = true) }
                 kidsJob.await(); todayJob.await(); countsJob.await()
                 recentJob.await(); financeJob.await()
             }
@@ -414,7 +414,7 @@ class AcademyViewModel(
 
     suspend fun peekNextAdmissionRegNo(): Long = repository.peekNextAdmissionRegNo()
 
-    suspend fun loadTodayAttendance() {
+    suspend fun loadTodayAttendance(silent: Boolean = false) {
         _uiState.update { it.copy(isAttendanceRefreshing = true) }
         try {
             val attendanceIds = repository.fetchTodayAttendance()
@@ -428,13 +428,13 @@ class AcademyViewModel(
             _uiState.update {
                 it.copy(
                     isAttendanceRefreshing = false,
-                    errorMessage = error.message ?: "Unable to load today's attendance.",
+                    errorMessage = if (silent) it.errorMessage else error.message ?: "Unable to load today's attendance.",
                 )
             }
         }
     }
 
-    suspend fun loadFinance() {
+    suspend fun loadFinance(silent: Boolean = false) {
         val session = _uiState.value.session
         if (session == null) {
             _uiState.update {
@@ -490,7 +490,7 @@ class AcademyViewModel(
             _uiState.update {
                 it.copy(
                     isFinanceLoading = false,
-                    errorMessage = error.message ?: "Unable to load finance data.",
+                    errorMessage = if (silent) it.errorMessage else error.message ?: "Unable to load finance data.",
                 )
             }
         }
@@ -581,20 +581,20 @@ class AcademyViewModel(
         }
     }
 
-    suspend fun loadAttendanceCounts() {
+    suspend fun loadAttendanceCounts(silent: Boolean = false) {
         try {
             val attendanceCounts = repository.fetchAttendanceCounts()
             _uiState.update { it.copy(attendanceCounts = attendanceCounts) }
         } catch (error: Exception) {
             _uiState.update {
                 it.copy(
-                    errorMessage = error.message ?: "Unable to load attendance summary.",
+                    errorMessage = if (silent) it.errorMessage else error.message ?: "Unable to load attendance summary.",
                 )
             }
         }
     }
 
-    suspend fun loadRecentAttendanceDates() {
+    suspend fun loadRecentAttendanceDates(silent: Boolean = false) {
         try {
             // Only the streak badges read this history now that the absence follow-up is
             // gone, and the longest milestone is 30 weekdays (~6 calendar weeks), so 60 days
@@ -605,7 +605,7 @@ class AcademyViewModel(
         } catch (error: Exception) {
             _uiState.update {
                 it.copy(
-                    errorMessage = error.message ?: "Unable to load attendance history.",
+                    errorMessage = if (silent) it.errorMessage else error.message ?: "Unable to load attendance history.",
                 )
             }
         }
@@ -1205,7 +1205,7 @@ class AcademyViewModel(
         }
     }
 
-    suspend fun loadKids() {
+    suspend fun loadKids(silent: Boolean = false) {
         val hasExistingKids = _uiState.value.kids.isNotEmpty()
         _uiState.update {
             it.copy(
@@ -1234,7 +1234,7 @@ class AcademyViewModel(
                 it.copy(
                     isLoading = false,
                     isRefreshing = false,
-                    errorMessage = error.message ?: "Unable to load academy data.",
+                    errorMessage = if (silent) it.errorMessage else error.message ?: "Unable to load academy data.",
                 )
             }
         }
