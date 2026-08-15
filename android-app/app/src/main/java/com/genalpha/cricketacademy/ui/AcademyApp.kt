@@ -2688,7 +2688,7 @@ private fun FinanceRevenueCard(
 }
 
 @Composable
-private fun FinanceExpenseCard(
+internal fun FinanceExpenseCard(
     expense: AcademyExpense,
     isDeleting: Boolean,
     formatCurrency: (Double) -> String,

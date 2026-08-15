@@ -36,6 +36,13 @@ android {
     jvmTarget = "17"
   }
 
+  testOptions {
+    unitTests {
+      // Robolectric needs the merged Android resources to inflate anything real.
+      isIncludeAndroidResources = true
+    }
+  }
+
   buildFeatures {
     compose = true
   }
@@ -82,6 +89,13 @@ dependencies {
   debugImplementation("androidx.compose.ui:ui-test-manifest")
   testImplementation("junit:junit:4.13.2")
   testImplementation("org.json:json:20240303")
+  // Compose UI assertions that run on the JVM under Robolectric, so screens can be
+  // tested by ./gradlew test with no emulator. The emulator was being killed by
+  // memory pressure mid-run, which made device verification unreliable.
+  testImplementation("org.robolectric:robolectric:4.14.1")
+  testImplementation(platform("androidx.compose:compose-bom:2024.06.00"))
+  testImplementation("androidx.compose.ui:ui-test-junit4")
+  debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
 
 // ---------------------------------------------------------------------
