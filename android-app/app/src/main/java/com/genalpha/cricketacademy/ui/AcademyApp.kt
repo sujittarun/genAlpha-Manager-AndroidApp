@@ -2694,6 +2694,30 @@ private fun FinanceExpenseCard(
     formatCurrency: (Double) -> String,
     onDelete: () -> Unit,
 ) {
+    // Deleting an expense is immediate and there is no undo, so confirm first and
+    // name the row being removed rather than asking a bare "are you sure".
+    var showDeleteConfirmation by rememberSaveable(expense.id) { mutableStateOf(false) }
+    if (showDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text("Delete expense?") },
+            text = {
+                Text(
+                    "Delete ${expense.expenseType} ${formatCurrency(expense.amount)} on ${displayDate(expense.expenseDate)}? This cannot be undone.",
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirmation = false
+                    onDelete()
+                }) { Text("Delete", color = BrandRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmation = false }) { Text("Cancel") }
+            },
+        )
+    }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -2744,7 +2768,7 @@ private fun FinanceExpenseCard(
                 )
                 TextButton(
                     enabled = !isDeleting,
-                    onClick = onDelete,
+                    onClick = { showDeleteConfirmation = true },
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                     modifier = Modifier.heightIn(min = 28.dp),
                 ) {
