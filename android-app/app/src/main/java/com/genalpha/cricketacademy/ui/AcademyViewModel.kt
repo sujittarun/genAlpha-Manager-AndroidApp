@@ -620,11 +620,23 @@ class AcademyViewModel(
         val timeline = repository.fetchStudentTimeline(studentId, session?.accessToken)
         if (session == null) return timeline
         return timeline.compactPlayerTimeline().map { item ->
-            val proofPath = paymentProofPath(item.details.orEmpty())
+            // Flow rows carry the key as a field. student_timeline rows are
+            // older and only have it inside their sentence, so those still
+            // get scraped — and the sentence is cleaned up before it shows
+            // either way.
+            val proofPath = item.proofPath.ifBlank { paymentProofPath(item.details.orEmpty()) }
             if (proofPath.isBlank()) {
                 item
             } else {
-                item.copy(proofUrl = repository.createPaymentProofSignedUrl(session.accessToken, proofPath))
+                item.copy(
+                    details = stripPaymentProofPath(item.details.orEmpty()),
+                    proofPath = proofPath,
+                    proofUrl = repository.createPaymentProofSignedUrl(
+                        session.accessToken,
+                        proofPath,
+                        item.proofBucket,
+                    ),
+                )
             }
         }
     }
@@ -1617,11 +1629,29 @@ private fun renewalPlanLabel(plan: String): String = when (plan) {
     else -> "1 Month"
 }
 
-private fun paymentProofPath(details: String): String {
-    val match = Regex("payment-proofs/([^\\s.]+/[^\\s.]+\\.(?:jpg|jpeg|png|webp|pdf))", RegexOption.IGNORE_CASE)
-        .find(details)
+// Historical student_timeline rows carry the key inside their sentence
+// ("Proof stored at payment-proofs/<key>."). Any number of segments — the
+// key gained a tenant prefix on 2026-08-17 and the old two-segment pattern
+// would have quietly stopped matching.
+private const val PAYMENT_PROOF_PATH_PATTERN =
+    "payment-proofs/((?:[^\\s./]+/)+[^\\s/]+\\.(?:jpg|jpeg|png|webp|pdf))"
+
+internal fun paymentProofPath(details: String): String {
+    val match = Regex(PAYMENT_PROOF_PATH_PATTERN, RegexOption.IGNORE_CASE).find(details)
     return match?.groupValues?.getOrNull(1).orEmpty()
 }
+
+// An object key is not a fact a manager can use. Once it has been turned
+// into a thumbnail, take it out of the sentence.
+internal fun stripPaymentProofPath(details: String): String =
+    details
+        .replace(
+            Regex("\\s*(?:Proof stored at\\s*)?$PAYMENT_PROOF_PATH_PATTERN\\.?", RegexOption.IGNORE_CASE),
+            "",
+        )
+        .replace(Regex("\\s*•\\s*$"), "")
+        .replace(Regex("\\s{2,}"), " ")
+        .trim()
 
 private fun Student.rejoinedFeePauseDays(rejoinDate: String = todayIsoDate()): Int {
     val pauseStart = discontinuedAt

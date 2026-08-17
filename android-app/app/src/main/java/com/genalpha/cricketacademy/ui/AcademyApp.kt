@@ -6542,6 +6542,18 @@ private fun PlayerTimelineEvent(
                 }
                 if (item.proofUrl.isNotBlank()) {
                     PaymentProofThumbnail(url = item.proofUrl)
+                } else if (item.proofPath.isNotBlank()) {
+                    // Say so rather than showing nothing. A screenshot that
+                    // exists but will not open is a different problem from a
+                    // parent who never sent one, and the timeline used to
+                    // blur the two by printing a storage path.
+                    Text(
+                        text = "Screenshot stored, but it could not be opened just now.",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
                 }
             }
         }

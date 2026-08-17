@@ -253,6 +253,12 @@ data class StudentTimelineItem(
     val details: String? = "",
     @Json(name = "changed_by") val changedBy: String? = "System",
     @Json(name = "created_at") val createdAt: String? = "",
+    // Carried as fields rather than scraped back out of `details`. The old
+    // path printed the object key into the sentence and then matched it
+    // with a regex, so the thumbnail worked only for keys the regex
+    // happened to fit — and the manager saw a storage path either way.
+    @Json(name = "proof_bucket") val proofBucket: String = "",
+    @Json(name = "proof_path") val proofPath: String = "",
     val proofUrl: String = "",
 )
 

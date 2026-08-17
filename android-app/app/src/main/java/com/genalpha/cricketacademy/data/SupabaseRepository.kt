@@ -1125,7 +1125,7 @@ class SupabaseRepository(
             .header("Authorization", "Bearer $token")
             .get()
             .build()
-        val whatsappFlowRequest = baseRequest("$baseUrl/rest/v1/whatsapp_flow_events?select=id,student_id,reminder_event_id,event_type,direction,status,status_at,accepted_at,delivered_at,read_at,failed_at,created_at,created_by,error_message,message_kind,message_body,payment_plan,payment_amount,payment_months,payment_from_date,payment_to_date,proof_path&student_id=eq.$studentId&order=status_at.desc.nullslast&limit=40")
+        val whatsappFlowRequest = baseRequest("$baseUrl/rest/v1/whatsapp_flow_events?select=id,student_id,reminder_event_id,event_type,direction,status,status_at,accepted_at,delivered_at,read_at,failed_at,created_at,created_by,error_message,message_kind,message_body,payment_plan,payment_amount,payment_months,payment_from_date,payment_to_date,proof_bucket,proof_path&student_id=eq.$studentId&order=status_at.desc.nullslast&limit=40")
             .header("Authorization", "Bearer $token")
             .get()
             .build()
@@ -1167,8 +1167,10 @@ class SupabaseRepository(
                 emptyList()
             } else {
                 val rows = JSONArray(response.body?.string().orEmpty())
-                List(rows.length()) { index -> rows.getJSONObject(index).toWhatsappFlowTimelineItem() }
-                    .filterNotNull()
+                collapseRepeatedFlowEvents(
+                    List(rows.length()) { index -> rows.getJSONObject(index).toWhatsappFlowTimelineItem() }
+                        .filterNotNull()
+                )
             }
         }
         suppressSupersededReminderFailures(timeline + failures + whatsappFlowEvents)
@@ -1203,9 +1205,34 @@ class SupabaseRepository(
                 if (optSafeString("direction") == "provider") "Meta" else "WhatsApp"
             },
             createdAt = createdAt,
+            proofBucket = optSafeString("proof_bucket"),
+            proofPath = optSafeString("proof_path"),
         )
     }
 
+    // The payment page posts its plan and Pay Now events more than once —
+    // two identical parent_plan_selected rows land in the same second, and
+    // so do two payment_attempted. Distinct ids, same fact. Collapse
+    // repeats of one event type within a minute; a second tap tomorrow is
+    // a real second tap and keeps its own row.
+    private fun collapseRepeatedFlowEvents(items: List<StudentTimelineItem>): List<StudentTimelineItem> {
+        val seen = mutableSetOf<String>()
+        return items.filter { item ->
+            seen.add("${item.eventType}|${item.title}|${item.createdAt.orEmpty().take(16)}")
+        }
+    }
+
+    // Every outbound message is written twice: a `*_sent` row whose status
+    // is updated in place as Meta reports, and one `*_message_status` row
+    // per transition. Showing both prints each message two or three times,
+    // so the status rows win — they carry the delivered/read/failed story.
+    // A send that never reached Meta has no status row at all; that one
+    // arrives from reminder_events instead, which is why
+    // reminder_send_failed is absent here rather than forgotten.
+    //
+    // The upi_app_* rows are the one signal with no counterpart anywhere:
+    // the only record of a parent tapping Pay Now and the phone failing to
+    // hand off to a UPI app, which reads as silence otherwise.
     private fun shouldShowWhatsappFlowEvent(eventType: String, status: String): Boolean {
         if (eventType == "reminder_message_status" || eventType == "whatsapp_message_status" || eventType == "confirmation_message_status") {
             return status in setOf("delivered", "read", "failed")
@@ -1218,6 +1245,9 @@ class SupabaseRepository(
             "parent_plan_selected",
             "payment_link_sent",
             "payment_attempted",
+            "upi_app_opened",
+            "upi_app_not_opened",
+            "upi_app_returned",
             "payment_pending_verification",
             "payment_confirmed",
             "parent_help_requested",
@@ -1269,9 +1299,20 @@ class SupabaseRepository(
         "manager_payment_alert_without_proof_sent" -> "Manager payment alert sent"
         "payment_verification_reply_sent" -> "Payment proof reply sent to parent"
         "parent_plan_selected" -> "Parent selected payment plan"
-        "payment_link_sent" -> "Payment link sent to parent"
+        // Not a second message. The link is carried inside the reminder
+        // itself, which is why this row has no message id and lands in the
+        // same second as reminder_created — "sent to parent" read as an
+        // extra WhatsApp that nobody could find.
+        "payment_link_sent" -> "Pay Now link included in reminder"
         "payment_attempted" -> "Parent tapped Pay Now"
-        "payment_pending_verification" -> "Payment proof received from parent"
+        "upi_app_opened" -> "UPI app opened on parent's phone"
+        "upi_app_not_opened" -> "No UPI app opened after Pay Now"
+        "upi_app_returned" -> "Parent returned from the UPI app"
+        "payment_pending_verification" -> if (status == "no_matching_reminder") {
+            "Payment proof received — no reminder to match it to"
+        } else {
+            "Payment proof received from parent"
+        }
         "payment_confirmed" -> "Payment confirmed by academy"
         "parent_help_requested" -> "Parent requested help"
         else -> ""
@@ -1291,14 +1332,7 @@ class SupabaseRepository(
         if (eventType == "manager_payment_alert_with_proof_sent" || eventType == "manager_payment_alert_without_proof_sent") {
             val storedBody = row.optSafeString("message_body").trim()
             if (storedBody.isNotBlank() && !storedBody.startsWith("manager_payment_alert")) return storedBody
-            val plan = row.optSafeString("payment_plan")
-            val planLabel = when (plan) {
-                "monthly" -> "1 Month"
-                "quarterly" -> "3 Months"
-                "halfyearly" -> "6 Months"
-                "special" -> "Special Training"
-                else -> plan
-            }
+            val planLabel = planLabel(row.optSafeString("payment_plan"))
             val months = row.optIntValue("payment_months")
             val amount = row.optDoubleValue("payment_amount")
             return listOfNotNull(
@@ -1312,15 +1346,30 @@ class SupabaseRepository(
         if (eventType in setOf("payment_link_sent", "payment_verification_reply_sent")) {
             return row.optSafeString("message_body")
         }
+        if (eventType == "upi_app_not_opened") {
+            return "The phone did not hand off to a UPI app, so no payment was started from this tap."
+        }
+        if (eventType == "upi_app_opened") return ""
+        if (eventType == "upi_app_returned") return row.optSafeString("message_body")
+        // The object key is deliberately NOT printed. It is not something a
+        // manager can act on, and the screenshot itself is rendered instead
+        // — see PaymentProofThumbnail.
         return listOf(
-            row.optSafeString("payment_plan").takeIf { it.isNotBlank() }?.let { "Plan: $it" },
+            row.optSafeString("payment_plan").takeIf { it.isNotBlank() }?.let { "Plan: ${planLabel(it)}" },
             row.optDoubleValue("payment_amount").takeIf { it > 0 }?.let { "Amount: Rs ${String.format(Locale.US, "%,.0f", it)}" },
             row.optIntValue("payment_months").takeIf { it > 0 }?.let { "Months: $it" },
             row.optSafeString("payment_from_date").takeIf { it.isNotBlank() }?.let { "From: $it" },
             row.optSafeString("payment_to_date").takeIf { it.isNotBlank() }?.let { "To: $it" },
             row.optSafeString("error_message").takeIf { it.isNotBlank() },
-            row.optSafeString("proof_path").takeIf { it.isNotBlank() }?.let { "payment-proofs/$it" },
         ).filterNotNull().joinToString(" • ")
+    }
+
+    private fun planLabel(plan: String): String = when (plan) {
+        "monthly" -> "1 Month"
+        "quarterly" -> "3 Months"
+        "halfyearly" -> "6 Months"
+        "special" -> "Special Training"
+        else -> plan
     }
 
     private fun suppressSupersededReminderFailures(items: List<StudentTimelineItem>): List<StudentTimelineItem> {
@@ -1351,13 +1400,18 @@ class SupabaseRepository(
         }
     }
 
-    suspend fun createPaymentProofSignedUrl(accessToken: String, path: String): String = withContext(Dispatchers.IO) {
+    suspend fun createPaymentProofSignedUrl(
+        accessToken: String,
+        path: String,
+        bucket: String = "payment-proofs",
+    ): String = withContext(Dispatchers.IO) {
         if (path.isBlank()) return@withContext ""
+        val storageBucket = bucket.ifBlank { "payment-proofs" }
         val body = JSONObject()
             .put("expiresIn", 600)
             .toString()
             .toRequestBody(JSON_MEDIA_TYPE)
-        val request = baseRequest("$baseUrl/storage/v1/object/sign/payment-proofs/$path")
+        val request = baseRequest("$baseUrl/storage/v1/object/sign/$storageBucket/$path")
             .header("Authorization", "Bearer $accessToken")
             .post(body)
             .build()
