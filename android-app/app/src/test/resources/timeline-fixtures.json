@@ -1,0 +1,151 @@
+{
+  "_comment": "Byte-identical copy lives at GenAlphaApp/android-app/app/src/test/resources/timeline-fixtures.json. Both suites load this file; timeline-rules.test.js fails if the two differ. Cases are drawn from real GenAlpha records on 2026-08-17.",
+  "cases": [
+    {
+      "name": "a fee cycle that went perfectly collapses to one reminder and one payment",
+      "why": "This is the shape that produced ~15 rows and made the happy path the loudest thing on screen.",
+      "rows": [
+        { "id": "p1", "source": "payment", "occurredAt": "2026-08-17T02:49:00Z", "amount": 3500 },
+        { "id": "f1", "source": "flow", "eventType": "reminder_created", "status": "queued", "occurredAt": "2026-08-16T09:30:00Z" },
+        { "id": "f2", "source": "flow", "eventType": "payment_link_sent", "status": "sent", "occurredAt": "2026-08-16T09:30:05Z" },
+        { "id": "f3", "source": "flow", "eventType": "reminder_message_status", "status": "sent", "occurredAt": "2026-08-16T09:30:10Z", "sentAt": "2026-08-16T09:30:10Z" },
+        { "id": "f4", "source": "flow", "eventType": "reminder_message_status", "status": "delivered", "occurredAt": "2026-08-16T09:36:00Z", "deliveredAt": "2026-08-16T09:36:00Z" },
+        { "id": "f5", "source": "flow", "eventType": "reminder_message_status", "status": "read", "occurredAt": "2026-08-16T10:34:00Z", "readAt": "2026-08-16T10:34:00Z" },
+        { "id": "f6", "source": "flow", "eventType": "confirmation_message_status", "status": "delivered", "occurredAt": "2026-08-17T02:50:00Z", "deliveredAt": "2026-08-17T02:50:00Z" },
+        { "id": "f7", "source": "flow", "eventType": "payment_confirmed", "status": "payment_confirmed", "occurredAt": "2026-08-17T02:49:30Z" },
+        { "id": "t1", "source": "timeline", "eventType": "renewal_paid", "occurredAt": "2026-08-17T02:49:00Z" },
+        { "id": "t2", "source": "timeline", "eventType": "payment", "occurredAt": "2026-08-17T02:49:00Z" },
+        { "id": "t3", "source": "timeline", "eventType": "renewal_updated", "occurredAt": "2026-08-17T02:49:00Z" },
+        { "id": "t4", "source": "timeline", "eventType": "renewal_whatsapp_confirmation", "occurredAt": "2026-08-17T02:50:00Z" },
+        { "id": "t5", "source": "timeline", "eventType": "whatsapp_reminder", "occurredAt": "2026-08-16T09:30:00Z" }
+      ],
+      "expect": [
+        { "kind": "payment", "runCount": 1 },
+        { "kind": "reminder", "runCount": 1, "deliveryState": "read", "linkIncluded": true }
+      ]
+    },
+    {
+      "name": "a chase sequence becomes one row carrying every rung date",
+      "why": "The ladder fires -2/0/+3/+5/+7..+14, so one unpaid month was up to eight rows.",
+      "rows": [
+        { "id": "r1", "source": "flow", "eventType": "reminder_created", "occurredAt": "2026-08-03T09:30:00Z" },
+        { "id": "r2", "source": "flow", "eventType": "reminder_message_status", "status": "delivered", "occurredAt": "2026-08-03T09:31:00Z", "deliveredAt": "2026-08-03T09:31:00Z" },
+        { "id": "r3", "source": "flow", "eventType": "reminder_created", "occurredAt": "2026-08-05T09:30:00Z" },
+        { "id": "r4", "source": "flow", "eventType": "reminder_message_status", "status": "read", "occurredAt": "2026-08-05T09:31:00Z", "readAt": "2026-08-05T09:31:00Z" },
+        { "id": "r5", "source": "flow", "eventType": "reminder_created", "occurredAt": "2026-08-08T09:30:00Z" }
+      ],
+      "expect": [
+        { "kind": "reminder", "runCount": 3, "deliveryState": "read", "runDates": ["2026-08-03", "2026-08-05", "2026-08-08"] }
+      ]
+    },
+    {
+      "name": "a payment never suppresses a delivery failure on the same day",
+      "why": "suppressSupersededReminderFailures hid an evening bounce whenever a morning payment existed. Independent channels: this must render all three.",
+      "rows": [
+        { "id": "p1", "source": "payment", "occurredAt": "2026-08-10T04:00:00Z", "amount": 3500 },
+        { "id": "f1", "source": "flow", "eventType": "reminder_created", "occurredAt": "2026-08-10T09:30:00Z" },
+        { "id": "f2", "source": "flow", "eventType": "reminder_message_status", "status": "failed", "occurredAt": "2026-08-10T09:31:00Z", "failedAt": "2026-08-10T09:31:00Z", "errorMessage": "Message undeliverable" }
+      ],
+      "expect": [
+        { "kind": "failure", "runCount": 1 },
+        { "kind": "reminder", "runCount": 1 },
+        { "kind": "payment", "runCount": 1 }
+      ]
+    },
+    {
+      "name": "a failure standing between two rungs breaks the run",
+      "why": "A run may never swallow a failure, so a failure is not in any runGroup and splits the sequence by construction.",
+      "rows": [
+        { "id": "a1", "source": "flow", "eventType": "reminder_created", "occurredAt": "2026-08-03T09:30:00Z" },
+        { "id": "a2", "source": "flow", "eventType": "reminder_message_status", "status": "failed", "occurredAt": "2026-08-04T09:30:00Z", "failedAt": "2026-08-04T09:30:00Z" },
+        { "id": "a3", "source": "flow", "eventType": "reminder_created", "occurredAt": "2026-08-05T09:30:00Z" }
+      ],
+      "expect": [
+        { "kind": "reminder", "runCount": 1 },
+        { "kind": "failure", "runCount": 1 },
+        { "kind": "reminder", "runCount": 1 }
+      ]
+    },
+    {
+      "name": "a pre-instrumentation student keeps the only reminder record they have",
+      "why": "timeline:whatsapp_reminder attaches when a flow row exists and is promoted when none does, so old students do not lose their history to a rule written for new ones.",
+      "rows": [
+        { "id": "t1", "source": "timeline", "eventType": "whatsapp_reminder", "occurredAt": "2026-06-02T09:30:00Z", "title": "Renewal reminder prepared" }
+      ],
+      "expect": [
+        { "kind": "reminder", "runCount": 1 }
+      ]
+    },
+    {
+      "name": "a stall on the payment page is one row, not four",
+      "why": "The page posts plan and Pay Now twice, and the UPI signals fire alongside them.",
+      "rows": [
+        { "id": "s1", "source": "flow", "eventType": "parent_plan_selected", "occurredAt": "2026-08-16T10:34:00Z" },
+        { "id": "s2", "source": "flow", "eventType": "parent_plan_selected", "occurredAt": "2026-08-16T10:34:00Z" },
+        { "id": "s3", "source": "flow", "eventType": "payment_attempted", "occurredAt": "2026-08-16T10:34:10Z" },
+        { "id": "s4", "source": "flow", "eventType": "upi_app_not_opened", "occurredAt": "2026-08-16T10:34:12Z" },
+        { "id": "s5", "source": "flow", "eventType": "upi_app_opened", "occurredAt": "2026-08-16T10:34:20Z" },
+        { "id": "s6", "source": "flow", "eventType": "upi_app_returned", "occurredAt": "2026-08-16T10:34:34Z" }
+      ],
+      "expect": [
+        { "kind": "stall", "runCount": 1 }
+      ]
+    },
+    {
+      "name": "the payment screenshot survives and keeps its object key",
+      "why": "Proof is protected. It is the evidence behind a confirmation and the thing a parent disputes.",
+      "rows": [
+        { "id": "v1", "source": "flow", "eventType": "payment_pending_verification", "occurredAt": "2026-08-17T02:03:00Z", "proofBucket": "payment-proofs", "proofPath": "genalpha/2811/wamid.jpg" },
+        { "id": "m1", "source": "flow", "eventType": "manager_payment_alert_with_proof_sent", "occurredAt": "2026-08-17T02:39:00Z" },
+        { "id": "m2", "source": "flow", "eventType": "whatsapp_message_status", "messageKind": "manager_alert_with_proof_template", "status": "delivered", "occurredAt": "2026-08-17T02:39:30Z" }
+      ],
+      "expect": [
+        { "kind": "proof", "runCount": 1, "proofPath": "genalpha/2811/wamid.jpg" }
+      ]
+    },
+    {
+      "name": "a changed phone number is a record row, a changed nickname is not",
+      "why": "A changed phone is why reminders stop arriving. Everything else folds.",
+      "rows": [
+        { "id": "c1", "source": "timeline", "eventType": "profile_updated", "occurredAt": "2026-08-12T05:00:00Z", "details": "Changed: join date, parent phone." },
+        { "id": "c2", "source": "timeline", "eventType": "profile_updated", "occurredAt": "2026-08-11T05:00:00Z", "details": "Changed: school, grade." },
+        { "id": "c3", "source": "timeline", "eventType": "profile_updated", "occurredAt": "2026-08-10T05:00:00Z", "details": "Changed: notes." }
+      ],
+      "expect": [
+        { "kind": "life", "runCount": 1 },
+        { "kind": "profile", "runCount": 2 }
+      ]
+    },
+    {
+      "name": "a receipt that did not reach the parent is its own row",
+      "why": "The parent does not know they are paid up, which is a call the owner has to make. A receipt that did arrive is not news.",
+      "rows": [
+        { "id": "k1", "source": "flow", "eventType": "confirmation_message_status", "status": "delivered", "occurredAt": "2026-08-09T05:00:00Z", "deliveredAt": "2026-08-09T05:00:00Z" },
+        { "id": "k2", "source": "flow", "eventType": "confirmation_message_status", "status": "failed", "occurredAt": "2026-08-10T05:00:00Z", "failedAt": "2026-08-10T05:00:00Z" }
+      ],
+      "expect": [
+        { "kind": "failure", "runCount": 1 }
+      ]
+    },
+    {
+      "name": "a delivery report with no reminder row of its own is still a reminder",
+      "why": "26 real cases: Meta reported on a reminder whose reminder_created row was never stored. Promoting it as kind 'delivery' would render a row with no sentence.",
+      "rows": [
+        { "id": "d1", "source": "flow", "eventType": "reminder_message_status", "status": "delivered", "occurredAt": "2026-07-11T09:31:00Z", "deliveredAt": "2026-07-11T09:31:00Z" }
+      ],
+      "expect": [
+        { "kind": "reminder", "runCount": 1, "deliveryState": "delivered" }
+      ]
+    },
+    {
+      "name": "a row after 18:30 IST belongs to that IST day, not the UTC one",
+      "why": "The date came from a UTC string slice while the time was rendered in Asia/Kolkata, so evening rows printed yesterday beside today's clock.",
+      "rows": [
+        { "id": "z1", "source": "flow", "eventType": "reminder_created", "occurredAt": "2026-08-16T19:30:00Z" }
+      ],
+      "expect": [
+        { "kind": "reminder", "runCount": 1, "runDates": ["2026-08-17"] }
+      ]
+    }
+  ]
+}

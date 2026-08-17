@@ -1117,15 +1117,20 @@ class SupabaseRepository(
 
     suspend fun fetchStudentTimeline(studentId: String, accessToken: String? = null): List<StudentTimelineItem> = withContext(Dispatchers.IO) {
         val token = accessToken?.takeIf { it.isNotBlank() } ?: anonKey
-        val request = baseRequest("$baseUrl/rest/v1/student_timeline?select=*&student_id=eq.$studentId&event_type=neq.whatsapp_flow&order=created_at.desc&limit=30")
+        // Limits rise because the fold now happens AFTER the fetch. They used
+        // to cap the raw rows, so the echoes were fetched inside the window
+        // and then thrown away, and older informative rows were never fetched
+        // at all. Round-trip COUNT is what costs ~180 ms here, and it is
+        // unchanged at three.
+        val request = baseRequest("$baseUrl/rest/v1/student_timeline?select=*&student_id=eq.$studentId&event_type=neq.whatsapp_flow&order=created_at.desc&limit=150")
             .header("Authorization", "Bearer $token")
             .get()
             .build()
-        val reminderFailuresRequest = baseRequest("$baseUrl/rest/v1/reminder_events?select=id,student_id,reminder_type,status,due_date,created_at,created_by,meta_error,failed_at,retry_count,max_retry_count,next_retry_at,last_retry_at,retry_reason,manual_followup_required,manual_followup_reason&student_id=eq.$studentId&status=in.(failed,send_failed,delivery_failed,undelivered)&order=created_at.desc&limit=10")
+        val reminderFailuresRequest = baseRequest("$baseUrl/rest/v1/reminder_events?select=id,student_id,reminder_type,status,due_date,created_at,created_by,meta_error,failed_at,retry_count,max_retry_count,next_retry_at,last_retry_at,retry_reason,manual_followup_required,manual_followup_reason&student_id=eq.$studentId&status=in.(failed,send_failed,delivery_failed,undelivered)&order=created_at.desc&limit=60")
             .header("Authorization", "Bearer $token")
             .get()
             .build()
-        val whatsappFlowRequest = baseRequest("$baseUrl/rest/v1/whatsapp_flow_events?select=id,student_id,reminder_event_id,event_type,direction,status,status_at,accepted_at,delivered_at,read_at,failed_at,created_at,created_by,error_message,message_kind,message_body,payment_plan,payment_amount,payment_months,payment_from_date,payment_to_date,proof_bucket,proof_path&student_id=eq.$studentId&order=status_at.desc.nullslast&limit=40")
+        val whatsappFlowRequest = baseRequest("$baseUrl/rest/v1/whatsapp_flow_events?select=id,student_id,reminder_event_id,event_type,direction,status,status_at,accepted_at,delivered_at,read_at,failed_at,created_at,created_by,error_message,message_kind,message_body,payment_plan,payment_amount,payment_months,payment_from_date,payment_to_date,proof_bucket,proof_path&student_id=eq.$studentId&order=created_at.desc&limit=200")
             .header("Authorization", "Bearer $token")
             .get()
             .build()
@@ -1158,6 +1163,8 @@ class SupabaseRepository(
                         details = "Status: $status • Reason: $reason",
                         changedBy = row.optSafeString("created_by").ifBlank { "WhatsApp" },
                         createdAt = createdAt,
+                        source = "reminder",
+                        failedAt = row.optSafeString("failed_at"),
                     )
                 }
             }
@@ -1167,15 +1174,18 @@ class SupabaseRepository(
                 emptyList()
             } else {
                 val rows = JSONArray(response.body?.string().orEmpty())
-                collapseRepeatedFlowEvents(
-                    List(rows.length()) { index -> rows.getJSONObject(index).toWhatsappFlowTimelineItem() }
-                        .filterNotNull()
-                )
+                List(rows.length()) { index -> rows.getJSONObject(index).toWhatsappFlowTimelineItem() }
+                    .filterNotNull()
             }
         }
-        suppressSupersededReminderFailures(timeline + failures + whatsappFlowEvents)
+        // suppressSupersededReminderFailures is deliberately NOT applied any
+        // more: it hid a genuine evening bounce whenever the same day also had
+        // a payment, which is exactly backwards. Payment state and delivery
+        // state are independent channels, and the shared fixtures assert it.
+        // The fold itself runs in the view model, where the typed payment rows
+        // live.
+        (timeline.map { it.copy(source = "timeline") } + failures + whatsappFlowEvents)
             .sortedByDescending { it.createdAt }
-            .take(30)
     }
 
     private fun JSONObject.toWhatsappFlowTimelineItem(): StudentTimelineItem? {
@@ -1207,6 +1217,16 @@ class SupabaseRepository(
             createdAt = createdAt,
             proofBucket = optSafeString("proof_bucket"),
             proofPath = optSafeString("proof_path"),
+            // Carried so the shared fold can classify without re-reading the query.
+            source = "flow",
+            status = status,
+            messageKind = messageKind,
+            sentAt = optSafeString("sent_at"),
+            acceptedAt = optSafeString("accepted_at"),
+            deliveredAt = optSafeString("delivered_at"),
+            readAt = optSafeString("read_at"),
+            failedAt = optSafeString("failed_at"),
+            errorMessage = optSafeString("error_message"),
         )
     }
 

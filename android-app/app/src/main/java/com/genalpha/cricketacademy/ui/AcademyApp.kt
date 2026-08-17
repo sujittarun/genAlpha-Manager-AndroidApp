@@ -1413,6 +1413,7 @@ fun AcademyApp(
                         paymentFollowUp = uiState.paymentFollowUps.firstOrNull { it.studentId == selectedStudent!!.id },
                         attendanceCount = uiState.attendanceCounts[selectedStudent!!.id] ?: 0,
                         timeline = timelineCache[selectedStudent!!.id].orEmpty(),
+                        rawTimeline = viewModel.rawTimeline(selectedStudent!!.id),
                         isTimelineLoading = timelineLoadingId == selectedStudent!!.id,
                         isManager = viewModel.canEdit(),
                         onDismiss = {
@@ -2815,7 +2816,7 @@ private data class FinanceRevenueLine(
     val amount: Double,
 )
 
-private data class PlayerPaymentLine(
+internal data class PlayerPaymentLine(
     val id: String = "",
     val date: String,
     val title: String,
@@ -2824,7 +2825,7 @@ private data class PlayerPaymentLine(
     val amount: Double,
 )
 
-private fun initialCoverageMonthsForAmount(amount: Double, feesPaid: Boolean, jerseyPairs: Int = 0, feePlan: String = ""): Int {
+internal fun initialCoverageMonthsForAmount(amount: Double, feesPaid: Boolean, jerseyPairs: Int = 0, feePlan: String = ""): Int {
     if (!feesPaid || amount <= 0.0) return 0
     when (feePlan.lowercase(Locale.US)) {
         "monthly" -> return 1
@@ -2843,7 +2844,7 @@ private fun initialCoverageMonthsForAmount(amount: Double, feesPaid: Boolean, je
     }
 }
 
-private fun paymentMonthsCovered(payment: StudentPayment): Int {
+internal fun paymentMonthsCovered(payment: StudentPayment): Int {
     val explicitMonths = (payment.monthsCovered ?: 1).coerceAtLeast(1)
     val planMonths = when (payment.planType) {
         "quarterly" -> 3
@@ -2859,7 +2860,7 @@ private fun paymentMonthsCovered(payment: StudentPayment): Int {
     return maxOf(explicitMonths, planMonths, amountMonths)
 }
 
-private fun paymentPlanLabel(planType: String?, months: Int): String = when (planType) {
+internal fun paymentPlanLabel(planType: String?, months: Int): String = when (planType) {
     "quarterly" -> "3 months"
     "halfyearly" -> "6 months"
     "special" -> "Special training"
@@ -2868,16 +2869,16 @@ private fun paymentPlanLabel(planType: String?, months: Int): String = when (pla
     else -> if (months > 1) "$months months" else "Monthly"
 }
 
-private fun paymentTypeLabel(paymentType: String?): String = when (paymentType.orEmpty().lowercase(Locale.US)) {
+internal fun paymentTypeLabel(paymentType: String?): String = when (paymentType.orEmpty().lowercase(Locale.US)) {
     "joining" -> "Joining"
     "jersey", "jersey_refund" -> "Jersey"
     else -> "Renewal"
 }
 
-private fun signedPaymentAmount(payment: StudentPayment): Double =
+internal fun signedPaymentAmount(payment: StudentPayment): Double =
     if (payment.paymentType == "jersey_refund") -payment.amount else payment.amount
 
-private fun buildPlayerPaymentRows(student: Student, payments: List<StudentPayment>): List<PlayerPaymentLine> {
+internal fun buildPlayerPaymentRows(student: Student, payments: List<StudentPayment>): List<PlayerPaymentLine> {
     val rows = mutableListOf<PlayerPaymentLine>()
     val studentPayments = payments.filter { it.studentId == student.id }
     val hasJoiningPayment = studentPayments.any { it.paymentType == "joining" }
@@ -5936,6 +5937,7 @@ private fun PlayerDetailSheet(
     paymentFollowUp: PaymentFollowUp?,
     attendanceCount: Int,
     timeline: List<StudentTimelineItem>,
+    rawTimeline: List<StudentTimelineItem>,
     isTimelineLoading: Boolean,
     isManager: Boolean,
     onDismiss: () -> Unit,
@@ -6387,8 +6389,13 @@ private fun PlayerDetailSheet(
             }
 
             ProfileSectionCard(title = "Timeline") {
+                // take(12) is gone: it silently dropped 18 of the 30 rows it
+                // had already fetched, with no count, no marker and no way
+                // back. The shared fold decides what survives now, and the
+                // toggle below is how the rest is reached.
                 PlayerTimelineList(
-                    timeline = timeline.take(12),
+                    timeline = timeline,
+                    rawTimeline = rawTimeline,
                     isLoading = isTimelineLoading,
                 )
             }
@@ -6430,8 +6437,16 @@ private fun PlayerDetailSheet(
 @Composable
 private fun PlayerTimelineList(
     timeline: List<StudentTimelineItem>,
+    rawTimeline: List<StudentTimelineItem>,
     isLoading: Boolean,
 ) {
+    // Component-local and NOT persisted, on purpose. Persisting it would mean
+    // DataStore here and localStorage on the web — two mechanisms, drift no
+    // fixture can see, for a preference nobody asked for.
+    var showEverything by rememberSaveable { mutableStateOf(false) }
+    val hasHidden = rawTimeline.size > timeline.size
+    val shown = if (showEverything && hasHidden) rawTimeline else timeline
+
     when {
         isLoading -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
@@ -6443,10 +6458,29 @@ private fun PlayerTimelineList(
             fontSize = 12.sp,
         )
         else -> Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            timeline.forEachIndexed { index, item ->
+            if (hasHidden) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "${timeline.size} events · ${rawTimeline.size} records",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                        fontSize = 11.sp,
+                    )
+                    TextButton(onClick = { showEverything = !showEverything }) {
+                        Text(
+                            if (showEverything) "Show less" else "Show everything",
+                            fontSize = 11.sp,
+                        )
+                    }
+                }
+            }
+            shown.forEachIndexed { index, item ->
                 PlayerTimelineEvent(
                     item = item,
-                    isLast = index == timeline.lastIndex,
+                    isLast = index == shown.lastIndex,
                 )
             }
         }

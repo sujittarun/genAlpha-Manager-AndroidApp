@@ -20,6 +20,8 @@ import com.genalpha.cricketacademy.data.StudentDraft
 import com.genalpha.cricketacademy.data.StudentRealtimeListener
 import com.genalpha.cricketacademy.data.StudentTimelineItem
 import com.genalpha.cricketacademy.data.SupabaseException
+import com.genalpha.cricketacademy.data.TimelineRules
+import java.util.Locale
 import com.genalpha.cricketacademy.data.SupabaseRepository
 import com.genalpha.cricketacademy.data.AcademyExpense
 import com.genalpha.cricketacademy.data.StudentPayment
@@ -615,11 +617,52 @@ class AcademyViewModel(
         return repository.fetchAttendanceDates(studentId)
     }
 
+    private val rawTimelineCache = mutableMapOf<String, List<StudentTimelineItem>>()
+
+    /** Every row that crossed the wire, unfolded — what "Show everything" shows. */
+    fun rawTimeline(studentId: String): List<StudentTimelineItem> =
+        rawTimelineCache[studentId].orEmpty()
+
     suspend fun studentTimeline(studentId: String): List<StudentTimelineItem> {
         val session = _uiState.value.session
         val timeline = repository.fetchStudentTimeline(studentId, session?.accessToken)
         if (session == null) return timeline
-        return timeline.compactPlayerTimeline().map { item ->
+        // Money comes from the typed payment rows this screen already holds,
+        // never from a timeline sentence about a payment: 122 of 143 payments
+        // had no matching same-day echo, so the echoes cannot be reconciled —
+        // and do not need to be, once the payment itself is the row.
+        // buildPlayerPaymentRows is the same builder the Payment details
+        // section above the timeline uses, including the joining payment it
+        // synthesizes for students whose first payment predates the payments
+        // table. Money on the timeline therefore says exactly what money above
+        // it says — and the web app calls its identical twin.
+        val student = _uiState.value.kids.firstOrNull { it.id == studentId }
+        val paymentRows = if (student == null) emptyList() else {
+            buildPlayerPaymentRows(student, _uiState.value.payments).mapIndexed { index, line ->
+                StudentTimelineItem(
+                    id = "payment-${line.id.ifBlank { index.toString() }}",
+                    studentId = studentId,
+                    eventType = "payment_row",
+                    eventDate = line.date.take(10),
+                    title = line.title,
+                    details = paymentRowDetails(line),
+                    changedBy = "Academy",
+                    createdAt = line.date,
+                    source = "payment",
+                    amount = line.amount,
+                )
+            }
+        }
+
+        // compactPlayerTimeline is gone: it ran AFTER the cap, so it spent the
+        // budget on rows it was about to discard. The shared fold replaces it
+        // and runs before anything is dropped.
+        val merged = (timeline + paymentRows).sortedByDescending { it.createdAt }
+        // Kept so "Show everything" is a list swap, not a second fetch.
+        // Nothing behind the toggle was fetched twice.
+        rawTimelineCache[studentId] = merged
+        val folded = TimelineRules.foldTimeline(merged).map { describeFoldedRow(it) }
+        return folded.map { item ->
             // Flow rows carry the key as a field. student_timeline rows are
             // older and only have it inside their sentence, so those still
             // get scraped — and the sentence is cleaned up before it shows
@@ -1635,6 +1678,53 @@ private fun renewalPlanLabel(plan: String): String = when (plan) {
 // would have quietly stopped matching.
 private const val PAYMENT_PROOF_PATH_PATTERN =
     "payment-proofs/((?:[^\\s./]+/)+[^\\s/]+\\.(?:jpg|jpeg|png|webp|pdf))"
+
+internal fun paymentRowDetails(line: PlayerPaymentLine): String = listOfNotNull(
+    "Rs ${String.format(Locale.US, "%,.0f", line.amount)}",
+    line.plan.takeIf { it.isNotBlank() },
+    line.months.takeIf { it > 0 }?.let { "$it month${if (it == 1) "" else "s"}" },
+).joinToString(" • ")
+
+/**
+ * A folded row's own wording. The fold decides WHAT survives; this decides
+ * what the survivor says, and it is the one place a run's count and rung
+ * dates become a sentence.
+ */
+internal fun describeFoldedRow(row: StudentTimelineItem): StudentTimelineItem = when {
+    row.kind == "reminder" -> {
+        val badge = row.deliveryState.takeIf { it != "none" }
+        row.copy(
+            title = if (row.runCount > 1) "Fee reminder sent ${row.runCount}×" else "Fee reminder sent",
+            // Every rung's date, because "we messaged you on the 3rd, the 5th
+            // and the 8th" is the sentence the owner says on the phone.
+            details = listOfNotNull(
+                formatRunDates(row.runDates),
+                // Read is something the parent did; delivered is something
+                // that happened to them. "delivered by parent" reads as if
+                // they sent it.
+                badge?.let {
+                    when (it) {
+                        "read" -> "read by parent"
+                        "failed" -> "delivery failed"
+                        else -> "$it to parent"
+                    }
+                },
+                "Pay Now link included".takeIf { row.linkIncluded },
+            ).filter { it.isNotBlank() }.joinToString(" • "),
+            changedBy = "WhatsApp",
+        )
+    }
+    row.kind == "profile" && row.runCount > 1 ->
+        row.copy(title = "Player details edited ${row.runCount}×")
+    else -> row
+}
+
+internal fun formatRunDates(dates: List<String>): String {
+    if (dates.isEmpty()) return ""
+    if (dates.size == 1) return dates.first()
+    if (dates.size <= 8) return dates.dropLast(1).joinToString(", ") + " & " + dates.last()
+    return dates.take(3).joinToString(", ") + " … " + dates.last()
+}
 
 internal fun paymentProofPath(details: String): String {
     val match = Regex(PAYMENT_PROOF_PATH_PATTERN, RegexOption.IGNORE_CASE).find(details)

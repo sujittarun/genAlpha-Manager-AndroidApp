@@ -260,6 +260,29 @@ data class StudentTimelineItem(
     @Json(name = "proof_bucket") val proofBucket: String = "",
     @Json(name = "proof_path") val proofPath: String = "",
     val proofUrl: String = "",
+
+    // --- what TimelineRules needs to classify a row, and what it writes back ---
+    // `source` is which subsystem recorded it, and it is the first thing the
+    // classifier reads: the same real-world fact arrives from student_timeline,
+    // whatsapp_flow_events and student_payments, and only one of them should
+    // become a row.
+    val source: String = "timeline",
+    val status: String = "",
+    val messageKind: String = "",
+    val sentAt: String = "",
+    val acceptedAt: String = "",
+    val deliveredAt: String = "",
+    val readAt: String = "",
+    val failedAt: String = "",
+    val errorMessage: String = "",
+    val amount: Double = 0.0,
+    val kind: String = "",
+    val runGroup: String = "",
+    val runCount: Int = 1,
+    val runDates: List<String> = emptyList(),
+    val deliveryState: String = "none",
+    val linkIncluded: Boolean = false,
+    val isProtected: Boolean = false,
 )
 
 data class DashboardStats(
