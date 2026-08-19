@@ -115,6 +115,9 @@ data class AdmissionDraft(
     val filledBy: String = "Parent / Guardian",
     val nationality: String = "Indian",
     val dateOfBirth: String = "",
+    // The form has a date-of-birth box AND an age box, and parents routinely
+    // fill one and leave the other blank. Either is enough.
+    val age: String = "",
     val gender: String = "",
     val fatherGuardianName: String = "",
     val alternateContactNo: String = "",

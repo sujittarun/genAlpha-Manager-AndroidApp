@@ -7982,6 +7982,10 @@ private fun AdmissionFormSheet(
         }
     }
     val calculatedAge = remember(dateOfBirth) { calculateAgeFromDate(dateOfBirth) }
+    // Typed in when the parent left the date of birth blank; derived and shown
+    // read-only when they filled it. Either satisfies the form.
+    var typedAge by rememberSaveable { mutableStateOf("") }
+    val effectiveAge = calculatedAge?.toString() ?: typedAge
 
     LaunchedEffect(Unit) {
         runCatching { onLoadRegNo() }
@@ -8099,12 +8103,25 @@ private fun AdmissionFormSheet(
                     )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    DataTileContent(
-                        modifier = Modifier.weight(1f),
-                        label = "Age",
-                        value = calculatedAge?.toString() ?: "Auto",
-                        accent = MaterialTheme.colorScheme.onSurface,
-                    )
+                    if (calculatedAge != null) {
+                        DataTileContent(
+                            modifier = Modifier.weight(1f),
+                            label = "Age",
+                            value = calculatedAge.toString(),
+                            accent = MaterialTheme.colorScheme.onSurface,
+                        )
+                    } else {
+                        AdmissionTextField(
+                            value = typedAge,
+                            onValueChange = { input -> typedAge = input.filter(Char::isDigit).take(2) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .then(rememberBringIntoViewOnFocusModifier()),
+                            label = "Age",
+                            singleLine = true,
+                            keyboardType = KeyboardType.Number,
+                        )
+                    }
                     DataTileContent(
                         modifier = Modifier.weight(1f),
                         label = "DOB",
@@ -8528,6 +8545,7 @@ private fun AdmissionFormSheet(
                                 filledBy = filledBy,
                                 nationality = nationality,
                                 dateOfBirth = dateOfBirth,
+                                age = effectiveAge,
                                 gender = gender,
                                 fatherGuardianName = fatherGuardianName,
                                 alternateContactNo = alternateContactNo,
@@ -8753,6 +8771,7 @@ private fun AdmissionTextField(
     minLines: Int = 1,
     enabled: Boolean = true,
     readOnly: Boolean = false,
+    keyboardType: KeyboardType = KeyboardType.Text,
     trailing: (@Composable (() -> Unit))? = null,
 ) {
     OutlinedTextField(
@@ -8764,6 +8783,7 @@ private fun AdmissionTextField(
         minLines = minLines,
         enabled = enabled,
         readOnly = readOnly,
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         shape = RoundedCornerShape(18.dp),
         colors = admissionTextFieldColors(),
         trailingIcon = trailing,

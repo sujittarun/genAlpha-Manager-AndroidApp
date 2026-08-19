@@ -795,8 +795,12 @@ class SupabaseRepository(
     }
 
     suspend fun submitAdmission(draft: AdmissionDraft): AdmissionInsertResult = withContext(Dispatchers.IO) {
+        // Derived from the date of birth when there is one, typed in when there
+        // is not. p_date_of_birth is a nullable date column, so an admission
+        // carrying only an age stores cleanly.
         val age = calculateAgeFromDate(draft.dateOfBirth)
-            ?: throw IllegalArgumentException("Enter a valid date of birth.")
+            ?: draft.age.trim().toIntOrNull()
+            ?: throw IllegalArgumentException("Enter a date of birth, or the player's age.")
         val verifiedFeesPaid = draft.feesPaid && !draft.paymentPendingVerification
         val submittedAmount = if (draft.feesPaid || draft.paymentPendingVerification) {
             draft.amountPaid.toDoubleOrNull() ?: 0.0
@@ -808,7 +812,7 @@ class SupabaseRepository(
             .put("p_applicant_name", draft.applicantName.trim())
             .put("p_filled_by", draft.filledBy.trim().ifBlank { "Parent / Guardian" })
             .put("p_nationality", draft.nationality.trim())
-            .put("p_date_of_birth", draft.dateOfBirth)
+            .put("p_date_of_birth", draft.dateOfBirth.ifBlank { JSONObject.NULL })
             .put("p_age", age)
             .put("p_gender", draft.gender)
             .put("p_father_guardian_name", draft.fatherGuardianName.trim())

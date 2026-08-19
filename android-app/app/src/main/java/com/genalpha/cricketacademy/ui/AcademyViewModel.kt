@@ -1542,7 +1542,6 @@ class AcademyViewModel(
         if (
             draft.applicantName.isBlank() ||
             draft.filledBy.isBlank() ||
-            draft.dateOfBirth.isBlank() ||
             draft.gender.isBlank() ||
             draft.fatherGuardianName.isBlank() ||
             draft.parentContactNo.isBlank() ||
@@ -1555,12 +1554,22 @@ class AcademyViewModel(
             return "Please complete all required admission details."
         }
 
-        val age = calculateAgeFromDate(draft.dateOfBirth)
-        if (age == null || age !in 4..18) {
-            return "Date of birth should map to an age between 4 and 18."
+        // Either a date of birth or an age. The form carries both boxes and
+        // parents routinely fill one, so demanding the date of birth rejected
+        // forms that were filled in correctly.
+        val age = calculateAgeFromDate(draft.dateOfBirth) ?: draft.age.trim().toIntOrNull()
+        if (age == null) {
+            return "Enter the date of birth, or just the age if the form did not carry one."
+        }
+        if (age !in 4..18) {
+            return if (draft.dateOfBirth.isNotBlank()) {
+                "That date of birth does not give an age between 4 and 18."
+            } else {
+                "Age should be between 4 and 18."
+            }
         }
 
-        if (isFutureDate(draft.dateOfBirth)) {
+        if (draft.dateOfBirth.isNotBlank() && isFutureDate(draft.dateOfBirth)) {
             return "Date of birth cannot be in the future."
         }
 
